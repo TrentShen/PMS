@@ -1,0 +1,15 @@
+# 生产环境依赖（pip install -r requirements.txt）
+# 与 pyproject.toml 的 dependencies 保持一致，供不想用 pip install -e . 的场景使用
+fastapi>=0.115
+uvicorn[standard]>=0.32
+sqlmodel>=0.0.22
+pydantic-settings>=2.6
+pymysql>=1.1
+cryptography>=43
+alembic>=1.13
+redis>=5.2
+httpx>=0.27
+apscheduler>=3.10
+pyjwt>=2.9
+loguru>=0.7
+openpyxl>=3.1

@@ -1,0 +1,46 @@
+# 本地开发用 docker-compose：只起 MySQL + Redis，应用代码在宿主机跑（热重载快）
+# 使用：cd deploy && docker compose -f docker-compose.dev.yml up -d
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pms-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: pms
+      MYSQL_USER: pms
+      MYSQL_PASSWORD: pms_password
+    ports:
+      # 宿主机 3306 被系统 MySQL 占用，映射到 3307 避让
+      - "3307:3306"
+    volumes:
+      - pms_mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: pms-redis
+    restart: unless-stopped
+    ports:
+      # 宿主机 6379 被 JST 项目 redis 占用，映射到 6380 避让
+      - "6380:6379"
+    volumes:
+      - pms_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pms_mysql_data:
+  pms_redis_data:
