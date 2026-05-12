@@ -113,6 +113,10 @@ def invite_peers(
     if not participant:
         raise HTTPException(status_code=403, detail="你不是本周期的参与人")
 
+    # PRD 3.4.4：互评名单在自评完成后才能提交
+    if participant.status == "pending":
+        raise HTTPException(status_code=400, detail="请先完成自评，再选互评人")
+
     # 去重、不能选自己
     ids = list({uid for uid in payload.peer_user_ids if uid != current.id})
     if len(ids) > MAX_INVITES:

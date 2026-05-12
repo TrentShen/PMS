@@ -1,0 +1,89 @@
+/* 全局样式 + 移动端适配（PRD 3.7.2）*/
+/* 核心功能（自评/互评/查看结果）必须适配移动端 */
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* Header 紧凑化 */
+  .ant-layout-header {
+    padding: 0 12px !important;
+    flex-wrap: wrap;
+    height: auto !important;
+    min-height: 48px;
+  }
+  .ant-layout-header .ant-menu-horizontal {
+    min-width: auto !important;
+    font-size: 13px;
+  }
+  .ant-layout-header .ant-menu-horizontal .ant-menu-item {
+    padding: 0 8px !important;
+  }
+  .ant-layout-header .ant-typography {
+    font-size: 16px !important;
+  }
+
+  /* Content 减少 padding */
+  .ant-layout-content {
+    padding: 12px !important;
+  }
+
+  /* Card 紧凑 */
+  .ant-card {
+    margin-bottom: 12px;
+  }
+  .ant-card-head-title {
+    font-size: 15px;
+  }
+
+  /* Table 横向滚动 */
+  .ant-table-wrapper {
+    overflow-x: auto;
+  }
+  .ant-table {
+    min-width: 600px;
+  }
+
+  /* Form 单列 */
+  .ant-form-inline {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* Select/Input 全宽 */
+  .ant-select {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+  .ant-input-number {
+    width: 100% !important;
+  }
+
+  /* Modal 全屏 */
+  .ant-modal {
+    max-width: calc(100vw - 32px) !important;
+    margin: 16px auto !important;
+  }
+
+  /* 按钮组换行 */
+  .ant-space-horizontal {
+    flex-wrap: wrap;
+  }
+
+  /* 描述列表单列 */
+  .ant-descriptions-item {
+    display: block !important;
+  }
+}
+
+/* 小屏下 Menu 溢出滚动 */
+@media (max-width: 600px) {
+  .ant-menu-horizontal {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}

@@ -24,6 +24,7 @@ export default function AppLayout() {
   const menuItems = [
     { key: "/", label: "首页" },
     { key: "/history", label: "历史绩效" },
+    { key: "/notifications", label: "通知" },
     { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },
     hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/leader", label: "下属评估" },

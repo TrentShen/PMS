@@ -16,6 +16,7 @@ import AdminUsers from "@/pages/AdminUsers";
 import PeerTasks from "@/pages/PeerTasks";
 import AnonymousFeedbackPage from "@/pages/AnonymousFeedback";
 import Calibration from "@/pages/Calibration";
+import Notifications from "@/pages/Notifications";
 import Feedback from "@/pages/Feedback";
 import History from "@/pages/History";
 
@@ -35,6 +36,7 @@ export default function App() {
           {/* 所有登录用户可见 */}
           <Route path="/" element={<Home />} />
           <Route path="/self/:cycleId" element={<SelfEval />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/peer" element={<PeerTasks />} />
           <Route path="/anonymous" element={<AnonymousFeedbackPage />} />
           <Route path="/history" element={<History />} />

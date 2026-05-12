@@ -24,6 +24,11 @@ class CycleCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    # 考核模式开关（PRD 3.2.1）
+    enable_self_eval: bool = True
+    enable_peer_eval: bool = True
+    enable_calibration: bool = True
+    enable_feedback: bool = True
 
 
 class ParticipantAdd(BaseModel):
@@ -36,6 +41,7 @@ class ParticipantFilter(BaseModel):
     exclude_roles: list[str] | None = None       # 排除角色（如 ["super_admin"]）
     exclude_user_ids: list[int] | None = None    # 排除指定人员
     exclude_dept_ids: list[int] | None = None    # 排除整个部门
+    exclude_levels: list[str] | None = None      # 排除职级（如 ["M4","M5"] 排除高管）
     min_hired_before: date | None = None         # 入职日期门槛：不晚于此日期
 
 
@@ -105,6 +111,10 @@ def create_cycle(
         start_date=payload.start_date,
         end_date=payload.end_date,
         status="draft",
+        enable_self_eval=payload.enable_self_eval,
+        enable_peer_eval=payload.enable_peer_eval,
+        enable_calibration=payload.enable_calibration,
+        enable_feedback=payload.enable_feedback,
         created_by=hr.wecom_userid,
     )
     session.add(cycle)
@@ -237,6 +247,8 @@ def suggest_participants(
         q = q.where(
             (User.department_id == None) | User.department_id.notin_(payload.exclude_dept_ids)  # noqa: E711
         )
+    if payload.exclude_levels:
+        q = q.where(User.level.notin_(payload.exclude_levels))
     if payload.min_hired_before:
         q = q.where(User.hired_at <= payload.min_hired_before)
 

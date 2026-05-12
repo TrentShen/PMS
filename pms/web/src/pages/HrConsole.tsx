@@ -220,6 +220,11 @@ export default function HrConsole() {
           options={participants.map((p) => ({ value: p.user_id, label: `${p.user_name}（${p.status}）` }))} />
       </Modal>
 
+      {/* 时间线配置 */}
+      {selectedCycle && (
+        <StageConfigPanel cycleId={selectedCycle.id} cycleStatus={selectedCycle.status} />
+      )}
+
       {/* 按条件筛选参与人弹窗 */}
       <Modal title="按条件筛选参与人" open={filterOpen} onCancel={() => setFilterOpen(false)} onOk={() => filterForm.submit()}>
         <Form form={filterForm} layout="vertical" onFinish={onFilter}>
@@ -236,5 +241,73 @@ export default function HrConsole() {
         </Form>
       </Modal>
     </Space>
+  );
+}
+
+// ========== 时间线配置面板（PRD 3.2.3）==========
+function StageConfigPanel({ cycleId, cycleStatus }: { cycleId: number; cycleStatus: string }) {
+  const [stageForm] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.get(`/v1/notify/cycles/${cycleId}/stages`).then((r) => {
+      if (r.data.stages) {
+        // 把 "2025-01-06" 字符串转成 dayjs
+        const vals: any = {};
+        for (const [k, v] of Object.entries(r.data.stages)) {
+          vals[k] = v ? dayjs(v as string) : null;
+        }
+        stageForm.setFieldsValue(vals);
+      }
+    });
+  }, [cycleId]);
+
+  async function onSave() {
+    const vals = await stageForm.validateFields();
+    // 把 dayjs 转成 "YYYY-MM-DD" 字符串
+    const payload: any = {};
+    for (const [k, v] of Object.entries(vals)) {
+      if (v) payload[k] = (v as any).format("YYYY-MM-DD");
+    }
+    setLoading(true);
+    try {
+      await api.put(`/v1/notify/cycles/${cycleId}/stages`, payload);
+      message.success("时间线已保存");
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? "保存失败");
+    } finally { setLoading(false); }
+  }
+
+  const STAGES = [
+    { key: "self_eval", label: "自评" },
+    { key: "peer_confirm", label: "互评名单确认" },
+    { key: "peer_eval", label: "互评" },
+    { key: "superior_eval", label: "上级评估" },
+    { key: "calibration", label: "绩效校准" },
+    { key: "approval", label: "公司级审批" },
+    { key: "feedback", label: "绩效反馈" },
+  ];
+
+  return (
+    <Card title="时间线配置（各环节截止日期）" extra={
+      <Button type="primary" size="small" onClick={onSave} loading={loading}>保存时间线</Button>
+    }>
+      <Alert type="info" showIcon style={{ marginBottom: 16 }}
+        message="配置后系统会在截止前3天、1天和当天自动发送提醒（企微消息接入后自动推送）" />
+      <Form form={stageForm} layout="inline" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {STAGES.map((s) => (
+          <Space key={s.key} style={{ display: "flex", alignItems: "center" }}>
+            <span style={{ width: 100 }}>{s.label}：</span>
+            <Form.Item name={`${s.key}_start`} noStyle><DatePicker placeholder="开始" size="small" /></Form.Item>
+            <span>~</span>
+            <Form.Item name={`${s.key}_end`} noStyle><DatePicker placeholder="截止" size="small" /></Form.Item>
+          </Space>
+        ))}
+        <Space style={{ display: "flex", alignItems: "center" }}>
+          <span style={{ width: 100 }}>结果公布：</span>
+          <Form.Item name="publish_date" noStyle><DatePicker placeholder="公布日" size="small" /></Form.Item>
+        </Space>
+      </Form>
+    </Card>
   );
 }

@@ -96,21 +96,62 @@ def my_notifications(
 # 为简化，直接在创建周期时配置（前端可选填），或后续通过 PATCH 修改
 
 class StageConfig(BaseModel):
-    stages: dict  # 例如 {"self_eval_start":"2025-01-06","self_eval_end":"2025-01-13",...}
+    # PRD 3.2.3 各环节时间节点
+    self_eval_start: str | None = None
+    self_eval_end: str | None = None
+    peer_confirm_start: str | None = None
+    peer_confirm_end: str | None = None
+    peer_eval_start: str | None = None
+    peer_eval_end: str | None = None
+    superior_eval_start: str | None = None
+    superior_eval_end: str | None = None
+    calibration_start: str | None = None
+    calibration_end: str | None = None
+    approval_start: str | None = None
+    approval_end: str | None = None
+    feedback_start: str | None = None
+    feedback_end: str | None = None
+    publish_date: str | None = None
 
 
-@router.patch("/cycles/{cycle_id}/stages")
+@router.get("/cycles/{cycle_id}/stages")
+def get_stage_config(
+    cycle_id: int,
+    session: Session = Depends(get_session),
+    current: User = Depends(get_current_user),
+):
+    import json as _json
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    # stage_json 存的是 JSON 字符串
+    raw = None
+    from sqlalchemy import text
+    row = session.execute(text("SELECT stage_json FROM performance_cycle WHERE id = :cid"), {"cid": cycle_id}).first()
+    if row and row[0]:
+        try:
+            raw = _json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        except Exception:
+            raw = None
+    return {"cycle_id": cycle_id, "stages": raw}
+
+
+@router.put("/cycles/{cycle_id}/stages")
 def update_stage_config(
     cycle_id: int,
     payload: StageConfig,
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ):
-    # 暂存为 JSON 字段；APScheduler 定时任务扫描该字段触发提醒
+    import json as _json
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    stages_dict = payload.model_dump(exclude_none=True)
     from sqlalchemy import text
     session.execute(
         text("UPDATE performance_cycle SET stage_json = :j WHERE id = :cid"),
-        {"j": str(payload.stages), "cid": cycle_id},
+        {"j": _json.dumps(stages_dict), "cid": cycle_id},
     )
     session.commit()
-    return {"status": "ok", "stages": payload.stages}
+    return {"status": "ok", "stages": stages_dict}

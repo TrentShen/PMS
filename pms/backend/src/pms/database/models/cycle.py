@@ -1,6 +1,8 @@
 # 绩效周期（项目）与参与人快照
 from datetime import date, datetime
+from typing import Any
 
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 
@@ -12,8 +14,16 @@ class PerformanceCycle(SQLModel, table=True):
     name: str = Field(max_length=128)
     start_date: date
     end_date: date
-    # V0.9 状态机：draft -> in_progress -> published -> closed
+    # 状态机：draft -> in_progress -> published -> closed
     status: str = Field(default="draft", max_length=32, index=True)
+    # 考核模式开关（PRD 3.2.1：可开关各环节）
+    # 默认全开；关闭某环节后该环节自动跳过
+    enable_self_eval: bool = Field(default=True)
+    enable_peer_eval: bool = Field(default=True)
+    enable_calibration: bool = Field(default=True)
+    enable_feedback: bool = Field(default=True)
+    # 时间线配置（JSON）
+    stage_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     # 创建人 wecom_userid
     created_by: str = Field(max_length=64)
     created_at: datetime = Field(default_factory=datetime.utcnow)
