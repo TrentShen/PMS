@@ -9,7 +9,6 @@ from sqlmodel import Session, select
 
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import ParticipantStatus
-from pms.database.models.evaluation import Evaluation
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, require_role

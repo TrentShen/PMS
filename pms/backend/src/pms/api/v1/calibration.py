@@ -12,7 +12,7 @@ from pms.database.models.enums import PerfLevel
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, is_hr_dept_leader, require_role
+from pms.services.auth import get_current_user, is_hr_dept_leader
 from pms.utils.audit import write_audit
 from pms.utils.score import derive_perf_level, validate_perf_score
 

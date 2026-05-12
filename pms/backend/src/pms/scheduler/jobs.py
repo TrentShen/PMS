@@ -1,7 +1,6 @@
 # APScheduler 定时任务（PRD 3.2.3 + 3.5）
 # 每小时扫描一次进行中的周期，按 stage_json 配置的时间节点自动生成提醒
-import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from loguru import logger
 from sqlmodel import Session, select
@@ -48,18 +47,9 @@ def check_stage_reminders():
         ).all()
 
         for cycle in cycles:
-            # 读取 stage_json
-            from sqlalchemy import text
-            row = s.execute(
-                text("SELECT stage_json FROM performance_cycle WHERE id = :cid"),
-                {"cid": cycle.id},
-            ).first()
-            if not row or not row[0]:
+            if not cycle.stage_json:
                 continue
-            try:
-                stages = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            except Exception:
-                continue
+            stages = cycle.stage_json
 
             # 遍历各环节的 _end 日期
             for stage_key, label in STAGE_LABELS.items():

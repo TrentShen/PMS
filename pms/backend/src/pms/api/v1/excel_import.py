@@ -1,7 +1,6 @@
 # Excel 目标批量导入（PRD 3.3.1 一次性过渡功能）
 # HRBP 下载模板 → 填写 → 上传 → 系统校验 → 导入
 import io
-from tempfile import NamedTemporaryFile
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse

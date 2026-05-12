@@ -1,14 +1,13 @@
 # 消息提醒 + 催办 API（PRD 3.5）
 # V0.9 阶段：写 notification_log 表但不真发（Sprint 1 接企微后真发）
 # 提供：手动催办 + 查看自己的通知列表
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from pms.database.models.audit import NotificationLog
-from pms.database.models.cycle import CycleParticipant, PerformanceCycle
+from pms.database.models.cycle import PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, require_role
@@ -120,20 +119,10 @@ def get_stage_config(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    import json as _json
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
-    # stage_json 存的是 JSON 字符串
-    raw = None
-    from sqlalchemy import text
-    row = session.execute(text("SELECT stage_json FROM performance_cycle WHERE id = :cid"), {"cid": cycle_id}).first()
-    if row and row[0]:
-        try:
-            raw = _json.loads(row[0]) if isinstance(row[0], str) else row[0]
-        except Exception:
-            raw = None
-    return {"cycle_id": cycle_id, "stages": raw}
+    return {"cycle_id": cycle_id, "stages": cycle.stage_json}
 
 
 @router.put("/cycles/{cycle_id}/stages")
@@ -143,15 +132,10 @@ def update_stage_config(
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ):
-    import json as _json
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
-    stages_dict = payload.model_dump(exclude_none=True)
-    from sqlalchemy import text
-    session.execute(
-        text("UPDATE performance_cycle SET stage_json = :j WHERE id = :cid"),
-        {"j": _json.dumps(stages_dict), "cid": cycle_id},
-    )
+    cycle.stage_json = payload.model_dump(exclude_none=True)
+    session.add(cycle)
     session.commit()
-    return {"status": "ok", "stages": stages_dict}
+    return {"status": "ok", "stages": cycle.stage_json}

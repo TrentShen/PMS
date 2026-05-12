@@ -2,9 +2,7 @@
 # 校准流程：上级初评 → 部门 Leader 校准（可改分）→ HR 审批 → CEO 审批 → 结果锁定
 # 驳回时退回到部门 Leader 重新校准
 from datetime import datetime
-from typing import Any
 
-from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 
