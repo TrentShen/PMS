@@ -1,5 +1,4 @@
 /* 全局样式 + 移动端适配（PRD 3.7.2）*/
-/* 核心功能（自评/互评/查看结果）必须适配移动端 */
 
 body {
   margin: 0;
@@ -7,27 +6,59 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 移动端适配 */
+/* ========== Header 布局 ========== */
+.pms-header {
+  background: #fff !important;
+  display: flex !important;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px !important;
+  border-bottom: 1px solid #f0f0f0;
+  height: 56px !important;
+  line-height: 56px !important;
+}
+.pms-header-left {
+  display: flex;
+  align-items: center;
+}
+.pms-header-right {
+  display: flex;
+  align-items: center;
+}
+
+/* PC 端：显示横向菜单，隐藏汉堡按钮 */
+.pms-menu-trigger {
+  display: none !important;
+}
+.pms-desktop-menu {
+  display: flex !important;
+}
+
+/* ========== 移动端（≤768px）========== */
 @media (max-width: 768px) {
-  /* Header 紧凑化 */
-  .ant-layout-header {
-    padding: 0 12px !important;
-    flex-wrap: wrap;
-    height: auto !important;
-    min-height: 48px;
+  /* 隐藏 PC 横向菜单，显示汉堡按钮 */
+  .pms-desktop-menu {
+    display: none !important;
   }
-  .ant-layout-header .ant-menu-horizontal {
-    min-width: auto !important;
-    font-size: 13px;
-  }
-  .ant-layout-header .ant-menu-horizontal .ant-menu-item {
-    padding: 0 8px !important;
-  }
-  .ant-layout-header .ant-typography {
-    font-size: 16px !important;
+  .pms-menu-trigger {
+    display: inline-flex !important;
+    font-size: 20px;
   }
 
-  /* Content 减少 padding */
+  /* Header 紧凑 */
+  .pms-header {
+    padding: 0 12px !important;
+    height: 48px !important;
+    line-height: 48px !important;
+  }
+  .pms-header h4 {
+    font-size: 16px !important;
+  }
+  .pms-user-name {
+    display: none;
+  }
+
+  /* Content 减小 padding */
   .ant-layout-content {
     padding: 12px !important;
   }
@@ -45,13 +76,14 @@ body {
     overflow-x: auto;
   }
   .ant-table {
-    min-width: 600px;
+    min-width: 500px;
   }
 
   /* Form 单列 */
   .ant-form-inline {
     display: flex !important;
     flex-direction: column !important;
+    gap: 8px;
   }
 
   /* Select/Input 全宽 */
@@ -80,10 +112,15 @@ body {
   }
 }
 
-/* 小屏下 Menu 溢出滚动 */
-@media (max-width: 600px) {
-  .ant-menu-horizontal {
-    overflow-x: auto;
-    overflow-y: hidden;
+/* ========== 超小屏（≤480px）========== */
+@media (max-width: 480px) {
+  .pms-header .ant-tag {
+    display: none;
+  }
+  .ant-card-extra {
+    flex-wrap: wrap;
+  }
+  .ant-card-extra .ant-btn {
+    margin-bottom: 4px;
   }
 }
