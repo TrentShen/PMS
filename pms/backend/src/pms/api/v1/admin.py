@@ -55,7 +55,7 @@ ALLOWED_ROLES = {"super_admin", "hrbp", "dept_leader", "direct_leader", "employe
 @router.get("/users", response_model=list[AdminUserView])
 def list_users(
     session: Session = Depends(get_session),
-    _admin: User = Depends(require_role("super_admin")),
+    _admin: User = Depends(require_role("super_admin", "hrbp")),
 ) -> list[AdminUserView]:
     users = session.exec(select(User).order_by(User.id)).all()
     return [AdminUserView.model_validate(u, from_attributes=True) for u in users]
@@ -66,7 +66,7 @@ def patch_user(
     user_id: int,
     payload: AdminUserPatch,
     session: Session = Depends(get_session),
-    admin: User = Depends(require_role("super_admin")),
+    admin: User = Depends(require_role("super_admin", "hrbp")),
 ) -> AdminUserView:
     user = session.get(User, user_id)
     if not user:
@@ -151,7 +151,7 @@ def patch_user(
 @router.get("/departments", response_model=list[DepartmentView])
 def list_departments(
     session: Session = Depends(get_session),
-    _admin: User = Depends(require_role("super_admin")),
+    _admin: User = Depends(require_role("super_admin", "hrbp")),
 ) -> list[DepartmentView]:
     depts = session.exec(select(Department).order_by(Department.id)).all()
     return [DepartmentView.model_validate(d, from_attributes=True) for d in depts]

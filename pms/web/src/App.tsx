@@ -24,7 +24,7 @@ import History from "@/pages/History";
 export const ROLE = {
   HR: ["hrbp", "super_admin"],
   LEADER: ["dept_leader", "direct_leader", "hrbp", "super_admin"],
-  ADMIN: ["super_admin"],
+  ADMIN: ["super_admin", "hrbp"],
 } as const;
 
 export default function App() {
@@ -61,7 +61,7 @@ export default function App() {
           </Route>
 
           {/* 仅超级管理员可见 */}
-          <Route element={<RequireRole roles={[...ROLE.ADMIN]} fallback="forbid" />}>
+          <Route element={<RequireRole roles={[...ROLE.ADMIN]} fallback="forbid" allowHrPermission />}>
             <Route path="/admin/users" element={<AdminUsers />} />
           </Route>
 
