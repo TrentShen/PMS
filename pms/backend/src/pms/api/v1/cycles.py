@@ -66,7 +66,9 @@ class ParticipantDetail(BaseModel):
     status: str
     final_perf_score: float | None
     final_perf_level: str | None
-    final_value_grade: str | None
+    final_value_belief: str | None
+    final_value_team: str | None
+    final_value_growth: str | None
 
 
 # ============ HR：列出/创建/发布 周期 ============
@@ -310,7 +312,9 @@ def list_participants(
             status=p.status,
             final_perf_score=p.final_perf_score,
             final_perf_level=p.final_perf_level,
-            final_value_grade=p.final_value_grade,
+            final_value_belief=p.final_value_belief,
+            final_value_team=p.final_value_team,
+            final_value_growth=p.final_value_growth,
         )
         for p, u in rows
     ]
@@ -403,7 +407,9 @@ def my_cycles(
             "role": "participant",
             "participant_status": p.status,
             "final_perf_level": p.final_perf_level if show_final else None,
-            "final_value_grade": p.final_value_grade if show_final else None,
+            "final_value_belief": p.final_value_belief if show_final else None,
+            "final_value_team": p.final_value_team if show_final else None,
+            "final_value_growth": p.final_value_growth if show_final else None,
             "final_perf_score": p.final_perf_score if show_final else None,
             "result_pending_feedback": not show_final,
         })

@@ -24,7 +24,10 @@ router = APIRouter(prefix="/calibration", tags=["calibration"])
 class CalibrateItem(BaseModel):
     user_id: int
     perf_score: float | None = None  # 不改就不传
-    value_grade: str | None = None   # 不改就不传
+    # 价值观三维度，不改的维度不传
+    value_belief_grade: str | None = None
+    value_team_grade: str | None = None
+    value_growth_grade: str | None = None
     reason: str  # 修改理由（必填）
 
 
@@ -53,10 +56,14 @@ class CalibrationView(BaseModel):
     dept_name: str | None
     initial_perf_score: float | None  # 上级初评
     initial_perf_level: str | None
-    initial_value_grade: str | None
+    initial_value_belief: str | None
+    initial_value_team: str | None
+    initial_value_growth: str | None
     calibrated_perf_score: float | None  # 校准后（cycle_participant 上的）
     calibrated_perf_level: str | None
-    calibrated_value_grade: str | None
+    calibrated_value_belief: str | None
+    calibrated_value_team: str | None
+    calibrated_value_growth: str | None
     participant_status: str
 
 
@@ -149,10 +156,14 @@ def get_calibration_view(
             dept_name=p.dept_name_snapshot,
             initial_perf_score=sup_eval.perf_score if sup_eval else None,
             initial_perf_level=sup_eval.perf_level if sup_eval else None,
-            initial_value_grade=sup_eval.value_grade if sup_eval else None,
+            initial_value_belief=sup_eval.value_belief_grade if sup_eval else None,
+            initial_value_team=sup_eval.value_team_grade if sup_eval else None,
+            initial_value_growth=sup_eval.value_growth_grade if sup_eval else None,
             calibrated_perf_score=p.final_perf_score,
             calibrated_perf_level=p.final_perf_level,
-            calibrated_value_grade=p.final_value_grade,
+            calibrated_value_belief=p.final_value_belief,
+            calibrated_value_team=p.final_value_team,
+            calibrated_value_growth=p.final_value_growth,
             participant_status=p.status,
         ))
 
@@ -225,16 +236,21 @@ def calibrate(
             ))
             modified += 1
 
-        if item.value_grade is not None:
-            if item.value_grade not in ("jia", "yi", "bing"):
-                raise HTTPException(status_code=400, detail="value_grade 只能是 jia/yi/bing")
-            old_grade = p.final_value_grade
-            p.final_value_grade = item.value_grade
+        # 价值观三维度校准
+        for dim_field, dim_label in [("belief", "信念"), ("team", "团队"), ("growth", "成长")]:
+            new_grade = getattr(item, f"value_{dim_field}_grade", None)
+            if new_grade is None:
+                continue
+            if new_grade not in ("jia", "yi", "bing"):
+                raise HTTPException(status_code=400, detail=f"价值观「{dim_label}」只能是 jia/yi/bing")
+            final_attr = f"final_value_{dim_field}"
+            old_grade = getattr(p, final_attr)
+            setattr(p, final_attr, new_grade)
             session.add(CalibrationRecord(
                 cycle_id=cycle_id, user_id=item.user_id,
                 operator_userid=current.wecom_userid, operator_name=current.name,
-                field_changed="value_grade",
-                old_value=str(old_grade), new_value=item.value_grade,
+                field_changed=f"value_{dim_field}",
+                old_value=str(old_grade), new_value=new_grade,
                 reason=item.reason,
             ))
             modified += 1

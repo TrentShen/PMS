@@ -16,8 +16,8 @@ from pms.services.scope import ensure_can_view_user
 from pms.utils.audit import write_audit
 from pms.utils.score import (
     derive_perf_level,
-    require_value_example_if_jia,
     validate_perf_score,
+    validate_value_grades,
 )
 
 router = APIRouter(prefix="/cycles/{cycle_id}", tags=["evaluations"])
@@ -39,8 +39,13 @@ class EvaluationView(BaseModel):
     evaluator_userid: str | None = None
     perf_score: float | None = None
     perf_level: str | None = None
-    value_grade: str | None = None
-    value_example: str | None = None
+    # 价值观三维度
+    value_belief_grade: str | None = None
+    value_belief_example: str | None = None
+    value_team_grade: str | None = None
+    value_team_example: str | None = None
+    value_growth_grade: str | None = None
+    value_growth_example: str | None = None
     key_results: str | None = None
     comment: str | None = None
     submitted_at: datetime | None = None
@@ -49,8 +54,13 @@ class EvaluationView(BaseModel):
 
 class EvaluationSubmit(BaseModel):
     perf_score: float
-    value_grade: str  # jia / yi / bing
-    value_example: str | None = None
+    # 价值观三维度（每个都是 jia/yi/bing）
+    value_belief_grade: str
+    value_belief_example: str | None = None
+    value_team_grade: str
+    value_team_example: str | None = None
+    value_growth_grade: str
+    value_growth_example: str | None = None
     key_results: str
     comment: str | None = None
 
@@ -148,7 +158,9 @@ def get_evaluation_detail(
         # 员工本人在反馈确认前看不到最终分数
         "final_perf_score": participant.final_perf_score if show_final else None,
         "final_perf_level": participant.final_perf_level if show_final else None,
-        "final_value_grade": participant.final_value_grade if show_final else None,
+        "final_value_belief": participant.final_value_belief if show_final else None,
+        "final_value_team": participant.final_value_team if show_final else None,
+        "final_value_growth": participant.final_value_growth if show_final else None,
         "result_pending_feedback": not show_final if is_self else None,
         "objectives": [
             ObjectiveView.model_validate(o, from_attributes=True).model_dump() for o in objectives
@@ -191,7 +203,11 @@ def submit_self_evaluation(
     # 规则校验
     try:
         score = validate_perf_score(payload.perf_score)
-        require_value_example_if_jia(payload.value_grade, payload.value_example)
+        validate_value_grades(
+            payload.value_belief_grade, payload.value_belief_example,
+            payload.value_team_grade, payload.value_team_example,
+            payload.value_growth_grade, payload.value_growth_example,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not payload.key_results or not payload.key_results.strip():
@@ -207,15 +223,15 @@ def submit_self_evaluation(
     ).first()
     before = None
     if eva:
-        before = {
-            "perf_score": eva.perf_score,
-            "value_grade": eva.value_grade,
-            "status": eva.status,
-        }
+        before = {"perf_score": eva.perf_score, "status": eva.status}
         eva.perf_score = score
         eva.perf_level = derive_perf_level(score).value
-        eva.value_grade = payload.value_grade
-        eva.value_example = payload.value_example
+        eva.value_belief_grade = payload.value_belief_grade
+        eva.value_belief_example = payload.value_belief_example
+        eva.value_team_grade = payload.value_team_grade
+        eva.value_team_example = payload.value_team_example
+        eva.value_growth_grade = payload.value_growth_grade
+        eva.value_growth_example = payload.value_growth_example
         eva.key_results = payload.key_results
         eva.comment = payload.comment
         eva.submitted_at = datetime.utcnow()
@@ -228,8 +244,12 @@ def submit_self_evaluation(
             eval_type=EvalType.SELF.value,
             perf_score=score,
             perf_level=derive_perf_level(score).value,
-            value_grade=payload.value_grade,
-            value_example=payload.value_example,
+            value_belief_grade=payload.value_belief_grade,
+            value_belief_example=payload.value_belief_example,
+            value_team_grade=payload.value_team_grade,
+            value_team_example=payload.value_team_example,
+            value_growth_grade=payload.value_growth_grade,
+            value_growth_example=payload.value_growth_example,
             key_results=payload.key_results,
             comment=payload.comment,
             submitted_at=datetime.utcnow(),
@@ -250,7 +270,7 @@ def submit_self_evaluation(
         resource_type="evaluation",
         resource_id=f"{cycle_id}:{current.id}",
         before=before,
-        after={"perf_score": score, "value_grade": payload.value_grade},
+        after={"perf_score": score, "value_belief": payload.value_belief_grade, "value_team": payload.value_team_grade, "value_growth": payload.value_growth_grade},
     )
     session.commit()
     session.refresh(eva)
@@ -310,7 +330,11 @@ def submit_superior_evaluation(
 
     try:
         score = validate_perf_score(payload.perf_score)
-        require_value_example_if_jia(payload.value_grade, payload.value_example)
+        validate_value_grades(
+            payload.value_belief_grade, payload.value_belief_example,
+            payload.value_team_grade, payload.value_team_example,
+            payload.value_growth_grade, payload.value_growth_example,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not payload.key_results or not payload.key_results.strip():
@@ -325,11 +349,15 @@ def submit_superior_evaluation(
     ).first()
     before = None
     if eva:
-        before = {"perf_score": eva.perf_score, "value_grade": eva.value_grade}
+        before = {"perf_score": eva.perf_score}
         eva.perf_score = score
         eva.perf_level = derive_perf_level(score).value
-        eva.value_grade = payload.value_grade
-        eva.value_example = payload.value_example
+        eva.value_belief_grade = payload.value_belief_grade
+        eva.value_belief_example = payload.value_belief_example
+        eva.value_team_grade = payload.value_team_grade
+        eva.value_team_example = payload.value_team_example
+        eva.value_growth_grade = payload.value_growth_grade
+        eva.value_growth_example = payload.value_growth_example
         eva.key_results = payload.key_results
         eva.comment = payload.comment
         eva.evaluator_userid = current.wecom_userid
@@ -343,8 +371,12 @@ def submit_superior_evaluation(
             eval_type=EvalType.SUPERIOR.value,
             perf_score=score,
             perf_level=derive_perf_level(score).value,
-            value_grade=payload.value_grade,
-            value_example=payload.value_example,
+            value_belief_grade=payload.value_belief_grade,
+            value_belief_example=payload.value_belief_example,
+            value_team_grade=payload.value_team_grade,
+            value_team_example=payload.value_team_example,
+            value_growth_grade=payload.value_growth_grade,
+            value_growth_example=payload.value_growth_example,
             key_results=payload.key_results,
             comment=payload.comment,
             submitted_at=datetime.utcnow(),
@@ -353,10 +385,12 @@ def submit_superior_evaluation(
     session.add(eva)
 
     participant.status = ParticipantStatus.LEADER_DONE.value
-    # 上级初评同时写入 final_* 作为校准起点（校准时可改）
+    # 上级初评同时写入 final_* 作为校准起点
     participant.final_perf_score = score
     participant.final_perf_level = derive_perf_level(score).value
-    participant.final_value_grade = payload.value_grade
+    participant.final_value_belief = payload.value_belief_grade
+    participant.final_value_team = payload.value_team_grade
+    participant.final_value_growth = payload.value_growth_grade
     session.add(participant)
 
     write_audit(
@@ -367,7 +401,7 @@ def submit_superior_evaluation(
         resource_type="evaluation",
         resource_id=f"{cycle_id}:{user_id}",
         before=before,
-        after={"perf_score": score, "value_grade": payload.value_grade},
+        after={"perf_score": score, "value_belief": payload.value_belief_grade, "value_team": payload.value_team_grade, "value_growth": payload.value_growth_grade},
     )
     session.commit()
     session.refresh(eva)

@@ -49,8 +49,13 @@ class PeerEvaluation(SQLModel, table=True):
     # 业绩 1-5 分，0.25 分段（同自评/上级评估）
     perf_score: float | None = None
     perf_level: str | None = Field(default=None, max_length=32)
-    value_grade: str | None = Field(default=None, max_length=8)
-    value_example: str | None = None
+    # 价值观三维度
+    value_belief_grade: str | None = Field(default=None, max_length=8)
+    value_belief_example: str | None = None
+    value_team_grade: str | None = Field(default=None, max_length=8)
+    value_team_example: str | None = None
+    value_growth_grade: str | None = Field(default=None, max_length=8)
+    value_growth_example: str | None = None
     comment: str | None = None
 
     submitted_at: datetime | None = None

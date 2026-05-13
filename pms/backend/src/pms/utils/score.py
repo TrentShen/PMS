@@ -32,7 +32,33 @@ def derive_perf_level(score: float) -> PerfLevel:
     return PerfLevel.BELOW
 
 
-# 价值观等级"甲"必须附事例，这里只提供校验函数
+# 价值观三维度校验：每个维度评"甲"时必须附事例
+VALUE_DIMS = [
+    ("belief", "信念"),
+    ("team", "团队"),
+    ("growth", "成长"),
+]
+
+def validate_value_grades(
+    belief_grade: str | None, belief_example: str | None,
+    team_grade: str | None, team_example: str | None,
+    growth_grade: str | None, growth_example: str | None,
+) -> None:
+    pairs = [
+        (belief_grade, belief_example, "信念"),
+        (team_grade, team_example, "团队"),
+        (growth_grade, growth_example, "成长"),
+    ]
+    for grade, example, label in pairs:
+        if not grade:
+            raise ValueError(f"价值观「{label}」维度等级必填")
+        if grade not in ("jia", "yi", "bing"):
+            raise ValueError(f"价值观「{label}」等级只能是 jia/yi/bing")
+        if grade == "jia" and (not example or not example.strip()):
+            raise ValueError(f"价值观「{label}」评为甲时必须填写具体事例")
+
+
+# 兼容旧接口的单维度校验（deprecated，保留给互评等简化场景）
 def require_value_example_if_jia(grade: str, example: str | None) -> None:
     if grade == "jia" and (not example or not example.strip()):
         raise ValueError("价值观评为\"甲\"时必须填写具体事例")

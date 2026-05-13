@@ -46,4 +46,7 @@ class CycleParticipant(SQLModel, table=True):
     # 冗余存最终结果，便于发布后快速查询，也方便导出
     final_perf_score: float | None = None
     final_perf_level: str | None = Field(default=None, max_length=32)
-    final_value_grade: str | None = Field(default=None, max_length=8)
+    # 价值观三维度最终结果
+    final_value_belief: str | None = Field(default=None, max_length=8)
+    final_value_team: str | None = Field(default=None, max_length=8)
+    final_value_growth: str | None = Field(default=None, max_length=8)

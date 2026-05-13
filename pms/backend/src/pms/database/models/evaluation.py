@@ -24,10 +24,13 @@ class Evaluation(SQLModel, table=True):
     perf_score: float | None = None
     # 由 perf_score 派生，存起来便于查询
     perf_level: str | None = Field(default=None, max_length=32)
-    # 价值观等级 jia / yi / bing
-    value_grade: str | None = Field(default=None, max_length=8)
-    # 价值观"甲"必须给事例
-    value_example: str | None = None
+    # 价值观三维度独立评级（信念/团队/成长），每个维度 jia/yi/bing
+    value_belief_grade: str | None = Field(default=None, max_length=8)
+    value_belief_example: str | None = None
+    value_team_grade: str | None = Field(default=None, max_length=8)
+    value_team_example: str | None = None
+    value_growth_grade: str | None = Field(default=None, max_length=8)
+    value_growth_example: str | None = None
     # 关键成果（PRD 3.4.1：自评与上级评必填）
     key_results: str | None = None
     # 综合评语
