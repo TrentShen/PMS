@@ -20,6 +20,7 @@ import {
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
+import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
@@ -35,7 +36,10 @@ interface Detail {
   participant_status: string;
   final_perf_score: number | null;
   final_perf_level: string | null;
-  final_value_grade: string | null;
+  final_value_belief: string | null;
+  final_value_team: string | null;
+  final_value_growth: string | null;
+  result_pending_feedback: boolean | null;
   objectives: { id: number; title: string; description: string; measure_criteria: string; weight: number }[];
   self_evaluation: EvalView | null;
   superior_evaluation: EvalView | null;
@@ -44,8 +48,12 @@ interface Detail {
 interface EvalView {
   perf_score: number | null;
   perf_level: string | null;
-  value_grade: string | null;
-  value_example: string | null;
+  value_belief_grade: string | null;
+  value_belief_example: string | null;
+  value_team_grade: string | null;
+  value_team_example: string | null;
+  value_growth_grade: string | null;
+  value_growth_example: string | null;
   key_results: string | null;
   comment: string | null;
   submitted_at: string | null;
@@ -296,10 +304,7 @@ export default function SelfEval() {
   }, [detail]);
 
   async function onSubmit(values: any) {
-    if (values.value_grade === "jia" && !values.value_example?.trim()) {
-      message.error('价值观评为"甲"时必须填写具体事例');
-      return;
-    }
+    // 价值观甲事例校验交给后端三维度校验
     setSubmitting(true);
     try {
       await api.post(`/v1/cycles/${cycleId}/self-evaluation`, values);
@@ -333,14 +338,12 @@ export default function SelfEval() {
           showIcon
           message="你的最终绩效"
           description={
-            <Space>
+            <Space direction="vertical">
               <Tag color="gold">
                 业绩 {PERF_LEVEL_LABEL[detail.final_perf_level]}（
                 {detail.final_perf_score?.toFixed(2)} 分）
               </Tag>
-              <Tag color="geekblue">
-                价值观 {VALUE_LABEL[detail.final_value_grade ?? ""] ?? "-"}
-              </Tag>
+              <ValueGradeDisplay data={detail} prefix="final_value" />
             </Space>
           }
         />
@@ -368,33 +371,7 @@ export default function SelfEval() {
           >
             <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item
-            name="value_grade"
-            label="价值观等级"
-            rules={[{ required: true, message: "请选择" }]}
-          >
-            <Radio.Group>
-              <Radio value="jia">甲（堪称典范）</Radio>
-              <Radio value="yi">乙</Radio>
-              <Radio value="bing">丙</Radio>
-            </Radio.Group>
-          </Form.Item>
-          <Form.Item
-            shouldUpdate={(prev, cur) => prev.value_grade !== cur.value_grade}
-            noStyle
-          >
-            {({ getFieldValue }) =>
-              getFieldValue("value_grade") === "jia" ? (
-                <Form.Item
-                  name="value_example"
-                  label='价值观"甲"的具体事例'
-                  rules={[{ required: true, message: "评\"甲\"时必填" }]}
-                >
-                  <Input.TextArea rows={3} />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
+          <ValueGradeForm disabled={readonly} />
           <Form.Item
             name="key_results"
             label="关键成果（做成了什么）"
