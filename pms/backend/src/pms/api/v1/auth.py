@@ -29,6 +29,8 @@ class CurrentUser(BaseModel):
     leader_userid: str | None
     # HR 部门 Leader 虽然 role=dept_leader，但享有 HR 权限；前端用这个字段决定菜单显示
     has_hr_permission: bool = False
+    # 是否有直属下属（前端决定是否显示"下属评估"菜单）
+    has_subordinates: bool = False
 
 
 @router.get("/mock-users")
@@ -61,6 +63,9 @@ def mock_login(
         raise HTTPException(status_code=404, detail="用户不存在")
     token = sign_token(user.wecom_userid)
     hr_perm = user.role in ("hrbp", "super_admin") or is_hr_dept_leader(user, session)
+    has_subs = session.exec(
+        select(User.id).where(User.leader_userid == user.wecom_userid).limit(1)
+    ).first() is not None
     return TokenResponse(
         token=token,
         user={
@@ -71,6 +76,7 @@ def mock_login(
             "position": user.position,
             "leader_userid": user.leader_userid,
             "has_hr_permission": hr_perm,
+            "has_subordinates": has_subs,
         },
     )
 
@@ -78,6 +84,10 @@ def mock_login(
 @router.get("/me", response_model=CurrentUser)
 def me(current: User = Depends(get_current_user), session: Session = Depends(get_session)) -> CurrentUser:
     hr_perm = current.role in ("hrbp", "super_admin") or is_hr_dept_leader(current, session)
+    # 是否有下属（用于前端决定是否显示"下属评估"入口）
+    has_subs = session.exec(
+        select(User.id).where(User.leader_userid == current.wecom_userid).limit(1)
+    ).first() is not None
     return CurrentUser(
         id=current.id,
         wecom_userid=current.wecom_userid,
@@ -86,6 +96,7 @@ def me(current: User = Depends(get_current_user), session: Session = Depends(get
         position=current.position,
         leader_userid=current.leader_userid,
         has_hr_permission=hr_perm,
+        has_subordinates=has_subs,
     )
 
 

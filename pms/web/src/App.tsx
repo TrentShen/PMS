@@ -45,13 +45,13 @@ export default function App() {
           <Route path="/feedback/:cycleId/:userId" element={<Feedback />} />
 
           {/* 仅 Leader/HR 可见 */}
-          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" />}>
+          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" allowHasSubordinates />}>
             <Route path="/leader" element={<LeaderEval />} />
             <Route path="/leader/:cycleId/users/:userId" element={<LeaderEvalDetail />} />
           </Route>
 
           {/* 仅 Leader/HR 可见：校准 */}
-          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" />}>
+          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" allowHasSubordinates />}>
             <Route path="/calibration" element={<Calibration />} />
           </Route>
 

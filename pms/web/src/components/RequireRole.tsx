@@ -13,14 +13,18 @@ interface Props {
   fallback?: "redirect" | "forbid";
   // 允许 has_hr_permission=true 的用户通过（HR 部门 Leader 场景）
   allowHrPermission?: boolean;
+  // 允许有下属的用户通过（任意层级的上级都能进"下属评估"）
+  allowHasSubordinates?: boolean;
 }
 
-export default function RequireRole({ roles, fallback = "redirect", allowHrPermission = false }: Props) {
+export default function RequireRole({ roles, fallback = "redirect", allowHrPermission = false, allowHasSubordinates = false }: Props) {
   const user = useAuth((s) => s.user);
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const allowed = roles.includes(user.role) || (allowHrPermission && user.has_hr_permission);
+  const allowed = roles.includes(user.role)
+    || (allowHrPermission && user.has_hr_permission)
+    || (allowHasSubordinates && user.has_subordinates);
 
   if (!allowed) {
     if (fallback === "forbid") {
