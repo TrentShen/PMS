@@ -47,7 +47,7 @@ export default function HrConsole() {
 
   async function loadCycles() { const r = await api.get<Cycle[]>("/v1/cycles"); setCycles(r.data); }
   async function loadUsers() { const r = await api.get<UserBrief[]>("/v1/users"); setUsers(r.data); }
-  async function loadParticipants(cid: number) { const r = await api.get<Participant[]>(`/v1/cycles/${cid}/participants`); setParticipants(r.data); }
+  async function loadParticipants(cid: number) { const r = await api.get<{items: Participant[]; total: number}>(`/v1/cycles/${cid}/participants?page_size=9999`); setParticipants(r.data.items); }
   useEffect(() => { loadCycles(); loadUsers(); }, []);
   useEffect(() => { if (selectedCycle) loadParticipants(selectedCycle.id); }, [selectedCycle]);
 

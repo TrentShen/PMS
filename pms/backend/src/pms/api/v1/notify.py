@@ -1,23 +1,29 @@
-# 消息提醒 + 催办 API（PRD 3.5）
-# V0.9 阶段：写 notification_log 表但不真发（Sprint 1 接企微后真发）
-# 提供：手动催办 + 查看自己的通知列表
+# 消息提醒 + 催办 API
+# 催办写 notification_log 后即时调企微发送；失败标记待重试
+import time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from pms.configs import settings
 from pms.database.models.audit import NotificationLog
 from pms.database.models.cycle import PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, require_role
+from pms.services.wecom import send_textcard
 
 router = APIRouter(prefix="/notify", tags=["notify"])
+
+MAX_RETRIES = 3
 
 
 class UrgeRequest(BaseModel):
     cycle_id: int
-    user_ids: list[int]  # 要催办的用户
+    user_ids: list[int]
     message: str | None = None
 
 
@@ -29,7 +35,31 @@ class NotifyView(BaseModel):
     created_at: str
 
 
-# ============ 催办（HRBP / Leader / 上级可发起）============
+def _send_and_log(notification: NotificationLog, session: Session) -> None:
+    """调企微发送并更新日志；失败计入 retry_count"""
+    try:
+        send_textcard(
+            user_ids=[notification.target_userid],
+            title=notification.title,
+            description=notification.content,
+            url=f"{settings.frontend_origin}",
+        )
+        notification.status = "sent"
+        notification.sent_at = datetime.utcnow()
+        logger.info("企微消息发送成功: {} -> {}", notification.title, notification.target_userid)
+    except Exception as e:
+        notification.retry_count = (notification.retry_count or 0) + 1
+        notification.error_msg = str(e)[:256]
+        if notification.retry_count >= MAX_RETRIES:
+            notification.status = "failed"
+            logger.error("企微消息发送失败(已耗尽重试): {} -> {} {}", notification.title, notification.target_userid, e)
+        else:
+            notification.status = "retry"
+            logger.warning("企微消息发送失败(将重试): {} -> {} {}", notification.title, notification.target_userid, e)
+    session.commit()
+
+
+# ============ 催办 ============
 
 @router.post("/urge")
 def send_urge(
@@ -37,7 +67,6 @@ def send_urge(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # 权限：hrbp / super_admin / dept_leader / 直属上级
     if current.role == "employee":
         raise HTTPException(status_code=403, detail="普通员工不能发起催办")
 
@@ -50,19 +79,38 @@ def send_urge(
         user = session.get(User, uid)
         if not user:
             continue
-        # 写 notification_log（status=pending，Sprint 1 接企微后异步真发）
-        session.add(NotificationLog(
+        notification = NotificationLog(
             target_userid=user.wecom_userid,
             channel="wecom",
             title="催办通知",
-            content=payload.message or f"{current.name} 提醒你尽快完成绩效任务",
+            content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的绩效任务",
             payload={"cycle_id": payload.cycle_id, "from": current.wecom_userid},
             status="pending",
-        ))
+        )
+        session.add(notification)
+        session.commit()
+        _send_and_log(notification, session)
         count += 1
 
-    session.commit()
-    return {"sent": count, "note": "消息已入队（企微推送待 Sprint 1 接入）"}
+    return {"sent": count}
+
+
+# ============ 重试失败消息 ============
+
+@router.post("/retry")
+def retry_failed(
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+):
+    """手动重试所有 status=retry 的通知"""
+    pending = session.exec(
+        select(NotificationLog).where(NotificationLog.status == "retry")
+    ).all()
+    sent = 0
+    for n in pending:
+        _send_and_log(n, session)
+        sent += 1
+    return {"retried": sent}
 
 
 # ============ 我的通知列表 ============
@@ -90,12 +138,9 @@ def my_notifications(
     ]
 
 
-# ============ 周期时间线配置（存在 performance_cycle 的 stage_json 里）============
-# PRD 3.2.3：各环节时间节点
-# 为简化，直接在创建周期时配置（前端可选填），或后续通过 PATCH 修改
+# ============ 周期时间线 ============
 
 class StageConfig(BaseModel):
-    # PRD 3.2.3 各环节时间节点
     self_eval_start: str | None = None
     self_eval_end: str | None = None
     peer_confirm_start: str | None = None

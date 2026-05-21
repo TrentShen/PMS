@@ -1,5 +1,4 @@
-# JWT 签发与校验 + 依赖函数 get_current_user
-# V0.9 先用 mock 登录；Sprint 1 企微 OAuth 接入后，签发 JWT 的入口换成 /auth/callback，JWT 机制复用
+import json
 from datetime import datetime, timedelta
 
 import jwt
@@ -8,14 +7,14 @@ from sqlmodel import Session, select
 
 from pms.configs import settings
 from pms.database.models.user import User
-from pms.database.session import get_session
+from pms.database.session import get_session, redis_client
 
 JWT_ALGO = "HS256"
 JWT_TTL = timedelta(days=7)
+USER_CACHE_TTL = 300  # 5 minutes
 
 
 def sign_token(wecom_userid: str) -> str:
-    # 只放 userid，其他信息实时查库，避免缓存不一致
     payload = {
         "sub": wecom_userid,
         "exp": datetime.utcnow() + JWT_TTL,
@@ -37,20 +36,43 @@ def decode_token(token: str) -> str:
     return userid
 
 
+def invalidate_user_cache(wecom_userid: str) -> None:
+    redis_client.delete(f"pms:user:{wecom_userid}")
+
+
 def get_current_user(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ) -> User:
-    # 标准姿势：Authorization: Bearer <token>
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization.split(" ", 1)[1]
     wecom_userid = decode_token(token)
+
+    # Cache stores user_id for fast PK lookup (vs. index scan on wecom_userid)
+    cache_key = f"pms:user:{wecom_userid}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        data = json.loads(cached)
+        if data.get("status") != "active":
+            raise HTTPException(status_code=403, detail="账号已停用")
+        user = session.get(User, data["id"])
+        if not user:
+            redis_client.delete(cache_key)
+            raise HTTPException(status_code=401, detail="用户不存在")
+        return user
+
     user = session.exec(select(User).where(User.wecom_userid == wecom_userid)).first()
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已停用")
+
+    redis_client.setex(
+        cache_key,
+        USER_CACHE_TTL,
+        json.dumps({"id": user.id, "status": user.status, "role": user.role}),
+    )
     return user
 
 

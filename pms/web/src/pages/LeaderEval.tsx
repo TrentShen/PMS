@@ -53,10 +53,10 @@ export default function LeaderEval() {
     if (!selectedCycle) return;
     // 只拉自己的直属下属（不是全部参与人）
     api
-      .get<Participant[]>(`/v1/cycles/${selectedCycle}/participants`, {
-        params: { only_subordinates: true },
+      .get<{items: Participant[]; total: number}>(`/v1/cycles/${selectedCycle}/participants`, {
+        params: { only_subordinates: true, page_size: 9999 },
       })
-      .then((r) => setParticipants(r.data));
+      .then((r) => setParticipants(r.data.items));
   }, [selectedCycle]);
 
   return (

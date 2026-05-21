@@ -9,8 +9,8 @@ export interface CurrentUser {
   role: string;
   position?: string | null;
   leader_userid?: string | null;
-  // HR 部门 Leader 虽然 role=dept_leader 但有 HR 权限
   has_hr_permission?: boolean;
+  has_subordinates?: boolean;
 }
 
 interface AuthState {

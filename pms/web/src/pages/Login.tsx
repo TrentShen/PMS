@@ -1,5 +1,4 @@
-// 登录页：列出所有 mock 身份，点击即以该身份登录
-// Sprint 1 企微 OAuth 接入后，本页只在未从企微入口时显示
+// 登录页：在企微内 → 跳 OAuth 授权；非企微 → mock 身份列表
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, List, Tag, Typography, message } from "antd";
@@ -29,13 +28,28 @@ const ROLE_LABEL: Record<string, string> = {
   employee: "员工",
 };
 
+/** 判断是否在企微客户端内 */
+function isWeCom(): boolean {
+  return /wxwork/i.test(navigator.userAgent);
+}
+
 export default function Login() {
   const [users, setUsers] = useState<MockUser[]>([]);
   const [loadingUid, setLoadingUid] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
   const setAuth = useAuth((s) => s.setAuth);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (isWeCom()) {
+      // 企微环境：跳转 OAuth 授权页
+      api.get("/v1/auth/entry", { params: { is_wecom: true } }).then((r) => {
+        window.location.href = r.data.redirect;
+      }).catch(() => setChecking(false));
+      return;
+    }
+    // 非企微环境：展示 mock 登录
+    setChecking(false);
     api.get<MockUser[]>("/v1/auth/mock-users").then((r) => setUsers(r.data));
   }, []);
 
@@ -51,6 +65,14 @@ export default function Login() {
     } finally {
       setLoadingUid(null);
     }
+  }
+
+  if (checking) {
+    return (
+      <div style={{ maxWidth: 400, margin: "120px auto", textAlign: "center" }}>
+        正在跳转企业微信登录...
+      </div>
+    );
   }
 
   return (

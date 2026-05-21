@@ -1,15 +1,11 @@
-# 权限范围过滤（PRD 2.2 最小可见原则）
-# 核心函数：visible_user_ids(current_user) -> 当前用户能看到的 user.id 集合
-# 所有查询员工绩效数据的接口必须先拿到这个集合做 WHERE IN
-#
-# 规则细化：
-#   1) 部门 Leader：本部门 + 全部子部门（递归）
-#   2) HRBP：全局或按 hrbp_scope_dept_ids 限制，**但排除自己所属部门**（利益回避）
-#   3) 任何"有下属"的人（不一定是 dept_leader 角色）都能看下属
-#   4) HR 部门成员的绩效数据只对 HR 部门 Leader + 超管可见
+import json
+
 from sqlmodel import Session, select
 
 from pms.database.models.user import Department, User
+from pms.database.session import redis_client
+
+SCOPE_CACHE_TTL = 600  # 10 minutes
 
 
 def _descendant_dept_ids(session: Session, root_dept_id: int) -> set[int]:
@@ -58,49 +54,54 @@ def _hr_dept_member_ids(session: Session) -> set[int]:
 
 
 def visible_user_ids(session: Session, current: User) -> set[int] | None:
-    """返回 None 表示不做限制（全局可见）；否则返回可见 user.id 集合
+    """返回 None 表示不做限制（全局可见）；否则返回可见 user.id 集合"""
+    cache_key = f"pms:scope:{current.id}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        data = json.loads(cached)
+        if data is None:
+            return None
+        return set(data)
 
-    规则：
-    - super_admin: 全局（含 HR 部门）
-    - hrbp: 管辖范围内所有人，**但排除 HR 部门成员**（利益回避：HR 看不到同部门绩效）
-    - dept_leader:
-        - 如果是 HR 部门的 Leader → 可以看 HR 部门成员
-        - 如果是其他部门 Leader → 本部门+子部门，但排除 HR 部门成员
-    - direct_leader/employee: 自己 + 下属（如果下属在 HR 部门，仍然看不到，除非自己是 HR 部门 Leader）
-    """
+    result = _compute_visible_user_ids(session, current)
+
+    redis_client.setex(
+        cache_key,
+        SCOPE_CACHE_TTL,
+        json.dumps(list(result) if result is not None else None),
+    )
+    return result
+
+
+def invalidate_scope_cache(user_id: int) -> None:
+    redis_client.delete(f"pms:scope:{user_id}")
+
+
+def _compute_visible_user_ids(session: Session, current: User) -> set[int] | None:
     role = current.role
 
-    # 超管：全局
     if role == "super_admin":
         return None
 
     hr_member_ids = _hr_dept_member_ids(session)
     hr_dept_ids = _get_hr_dept_ids(session)
 
-    # 当前用户自己是否属于 HR 部门
     is_in_hr_dept = current.department_id is not None and current.department_id in hr_dept_ids
-    # 当前用户是否是 HR 部门的 Leader（可看 HR 部门数据的唯一非超管角色）
     is_hr_dept_leader = (
         role == "dept_leader" and is_in_hr_dept
     )
 
-    # HR 部门 Leader：全局可见（含 HR 部门自己）——等同超管的数据范围
     if is_hr_dept_leader:
         return None
 
     if role == "hrbp":
         scope = current.hrbp_scope_dept_ids
         if not scope:
-            # 全局 HR → 看到所有人，但排除 HR 部门成员（利益回避）
             all_ids = set(session.exec(select(User.id).where(User.status == "active")).all())
-            # 自己也排除在"能看别人"里（自己的数据自己通过 /mine 接口看）
-            # 但保留自己的 id（用于 /mine 接口能返回数据）
             result = all_ids - hr_member_ids
-            # 加回自己（HRBP 至少能看到自己的周期/结果）
             if current.id is not None:
                 result.add(current.id)
             return result
-        # 受限 HR → 管辖范围内的人，同样排除 HR 部门成员
         all_dept_ids: set[int] = set()
         for dept_id in scope:
             all_dept_ids.update(_descendant_dept_ids(session, dept_id))
@@ -116,26 +117,21 @@ def visible_user_ids(session: Session, current: User) -> set[int] | None:
     if current.id is not None:
         visible.add(current.id)
 
-    # 部门 Leader
     if role == "dept_leader" and current.department_id is not None:
         dept_ids = _descendant_dept_ids(session, current.department_id)
         dept_members = session.exec(
             select(User.id).where(User.department_id.in_(dept_ids))
         ).all()
         visible.update(dept_members)
-        # 如果不是 HR 部门 Leader，则排除 HR 部门成员
         if not is_hr_dept_leader:
             visible -= hr_member_ids
-            # 但保留自己
             if current.id is not None:
                 visible.add(current.id)
 
-    # 任何有下属的人都能看下属
     subordinates = session.exec(
         select(User.id).where(User.leader_userid == current.wecom_userid)
     ).all()
     sub_set = set(subordinates)
-    # 如果不是 HR 部门 Leader/超管，则排除在 HR 部门的下属
     if not is_hr_dept_leader:
         sub_set -= hr_member_ids
     visible.update(sub_set)

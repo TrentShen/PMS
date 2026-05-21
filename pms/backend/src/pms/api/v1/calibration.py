@@ -117,10 +117,11 @@ def _compute_distribution(participants: list[CycleParticipant]) -> list[Distribu
 @router.get("/cycles/{cycle_id}/view")
 def get_calibration_view(
     cycle_id: int,
+    page: int = 1,
+    page_size: int = 50,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # Leader / HR / 超管可看
     if current.role not in ("dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 
@@ -128,27 +129,30 @@ def get_calibration_view(
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
 
-    # 拉参与人 + 上级评估初评值
     from pms.services.scope import visible_user_ids
     scope = visible_user_ids(session, current)
 
-    q = select(CycleParticipant, User).join(
-        User, User.id == CycleParticipant.user_id
-    ).where(CycleParticipant.cycle_id == cycle_id)
+    from sqlalchemy.orm import aliased
+    sup_eval_alias = aliased(Evaluation)
+
+    q = (
+        select(CycleParticipant, User, sup_eval_alias)
+        .join(User, User.id == CycleParticipant.user_id)
+        .outerjoin(
+            sup_eval_alias,
+            (sup_eval_alias.cycle_id == CycleParticipant.cycle_id)
+            & (sup_eval_alias.user_id == CycleParticipant.user_id)
+            & (sup_eval_alias.eval_type == "superior"),
+        )
+        .where(CycleParticipant.cycle_id == cycle_id)
+    )
     if scope is not None:
         q = q.where(CycleParticipant.user_id.in_(scope))
 
     rows = session.exec(q).all()
+
     items: list[CalibrationView] = []
-    for p, u in rows:
-        # 上级初评值
-        sup_eval = session.exec(
-            select(Evaluation).where(
-                Evaluation.cycle_id == cycle_id,
-                Evaluation.user_id == p.user_id,
-                Evaluation.eval_type == "superior",
-            )
-        ).first()
+    for p, u, sup_eval in rows:
         items.append(CalibrationView(
             user_id=p.user_id,
             user_name=u.name,
@@ -167,20 +171,26 @@ def get_calibration_view(
             participant_status=p.status,
         ))
 
-    # 审批状态
     approval = session.exec(
         select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
     ).first()
 
-    # 分布
-    all_participants = [p for p, _ in rows]
+    all_participants = [p for p, _, _ in rows]
     distribution = _compute_distribution(all_participants)
+
+    # 分页
+    total = len(items)
+    start = (page - 1) * page_size
+    paged_items = items[start:start + page_size]
 
     return {
         "cycle": {"id": cycle.id, "name": cycle.name, "status": cycle.status},
         "approval_status": approval.status if approval else "calibrating",
         "reject_reason": approval.reject_reason if approval else None,
-        "items": [i.model_dump() for i in items],
+        "items": [i.model_dump() for i in paged_items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
         "distribution": [d.model_dump() for d in distribution],
     }
 

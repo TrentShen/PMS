@@ -4,6 +4,7 @@
 //   2. RequireRole    —— 按角色限制访问某些页面
 import { Navigate, Route, Routes } from "react-router-dom";
 import Login from "@/pages/Login";
+import AuthCallback from "@/pages/AuthCallback";
 import AppLayout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RequireRole from "@/components/RequireRole";
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           {/* 所有登录用户可见 */}

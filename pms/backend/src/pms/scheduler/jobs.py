@@ -1,5 +1,4 @@
-# APScheduler 定时任务（PRD 3.2.3 + 3.5）
-# 每小时扫描一次进行中的周期，按 stage_json 配置的时间节点自动生成提醒
+# APScheduler 定时任务：提醒扫描 + 通讯录同步
 from datetime import date, datetime
 
 from loguru import logger
@@ -10,7 +9,6 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import engine
 
-# 环节名 → 提醒标题
 STAGE_LABELS = {
     "self_eval": "自评",
     "peer_confirm": "互评名单确认",
@@ -27,7 +25,6 @@ def _today() -> date:
 
 
 def _already_notified(s: Session, userid: str, title: str, today: date) -> bool:
-    # 幂等：同一天同类型最多 1 条
     exists = s.exec(
         select(NotificationLog).where(
             NotificationLog.target_userid == userid,
@@ -36,6 +33,27 @@ def _already_notified(s: Session, userid: str, title: str, today: date) -> bool:
         )
     ).first()
     return exists is not None
+
+
+def _try_send(notification: NotificationLog, s: Session) -> None:
+    """调企微发送并更新日志"""
+    from pms.services.wecom import send_textcard
+    from pms.configs import settings
+    try:
+        send_textcard(
+            user_ids=[notification.target_userid],
+            title=notification.title,
+            description=notification.content,
+            url=f"{settings.frontend_origin}",
+        )
+        notification.status = "sent"
+        notification.sent_at = datetime.utcnow()
+    except Exception as e:
+        notification.retry_count = (notification.retry_count or 0) + 1
+        notification.error_msg = str(e)[:256]
+        notification.status = "retry" if notification.retry_count < 3 else "failed"
+        logger.warning("企微消息发送失败: {} -> {} {}", notification.title, notification.target_userid, e)
+    s.commit()
 
 
 def check_stage_reminders():
@@ -51,7 +69,6 @@ def check_stage_reminders():
                 continue
             stages = cycle.stage_json
 
-            # 遍历各环节的 _end 日期
             for stage_key, label in STAGE_LABELS.items():
                 end_key = f"{stage_key}_end"
                 end_str = stages.get(end_key)
@@ -63,8 +80,6 @@ def check_stage_reminders():
                     continue
 
                 days_left = (end_date - today).days
-
-                # 截止前3天、1天、当天发提醒
                 if days_left not in (3, 1, 0):
                     continue
 
@@ -73,9 +88,8 @@ def check_stage_reminders():
                     content = f"「{cycle.name}」{label}环节今日截止，请尽快完成。"
                 else:
                     title = f"{label}即将截止"
-                    content = f"「{cycle.name}」{label}环节将在 {days_left} 天后截止，请尽快完成。"
+                    content = f"「{cycle.name}」{label}环节将在 {days_left} 天后截止。"
 
-                # 给所有 pending 状态的参与人发
                 participants = s.exec(
                     select(CycleParticipant, User)
                     .join(User, User.id == CycleParticipant.user_id)
@@ -85,27 +99,29 @@ def check_stage_reminders():
                     )
                 ).all()
 
-                sent = 0
+                sent_count = 0
                 for p, u in participants:
                     if _already_notified(s, u.wecom_userid, title, today):
                         continue
-                    s.add(NotificationLog(
+                    notification = NotificationLog(
                         target_userid=u.wecom_userid,
                         channel="wecom",
                         title=title,
                         content=content,
                         payload={"cycle_id": cycle.id, "stage": stage_key, "days_left": days_left},
                         status="pending",
-                    ))
-                    sent += 1
+                    )
+                    s.add(notification)
+                    s.flush()  # 生成 id 但不提交事务
+                    sent_count += 1
+                    _try_send(notification, s)
 
-                if sent > 0:
-                    s.commit()
-                    logger.info("周期 {} / {} 截止提醒: 发送 {} 人", cycle.name, label, sent)
+                if sent_count:
+                    logger.info("周期 {} / {} 截止提醒: {} 人", cycle.name, label, sent_count)
 
 
 def check_deadline_reminders():
-    """兜底：没有配置 stage_json 的周期，给 pending 人员发通用提醒"""
+    """兜底：给 pending 人员发通用提醒"""
     today = _today()
     with Session(engine) as s:
         cycles = s.exec(
@@ -120,21 +136,38 @@ def check_deadline_reminders():
                     CycleParticipant.status == "pending",
                 )
             ).all()
+            sent_count = 0
             for p, u in pending:
                 title = "自评截止提醒"
                 if _already_notified(s, u.wecom_userid, title, today):
                     continue
-                s.add(NotificationLog(
+                notification = NotificationLog(
                     target_userid=u.wecom_userid,
                     channel="wecom",
                     title=title,
                     content=f"「{cycle.name}」自评尚未完成，请尽快提交。",
                     payload={"cycle_id": cycle.id},
                     status="pending",
-                ))
-            s.commit()
-            if pending:
-                logger.info("周期 {} 通用提醒 {} 人", cycle.name, len(pending))
+                )
+                s.add(notification)
+                s.flush()
+                sent_count += 1
+                _try_send(notification, s)
+            if sent_count:
+                logger.info("周期 {} 通用提醒 {} 人", cycle.name, sent_count)
+
+
+def sync_contacts_daily():
+    """每日 02:00 全量同步企微通讯录"""
+    from pms.api.v1.users import _sync_departments, _sync_users
+    from pms.database.session import Session, engine
+    with Session(engine) as s:
+        try:
+            _sync_departments(s)
+            count = _sync_users(s)
+            logger.info("每日通讯录同步完成: {} 个用户", count)
+        except Exception:
+            logger.exception("每日通讯录同步失败")
 
 
 def start_scheduler():
@@ -145,5 +178,7 @@ def start_scheduler():
     scheduler.add_job(check_stage_reminders, "interval", hours=1, id="stage_remind")
     # 每天早上 9 点通用提醒
     scheduler.add_job(check_deadline_reminders, "cron", hour=9, id="deadline_remind")
+    # 每日凌晨 2 点同步通讯录
+    scheduler.add_job(sync_contacts_daily, "cron", hour=2, id="contact_sync")
     scheduler.start()
-    logger.info("APScheduler started: stage_remind (hourly) + deadline_remind (daily 9am)")
+    logger.info("APScheduler started: stage_remind + deadline_remind + contact_sync")

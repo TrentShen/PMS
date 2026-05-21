@@ -272,15 +272,15 @@ def suggest_participants(
 
 # ============ HR：参与人管理 ============
 
-@router.get("/{cycle_id}/participants", response_model=list[ParticipantDetail])
+@router.get("/{cycle_id}/participants")
 def list_participants(
     cycle_id: int,
     only_subordinates: bool = False,
+    page: int = 1,
+    page_size: int = 50,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
-) -> list[ParticipantDetail]:
-    # only_subordinates=true：只返回"直属下属"（用于"下属评估"页面）
-    # 否则按 visible_user_ids 正常过滤（HR 管理台用）
+):
     from pms.services.scope import visible_user_ids
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -292,7 +292,6 @@ def list_participants(
     )
 
     if only_subordinates:
-        # 只返回 leader_userid = 当前用户的人
         q = q.where(User.leader_userid == current.wecom_userid)
     else:
         scope = visible_user_ids(session, current)
@@ -300,7 +299,11 @@ def list_participants(
             q = q.where(CycleParticipant.user_id.in_(scope))
 
     rows = session.exec(q).all()
-    return [
+    total = len(rows)
+    start = (page - 1) * page_size
+    paged = rows[start:start + page_size]
+
+    items = [
         ParticipantDetail(
             id=p.id,
             cycle_id=p.cycle_id,
@@ -316,8 +319,9 @@ def list_participants(
             final_value_team=p.final_value_team,
             final_value_growth=p.final_value_growth,
         )
-        for p, u in rows
+        for p, u in paged
     ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/{cycle_id}/participants", response_model=list[ParticipantDetail])
@@ -369,7 +373,7 @@ def add_participants(
     )
     session.commit()
 
-    return list_participants(cycle_id, session=session, current=hr)
+    return list_participants(cycle_id, session=session, current=hr, page_size=9999)
 
 
 # ============ 员工 / Leader：我的周期 / 我的待办 ============
@@ -379,7 +383,6 @@ def my_cycles(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ) -> list[dict]:
-    # 我作为参与人的所有周期
     from pms.database.models.feedback import FeedbackRecord
 
     as_self = session.exec(
@@ -388,17 +391,24 @@ def my_cycles(
         .where(CycleParticipant.user_id == current.id)
         .order_by(PerformanceCycle.id.desc())
     ).all()
+
+    # Batch-load feedback records to avoid N+1
+    published_cycle_ids = [c.id for c, _ in as_self if c.status == "published"]
+    fb_map: dict[int, FeedbackRecord] = {}
+    if published_cycle_ids:
+        fbs = session.exec(
+            select(FeedbackRecord).where(
+                FeedbackRecord.user_id == current.id,
+                FeedbackRecord.cycle_id.in_(published_cycle_ids),
+            )
+        ).all()
+        fb_map = {fb.cycle_id: fb for fb in fbs}
+
     result = []
     for c, p in as_self:
-        # PRD 3.4.8：员工最终结果在反馈确认后才可见
         show_final = True
         if c.status == "published":
-            fb = session.exec(
-                select(FeedbackRecord).where(
-                    FeedbackRecord.cycle_id == c.id,
-                    FeedbackRecord.user_id == current.id,
-                )
-            ).first()
+            fb = fb_map.get(c.id)
             if not fb or fb.confirm_status == "pending":
                 show_final = False
 

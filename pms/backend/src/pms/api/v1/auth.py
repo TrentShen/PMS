@@ -1,18 +1,23 @@
-# 认证接口
-# V0.9 提供 mock-login 走本地用户表；Sprint 1 接入企微 OAuth 后新增 /callback 真实签发
-from fastapi import APIRouter, Depends, HTTPException
+# 认证接口：mock 登录（开发用）+ 企微 OAuth 免登（生产）
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
+from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from pms.configs import settings
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, is_hr_dept_leader, sign_token
+from pms.services.wecom import get_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class MockLoginRequest(BaseModel):
-    wecom_userid: str  # 从前端下拉选一个身份
+    wecom_userid: str
 
 
 class TokenResponse(BaseModel):
@@ -27,64 +32,108 @@ class CurrentUser(BaseModel):
     role: str
     position: str | None
     leader_userid: str | None
-    # HR 部门 Leader 虽然 role=dept_leader，但享有 HR 权限；前端用这个字段决定菜单显示
     has_hr_permission: bool = False
-    # 是否有直属下属（前端决定是否显示"下属评估"菜单）
     has_subordinates: bool = False
 
 
+def _build_user_response(user: User, session: Session) -> dict:
+    hr_perm = user.role in ("hrbp", "super_admin") or is_hr_dept_leader(user, session)
+    has_subs = session.exec(
+        select(User.id).where(User.leader_userid == user.wecom_userid).limit(1)
+    ).first() is not None
+    return {
+        "id": user.id,
+        "wecom_userid": user.wecom_userid,
+        "name": user.name,
+        "role": user.role,
+        "position": user.position,
+        "leader_userid": user.leader_userid,
+        "has_hr_permission": hr_perm,
+        "has_subordinates": has_subs,
+    }
+
+
+# ---------- 开发用 mock 登录 ----------
+
 @router.get("/mock-users")
 def list_mock_users(session: Session = Depends(get_session)) -> list[dict]:
-    # 登录页用：列出所有可选的"假身份"，便于切角色测试
-    # 前端互评候选人选择也会复用本接口（需要 id）
     users = session.exec(select(User).where(User.status == "active")).all()
     return [
-        {
-            "id": u.id,
-            "wecom_userid": u.wecom_userid,
-            "name": u.name,
-            "role": u.role,
-            "position": u.position,
-        }
+        {"id": u.id, "wecom_userid": u.wecom_userid, "name": u.name, "role": u.role, "position": u.position}
         for u in users
     ]
 
 
 @router.post("/mock-login", response_model=TokenResponse)
-def mock_login(
-    payload: MockLoginRequest,
-    session: Session = Depends(get_session),
-) -> TokenResponse:
-    # 按 wecom_userid 找用户并签发 JWT
-    user = session.exec(
-        select(User).where(User.wecom_userid == payload.wecom_userid)
-    ).first()
+def mock_login(payload: MockLoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
+    user = session.exec(select(User).where(User.wecom_userid == payload.wecom_userid)).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
     token = sign_token(user.wecom_userid)
-    hr_perm = user.role in ("hrbp", "super_admin") or is_hr_dept_leader(user, session)
-    has_subs = session.exec(
-        select(User.id).where(User.leader_userid == user.wecom_userid).limit(1)
-    ).first() is not None
-    return TokenResponse(
-        token=token,
-        user={
-            "id": user.id,
-            "wecom_userid": user.wecom_userid,
-            "name": user.name,
-            "role": user.role,
-            "position": user.position,
-            "leader_userid": user.leader_userid,
-            "has_hr_permission": hr_perm,
-            "has_subordinates": has_subs,
-        },
-    )
+    return TokenResponse(token=token, user=_build_user_response(user, session))
 
+
+# ---------- 登录页入口：根据是否企微环境分流 ----------
+
+@router.get("/entry")
+def auth_entry(is_wecom: bool = Query(default=True)):
+    """前端判断环境后调用：在企微内重定向到 OAuth 授权页，否则跳 mock 登录页"""
+    if not is_wecom:
+        return {"redirect": "/login", "note": "非企微环境，走 mock 登录"}
+    params = {
+        "appid": settings.wecom_corpid,
+        "redirect_uri": settings.wecom_redirect_uri,
+        "response_type": "code",
+        "scope": "snsapi_base",
+        "state": "login",
+    }
+    oauth_url = f"https://open.weixin.qq.com/connect/oauth2/authorize?{urlencode(params)}#wechat_redirect"
+    return {"redirect": oauth_url}
+
+
+# ---------- 企微 OAuth 回调 ----------
+
+@router.get("/callback")
+def wecom_callback(code: str, session: Session = Depends(get_session)):
+    """企微 OAuth 回调：code 换 userid → 匹配本地用户 → 签发 JWT → 返回 token"""
+    if not code:
+        raise HTTPException(status_code=400, detail="missing code")
+
+    # code 换企微 userid
+    try:
+        wecom_userid = get_userinfo(code)
+    except Exception as e:
+        logger.error("code 换 userid 失败: {}", e)
+        raise HTTPException(status_code=401, detail="企微认证失败") from e
+
+    # 匹配本地用户
+    user = session.exec(select(User).where(User.wecom_userid == wecom_userid)).first()
+    if not user:
+        # 用户尚未同步到本地——自动注册
+        logger.warning("企微用户 {} 不在本地库，自动注册", wecom_userid)
+        user = User(
+            wecom_userid=wecom_userid,
+            name=wecom_userid,  # 临时用 userid 当名字，通讯录同步后会更新
+            role="employee",
+            status="active",
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+    if user.status != "active":
+        raise HTTPException(status_code=403, detail="账号已停用")
+
+    token = sign_token(user.wecom_userid)
+    user_info = _build_user_response(user, session)
+    return TokenResponse(token=token, user=user_info)
+
+
+# ---------- 当前用户 ----------
 
 @router.get("/me", response_model=CurrentUser)
 def me(current: User = Depends(get_current_user), session: Session = Depends(get_session)) -> CurrentUser:
     hr_perm = current.role in ("hrbp", "super_admin") or is_hr_dept_leader(current, session)
-    # 是否有下属（用于前端决定是否显示"下属评估"入口）
     has_subs = session.exec(
         select(User.id).where(User.leader_userid == current.wecom_userid).limit(1)
     ).first() is not None
@@ -98,11 +147,3 @@ def me(current: User = Depends(get_current_user), session: Session = Depends(get
         has_hr_permission=hr_perm,
         has_subordinates=has_subs,
     )
-
-
-# Sprint 1 待实现：企微 OAuth 回调
-@router.get("/callback")
-def wecom_callback(code: str) -> dict:
-    if not code:
-        raise HTTPException(status_code=400, detail="missing code")
-    return {"code": code, "message": "企微 OAuth 将在 Sprint 1 实现"}
