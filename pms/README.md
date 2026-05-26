@@ -74,12 +74,10 @@ Sprint 2 补：互评、部门校准、公司级审批（HR→CEO）、匿名评
 本地开发通过后，把代码发到公司服务器：
 
 ```bash
-# 服务器端
 cd deploy
 cp .env.example .env.prod   # 填入生产配置
 # 把 HTTPS 证书放到 ./certs/{fullchain.pem, privkey.pem}
-# 构建前端：cd ../web && npm run build && cp -r dist ../deploy/web-dist
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d --build  # 前端在容器内多阶段构建
 ```
 
 ## 开发约定
