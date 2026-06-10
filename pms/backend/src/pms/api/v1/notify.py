@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 消息提醒 + 催办 API
 # 催办写 notification_log 后即时调企微发送；失败标记待重试
 import time

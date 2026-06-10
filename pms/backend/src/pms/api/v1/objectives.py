@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效目标 CRUD（员工手动录入 + HR 代录）
 # PRD 3.3：目标 3-5 条，权重总和 100
 from fastapi import APIRouter, Depends, HTTPException

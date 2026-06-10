@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 审计日志便捷写入
 from typing import Any
 

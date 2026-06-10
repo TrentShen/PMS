@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效校准 + 公司级审批 API（PRD 3.4.7）
 # 流程：上级初评完 → 部门 Leader 校准 → 提交审批 → HR 批/驳 → CEO 批/驳 → 锁定
 from datetime import datetime

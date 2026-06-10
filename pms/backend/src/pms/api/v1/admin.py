@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 超级管理员专属：用户与部门管理
 # 仅 role=super_admin 可访问；HR 不行（HR 自己就是被管理对象）
 from fastapi import APIRouter, Depends, HTTPException

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 认证接口：mock 登录（开发用）+ 企微 OAuth 免登（生产）
 from urllib.parse import urlencode
 

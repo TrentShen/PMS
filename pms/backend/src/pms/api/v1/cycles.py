@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效周期管理
 # HR 端：创建周期、加参与人、发布结果、总览
 # 员工端：列出自己参与的周期、我的待办

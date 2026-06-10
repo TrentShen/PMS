@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 企业微信 API 封装
 # access_token 用 Redis 缓存，提前 5 分钟刷新，所有 API 调用统一走此模块
 import time

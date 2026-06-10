@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效反馈 API（PRD 3.4.8）
 # 上级创建/编辑面谈记录 → 员工确认/有异议
 from datetime import datetime

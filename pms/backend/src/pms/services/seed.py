@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 本地测试种子数据
 # 用法：python -m pms.services.seed
 # 作用：建 1 个部门 + 6 位用户（1 HR + 1 Leader + 4 员工），以及一个进行中的测试周期

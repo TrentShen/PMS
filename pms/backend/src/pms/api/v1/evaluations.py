@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 自评 + 上级评估接口
 from datetime import datetime
 
