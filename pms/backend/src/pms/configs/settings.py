@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 应用配置：通过环境变量加载（来自 .env 或系统环境）
 # 所有配置统一从 settings 单例读取，禁止在业务代码里直接 os.getenv
 from functools import lru_cache

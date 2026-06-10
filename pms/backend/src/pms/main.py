@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # FastAPI 应用入口
 # 启动方式：uvicorn pms.main:app --host 0.0.0.0 --port 8000 --reload
 from contextlib import asynccontextmanager

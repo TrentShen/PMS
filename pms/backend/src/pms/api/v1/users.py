@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 用户列表 + 通讯录同步
 from datetime import datetime
 
@@ -43,21 +45,41 @@ def list_users(
 def _sync_departments(session: Session) -> None:
     """同步部门树到本地 department 表"""
     depts = list_departments()
+    # 按 parentid 升序排列，确保父部门先于子部门插入
+    depts.sort(key=lambda d: d.get("parentid") or 0)
+
+    # wecom_dept_id -> 本地 id 映射（用于转换 parent_id）
+    wecom_to_local: dict[int, int] = {}
     for d in depts:
         existing = session.exec(
             select(Department).where(Department.wecom_dept_id == d["id"])
         ).first()
+        parent_wecom = d.get("parentid")
+        # 根部门 parentid 为 0 或 1，本地存 None
+        local_parent_id = None
+        if parent_wecom and parent_wecom not in (0, 1):
+            local_parent_id = wecom_to_local.get(parent_wecom)
+            if local_parent_id is None:
+                logger.warning("部门 {} 的父部门 {} 尚未同步，跳过", d["id"], parent_wecom)
+                continue
+
         if existing:
             existing.name = d["name"]
-            existing.parent_id = d.get("parentid")
+            existing.parent_id = local_parent_id
             existing.order_num = d.get("order", 0)
+            session.add(existing)
+            wecom_to_local[d["id"]] = existing.id
         else:
-            session.add(Department(
+            dept = Department(
                 wecom_dept_id=d["id"],
                 name=d["name"],
-                parent_id=d.get("parentid"),
+                parent_id=local_parent_id,
                 order_num=d.get("order", 0),
-            ))
+            )
+            session.add(dept)
+            session.flush()  # 立即获取自增 id
+            wecom_to_local[d["id"]] = dept.id
+
     session.commit()
     logger.info("部门同步完成: {} 个部门", len(depts))
 

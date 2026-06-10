@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # APScheduler 定时任务：提醒扫描 + 通讯录同步
 from datetime import date, datetime
 

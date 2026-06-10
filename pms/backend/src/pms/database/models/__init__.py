@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 显式导入所有模型，保证 Alembic autogenerate 能发现
 # 添加新表时必须在此处 import
 from pms.database.models.audit import AuditLog, ExportLog, NotificationLog

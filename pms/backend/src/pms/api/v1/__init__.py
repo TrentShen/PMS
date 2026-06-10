@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from pms.api.v1 import admin, auth, calibration, cycles, evaluations, excel_import, export, feedback, health, history, notify, objectives, peer, users
