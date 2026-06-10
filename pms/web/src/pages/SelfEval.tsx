@@ -9,7 +9,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Radio,
   Select,
   Space,
   Table,
@@ -21,7 +20,6 @@ import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
-const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
   exceed_part: "部分超出预期",
@@ -402,7 +400,7 @@ export default function SelfEval() {
               {PERF_LEVEL_LABEL[detail.superior_evaluation.perf_level ?? ""] ?? "-"})
             </Descriptions.Item>
             <Descriptions.Item label="价值观">
-              {VALUE_LABEL[detail.superior_evaluation.value_grade ?? ""]}
+              <ValueGradeDisplay data={detail.superior_evaluation} prefix="value" />
             </Descriptions.Item>
             <Descriptions.Item label="关键成果" span={2}>
               <Typography.Paragraph>{detail.superior_evaluation.key_results}</Typography.Paragraph>

@@ -13,7 +13,9 @@ interface MyCycleItem {
   participant_status: string;
   final_perf_score: number | null;
   final_perf_level: string | null;
-  final_value_grade: string | null;
+  final_value_belief: string | null;
+  final_value_team: string | null;
+  final_value_growth: string | null;
 }
 
 const PERF_LABEL: Record<string, string> = {
@@ -64,9 +66,13 @@ export default function History() {
               },
               {
                 title: "价值观",
-                render: (_, r) => r.final_value_grade ? (
-                  <Tag>{VALUE_LABEL[r.final_value_grade]}</Tag>
-                ) : "-",
+                render: (_, r) => (
+                  <Space>
+                    <Tag>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</Tag>
+                    <Tag>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</Tag>
+                    <Tag>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</Tag>
+                  </Space>
+                ),
               },
               {
                 title: "操作",

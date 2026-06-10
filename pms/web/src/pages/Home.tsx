@@ -18,7 +18,9 @@ interface MyCycleItem {
   role: string;
   participant_status: string;
   final_perf_level?: string | null;
-  final_value_grade?: string | null;
+  final_value_belief?: string | null;
+  final_value_team?: string | null;
+  final_value_growth?: string | null;
   final_perf_score?: number | null;
 }
 
@@ -101,7 +103,9 @@ export default function Home() {
                         {item.final_perf_score?.toFixed(2)} 分）
                       </Tag>
                       <Tag color="geekblue">
-                        价值观 {VALUE_LABEL[item.final_value_grade ?? ""] ?? "-"}
+                        信念 {VALUE_LABEL[item.final_value_belief ?? ""] ?? "-"} /
+                        团队 {VALUE_LABEL[item.final_value_team ?? ""] ?? "-"} /
+                        成长 {VALUE_LABEL[item.final_value_growth ?? ""] ?? "-"}
                       </Tag>
                     </span>
                   )}

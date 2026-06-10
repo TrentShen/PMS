@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 历史绩效查询 — 管理视角（PRD 3.6.1）
 # Leader/HR 按部门查看下属历史绩效分布和趋势
 from fastapi import APIRouter, Depends, HTTPException
@@ -49,7 +51,9 @@ def subordinate_history(
                 "department_id": u.department_id,
                 "perf_score": p.final_perf_score,
                 "perf_level": p.final_perf_level,
-                "value_grade": p.final_value_grade,
+                "value_belief": p.final_value_belief,
+                "value_team": p.final_value_team,
+                "value_growth": p.final_value_growth,
             }
             for p, u in rows
         ]
@@ -98,7 +102,9 @@ def user_history(
                 "end_date": c.end_date.isoformat(),
                 "perf_score": p.final_perf_score,
                 "perf_level": p.final_perf_level,
-                "value_grade": p.final_value_grade,
+                "value_belief": p.final_value_belief,
+                "value_team": p.final_value_team,
+                "value_growth": p.final_value_growth,
             }
             for p, c in records
         ],

@@ -1,7 +1,6 @@
 // 绩效校准页：Leader 改分 + 3-6-1 分布图 + 提交审批 + HR/CEO 审批操作
 import { useEffect, useState } from "react";
 import {
-  Alert,
   Button,
   Card,
   Form,
@@ -10,7 +9,6 @@ import {
   Modal,
   Popconfirm,
   Progress,
-  Radio,
   Select,
   Space,
   Statistic,
@@ -21,12 +19,15 @@ import {
 } from "antd";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import ValueGradeForm from "@/components/ValueGradeForm";
 
 interface Cycle { id: number; name: string; status: string }
 interface CalItem {
   user_id: number; user_name: string; user_position: string | null; dept_name: string | null;
-  initial_perf_score: number | null; initial_perf_level: string | null; initial_value_grade: string | null;
-  calibrated_perf_score: number | null; calibrated_perf_level: string | null; calibrated_value_grade: string | null;
+  initial_perf_score: number | null; initial_perf_level: string | null;
+  initial_value_belief: string | null; initial_value_team: string | null; initial_value_growth: string | null;
+  calibrated_perf_score: number | null; calibrated_perf_level: string | null;
+  calibrated_value_belief: string | null; calibrated_value_team: string | null; calibrated_value_growth: string | null;
   participant_status: string;
 }
 interface Dist { level: string; label: string; count: number; percent: number; target_percent: string; warning: boolean }
@@ -90,7 +91,9 @@ export default function Calibration() {
         items: [{
           user_id: editingItem.user_id,
           perf_score: v.perf_score,
-          value_grade: v.value_grade,
+          value_belief_grade: v.value_belief_grade,
+          value_team_grade: v.value_team_grade,
+          value_growth_grade: v.value_growth_grade,
           reason: v.reason,
         }],
       });
@@ -170,15 +173,27 @@ export default function Calibration() {
             { title: "部门", dataIndex: "dept_name" },
             { title: "初评分", dataIndex: "initial_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
             { title: "初评等级", dataIndex: "initial_perf_level", render: (v) => PERF_LABEL[v ?? ""] ?? "-" },
-            { title: "初评价值观", dataIndex: "initial_value_grade", render: (v) => VALUE_LABEL[v ?? ""] ?? "-" },
+            { title: "初评价值观", render: (_, r) => (
+              <Space>
+                <span>信念 {VALUE_LABEL[r.initial_value_belief ?? ""] ?? "-"}</span>
+                <span>团队 {VALUE_LABEL[r.initial_value_team ?? ""] ?? "-"}</span>
+                <span>成长 {VALUE_LABEL[r.initial_value_growth ?? ""] ?? "-"}</span>
+              </Space>
+            ) },
             { title: "校准分", dataIndex: "calibrated_perf_score", render: (v) => v != null ? <Tag color="blue">{v.toFixed(2)}</Tag> : "-" },
             { title: "校准等级", dataIndex: "calibrated_perf_level", render: (v) => v ? <Tag>{PERF_LABEL[v]}</Tag> : "-" },
-            { title: "校准价值观", dataIndex: "calibrated_value_grade", render: (v) => v ? <Tag>{VALUE_LABEL[v]}</Tag> : "-" },
+            { title: "校准价值观", render: (_, r) => (
+              <Space>
+                {r.calibrated_value_belief ? <Tag>信念 {VALUE_LABEL[r.calibrated_value_belief]}</Tag> : "-"}
+                {r.calibrated_value_team ? <Tag>团队 {VALUE_LABEL[r.calibrated_value_team]}</Tag> : null}
+                {r.calibrated_value_growth ? <Tag>成长 {VALUE_LABEL[r.calibrated_value_growth]}</Tag> : null}
+              </Space>
+            ) },
             {
               title: "操作",
               render: (_, r) =>
                 canCalibrate ? (
-                  <a onClick={() => { setEditingItem(r); form.setFieldsValue({ perf_score: r.calibrated_perf_score, value_grade: r.calibrated_value_grade, reason: "" }); }}>
+                  <a onClick={() => { setEditingItem(r); form.setFieldsValue({ perf_score: r.calibrated_perf_score, value_belief_grade: r.calibrated_value_belief, value_team_grade: r.calibrated_value_team, value_growth_grade: r.calibrated_value_growth, reason: "" }); }}>
                     校准
                   </a>
                 ) : null,
@@ -225,13 +240,7 @@ export default function Calibration() {
           <Form.Item name="perf_score" label="调整后业绩分（1-5，0.25 分段）">
             <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item name="value_grade" label="调整后价值观">
-            <Radio.Group>
-              <Radio value="jia">甲</Radio>
-              <Radio value="yi">乙</Radio>
-              <Radio value="bing">丙</Radio>
-            </Radio.Group>
-          </Form.Item>
+          <ValueGradeForm prefix="value" />
           <Form.Item name="reason" label="调整原因（必填）" rules={[{ required: true }]}>
             <Input.TextArea rows={3} placeholder="需说明为什么调整" />
           </Form.Item>

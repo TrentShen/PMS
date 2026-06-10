@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # HRBP 绩效结果导出（PRD 3.6.1）
 # 导出已发布周期的结果为 Excel + 记 export_log
 import io
@@ -61,7 +63,8 @@ def export_cycle_results(
     ws.title = "绩效结果"
     ws.append([
         "姓名", "员工ID", "部门", "职位",
-        "业绩分", "业绩等级", "价值观等级",
+        "业绩分", "业绩等级",
+        "价值观-信念", "价值观-团队", "价值观-成长",
     ])
     for p, u in rows:
         ws.append([
@@ -71,7 +74,9 @@ def export_cycle_results(
             u.position,
             p.final_perf_score,
             PERF_LABEL.get(p.final_perf_level or "", ""),
-            VALUE_LABEL.get(p.final_value_grade or "", ""),
+            VALUE_LABEL.get(p.final_value_belief or "", ""),
+            VALUE_LABEL.get(p.final_value_team or "", ""),
+            VALUE_LABEL.get(p.final_value_growth or "", ""),
         ])
 
     buf = io.BytesIO()

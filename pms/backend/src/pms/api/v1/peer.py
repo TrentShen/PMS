@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 互评全流程 API（PRD 3.4.5 + 匿名主动评价）
 # 路径分组：
 #   - 员工视角：邀请互评人 / 我的互评任务
@@ -50,8 +52,13 @@ class LeaderReviewRequest(BaseModel):
 
 class PeerSubmit(BaseModel):
     perf_score: float
-    value_grade: str
-    value_example: str | None = None
+    # 价值观三维度（每个都是 jia/yi/bing）
+    value_belief_grade: str
+    value_belief_example: str | None = None
+    value_team_grade: str
+    value_team_example: str | None = None
+    value_growth_grade: str
+    value_growth_example: str | None = None
     comment: str | None = None
 
 
@@ -377,15 +384,24 @@ def submit_peer_evaluation(
 
     try:
         score = validate_perf_score(payload.perf_score)
-        require_value_example_if_jia(payload.value_grade, payload.value_example)
+        from pms.utils.score import validate_value_grades
+        validate_value_grades(
+            payload.value_belief_grade, payload.value_belief_example,
+            payload.value_team_grade, payload.value_team_example,
+            payload.value_growth_grade, payload.value_growth_example,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     before = {"perf_score": task.perf_score, "status": task.status}
     task.perf_score = score
     task.perf_level = derive_perf_level(score).value
-    task.value_grade = payload.value_grade
-    task.value_example = payload.value_example
+    task.value_belief_grade = payload.value_belief_grade
+    task.value_belief_example = payload.value_belief_example
+    task.value_team_grade = payload.value_team_grade
+    task.value_team_example = payload.value_team_example
+    task.value_growth_grade = payload.value_growth_grade
+    task.value_growth_example = payload.value_growth_example
     task.comment = payload.comment
     task.submitted_at = datetime.utcnow()
     task.status = "submitted"
@@ -399,7 +415,12 @@ def submit_peer_evaluation(
         resource_type="peer_evaluation",
         resource_id=str(task_id),
         before=before,
-        after={"perf_score": score, "value_grade": payload.value_grade},
+        after={
+            "perf_score": score,
+            "value_belief_grade": payload.value_belief_grade,
+            "value_team_grade": payload.value_team_grade,
+            "value_growth_grade": payload.value_growth_grade,
+        },
     )
     session.commit()
     return {"status": "submitted", "task_id": task_id}
@@ -441,13 +462,21 @@ def get_peer_summary(
         "comments": [],
     }
     for r in submitted:
-        if r.value_grade:
-            summary["value_grade_dist"][r.value_grade] = (
-                summary["value_grade_dist"].get(r.value_grade, 0) + 1
-            )
+        # 价值观三维度分布统计（按维度独立计数）
+        for dim in ("belief", "team", "growth"):
+            grade = getattr(r, f"value_{dim}_grade", None)
+            if grade:
+                key = f"{dim}_{grade}"
+                summary["value_grade_dist"][key] = summary["value_grade_dist"].get(key, 0) + 1
         if r.comment:
             summary["comments"].append(
-                {"perf_score": r.perf_score, "value_grade": r.value_grade, "comment": r.comment}
+                {
+                    "perf_score": r.perf_score,
+                    "value_belief_grade": r.value_belief_grade,
+                    "value_team_grade": r.value_team_grade,
+                    "value_growth_grade": r.value_growth_grade,
+                    "comment": r.comment,
+                }
             )
 
     # 额外查：匿名主动评价（仅 HR/部门 Leader 可见；**直属上级不可见**）

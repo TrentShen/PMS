@@ -10,11 +10,11 @@ import {
   InputNumber,
   List,
   Modal,
-  Radio,
   Tag,
   message,
 } from "antd";
 import { api } from "@/services/api";
+import ValueGradeForm from "@/components/ValueGradeForm";
 
 interface PeerTask {
   id: number;
@@ -44,10 +44,6 @@ export default function PeerTasks() {
   async function onSubmit() {
     if (!editing) return;
     const v = await form.validateFields();
-    if (v.value_grade === "jia" && !v.value_example?.trim()) {
-      message.error('价值观评为"甲"时必须填写具体事例');
-      return;
-    }
     setSaving(true);
     try {
       await api.post(`/v1/peer/tasks/${editing.id}/submit`, v);
@@ -122,25 +118,7 @@ export default function PeerTasks() {
           >
             <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item name="value_grade" label="价值观等级" rules={[{ required: true }]}>
-            <Radio.Group>
-              <Radio value="jia">甲</Radio>
-              <Radio value="yi">乙</Radio>
-              <Radio value="bing">丙</Radio>
-            </Radio.Group>
-          </Form.Item>
-          <Form.Item
-            shouldUpdate={(a, b) => a.value_grade !== b.value_grade}
-            noStyle
-          >
-            {({ getFieldValue }) =>
-              getFieldValue("value_grade") === "jia" ? (
-                <Form.Item name="value_example" label='"甲"的具体事例' rules={[{ required: true }]}>
-                  <Input.TextArea rows={3} />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
+          <ValueGradeForm />
           <Form.Item name="comment" label="评语（可选）">
             <Input.TextArea rows={3} />
           </Form.Item>

@@ -26,7 +26,7 @@ import { useAuth } from "@/stores/auth";
 
 interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null }
 interface UserBrief { id: number; name: string; role: string; position: string | null }
-interface Participant { id: number; cycle_id: number; user_id: number; user_name: string; user_position: string | null; status: string; final_perf_level: string | null; final_perf_score: number | null; final_value_grade: string | null }
+interface Participant { id: number; cycle_id: number; user_id: number; user_name: string; user_position: string | null; status: string; final_perf_level: string | null; final_perf_score: number | null; final_value_belief: string | null; final_value_team: string | null; final_value_growth: string | null }
 
 const STATUS_LABEL: Record<string, string> = { draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档" };
 
@@ -190,7 +190,11 @@ export default function HrConsole() {
             { title: "职位", dataIndex: "user_position" },
             { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag> },
             { title: "业绩", render: (_, r) => r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-" },
-            { title: "价值观", dataIndex: "final_value_grade", render: (v) => v ?? "-" },
+            { title: "价值观", render: (_, r) => (
+              <span>
+                信念 {r.final_value_belief ?? "-"} / 团队 {r.final_value_team ?? "-"} / 成长 {r.final_value_growth ?? "-"}
+              </span>
+            ) },
             {
               title: "操作",
               render: (_, r) => (
