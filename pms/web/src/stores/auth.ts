@@ -23,22 +23,32 @@ interface AuthState {
 const TOKEN_KEY = "pms_token";
 const USER_KEY = "pms_user";
 
+function safeGet(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSet(key: string, val: string) {
+  try { localStorage.setItem(key, val); } catch { /* noop */ }
+}
+function safeRemove(key: string) {
+  try { localStorage.removeItem(key); } catch { /* noop */ }
+}
+
 function loadUser(): CurrentUser | null {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = safeGet(USER_KEY);
   return raw ? (JSON.parse(raw) as CurrentUser) : null;
 }
 
 export const useAuth = create<AuthState>((set) => ({
-  token: localStorage.getItem(TOKEN_KEY),
+  token: safeGet(TOKEN_KEY),
   user: loadUser(),
   setAuth: (token, user) => {
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    safeSet(TOKEN_KEY, token);
+    safeSet(USER_KEY, JSON.stringify(user));
     set({ token, user });
   },
   clear: () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    safeRemove(TOKEN_KEY);
+    safeRemove(USER_KEY);
     set({ token: null, user: null });
   },
 }));

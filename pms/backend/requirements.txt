@@ -1,5 +1,4 @@
-# 生产环境依赖（pip install -r requirements.txt）
-# 与 pyproject.toml 的 dependencies 保持一致，供不想用 pip install -e . 的场景使用
+# PMS backend dependencies (generated from pyproject.toml)
 fastapi>=0.115
 uvicorn[standard]>=0.32
 sqlmodel>=0.0.22

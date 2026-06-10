@@ -4,9 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>绩效管理</title>
+    <style>
+      #debug-fallback {
+        position: fixed; top: 60px; left: 0; right: 0; padding: 16px;
+        background: #fff; color: #333; font-size: 14px; z-index: 99999;
+        border-bottom: 2px solid #ff4d4f; line-height: 1.6;
+      }
+      #debug-fallback .err { color: #ff4d4f; font-weight: bold; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="debug-fallback">
+        <div>正在加载应用...</div>
+        <div style="margin-top:8px;color:#999;font-size:12px;">
+          如果长时间停留在此页面，请截图联系开发人员
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.onerror = function(msg, url, line, col, err) {
+        var el = document.getElementById('debug-fallback');
+        if (el) {
+          el.innerHTML = '<div class="err">JS 报错: ' + msg + '</div>' +
+            '<div style="margin-top:8px;color:#666;font-size:12px;">' +
+            (url ? '文件: ' + url + '<br>行号: ' + line + ':' + col : '') + '</div>';
+        }
+        return false;
+      };
+      window.onunhandledrejection = function(e) {
+        var el = document.getElementById('debug-fallback');
+        if (el) {
+          el.innerHTML = '<div class="err">Promise 报错: ' + (e.reason || e) + '</div>';
+        }
+      };
+    </script>
   </body>
 </html>
