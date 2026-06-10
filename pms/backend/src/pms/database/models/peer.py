@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 互评与匿名评价相关模型（PRD 3.4.5）
 # 三个阶段：
 #   1) PeerInvitation  —— 员工自选互评人，Leader 审核前的状态

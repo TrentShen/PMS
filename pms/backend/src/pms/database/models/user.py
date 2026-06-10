@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 用户与部门模型
 # V0.9 说明：mock 模式下手工 seed 数据；Sprint 1 会从企微通讯录同步
 from datetime import date, datetime

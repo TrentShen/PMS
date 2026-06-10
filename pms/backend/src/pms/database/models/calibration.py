@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效校准 + 公司级审批（PRD 3.4.7）
 # 校准流程：上级初评 → 部门 Leader 校准（可改分）→ HR 审批 → CEO 审批 → 结果锁定
 # 驳回时退回到部门 Leader 重新校准

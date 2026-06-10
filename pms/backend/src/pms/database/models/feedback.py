@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效反馈面谈记录（PRD 3.4.8）
 # 流程：上级填写面谈记录 → 员工查看 → 员工点击"确认收到"或"有异议"
 from datetime import datetime

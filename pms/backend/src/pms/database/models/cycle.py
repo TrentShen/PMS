@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效周期（项目）与参与人快照
 from datetime import date, datetime
 from typing import Any

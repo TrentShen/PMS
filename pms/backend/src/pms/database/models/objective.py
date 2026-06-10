@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 绩效目标：每位员工在每个周期下有一组（3-5 条）目标
 from sqlalchemy import Column, Text
 from sqlmodel import Field, SQLModel

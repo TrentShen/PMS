@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 评估记录：一条记录承载自评或上级评估
 # 以 (cycle_id, user_id, eval_type) 唯一，重复提交时走 upsert
 from datetime import datetime

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # 审计日志 + 导出日志 + 消息日志
 from datetime import datetime
 from typing import Any
