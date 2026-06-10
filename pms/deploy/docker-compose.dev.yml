@@ -1,6 +1,25 @@
-# 本地开发用 docker-compose：只起 MySQL + Redis，应用代码在宿主机跑（热重载快）
+# 本地开发用 docker-compose：起 MySQL + Redis + Backend
 # 使用：cd deploy && docker compose -f docker-compose.dev.yml up -d
 services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: pms-backend:dev
+    container_name: pms-backend-dev
+    env_file:
+      - ./.env.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend/src:/app/src:ro
+    command: ["uvicorn", "pms.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   mysql:
     image: mysql:8.0
     container_name: pms-mysql

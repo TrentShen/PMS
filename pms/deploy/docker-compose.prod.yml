@@ -35,6 +35,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.prod
+    ports:
+      - "3307:3306"
     volumes:
       - pms_mysql_data:/var/lib/mysql
     command:
@@ -51,6 +53,8 @@ services:
     image: redis:7-alpine
     container_name: pms-redis
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     volumes:
       - pms_redis_data:/data
     command: ["redis-server", "--appendonly", "yes"]
@@ -66,10 +70,8 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
       - web_dist:/usr/share/nginx/html:ro
     depends_on:
       backend:
