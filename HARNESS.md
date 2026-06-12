@@ -1,9 +1,10 @@
 # Harness · AI 辅助研发架构
 
-> 版本：v2.0  
+> 版本：v2.1  
 > 适用：PMS 绩效管理系统（FastAPI + React）  
 > 工具：Kimi（主 AI 助手）  
-> 配套：agents.md、.harness/rules/、.harness/errors.md
+> 配套：agents.md、.harness/rules/、.harness/errors.md  
+> 最后更新：2026-06-12
 
 ---
 
@@ -228,6 +229,54 @@ cd pms/web && npx tsc --noEmit   # 类型检查
 cd pms/deploy && docker compose -f docker-compose.dev.yml up -d
 cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+---
+
+## 11. 项目当前状态（迭代进度与阻塞项）
+
+> 本章节由 AI 在每次会话后更新，用于快速同步上下文。
+
+### 11.1 已完成功能
+
+| 批次 | 功能 | 状态 |
+|------|------|:--:|
+| P0-0 | 生产环境禁用 `/mock-users` 和 `/mock-login` | ✅ |
+| P0-1 | 修复 CycleParticipant 关联（历史数据导入后可见） | ✅ |
+| P0-2 | 目标设定线上化流程（员工填写 → 提交审批 → 上级批准/驳回） | ✅ |
+| P0-3 | 上级评估页增加历史绩效展示（`history_perf` 字段） | ✅ |
+| P0-4 | 自动提醒框架（修复 `utcnow()`） | ✅ |
+| P0-5 | 反馈与发布流程顺序（已满足"先沟通后公开"） | ✅ |
+| P0-6 | `direct_leader` 角色权限补全（互评/反馈可见） | ✅ |
+| P1-1 | 手松手紧提示（后端统计 + 前端展示） | ✅ |
+| P1-2 | 校准矩阵热力图（按部门/职级分组） | ✅ |
+| P1-3 | 考核对象排除规则（周期配置持久化 + 5 维过滤） | ✅ |
+| P1-4 | 结构化面谈模板（后端必填校验） | ✅ |
+| P1-5 | 目标中途调整（审批流 + revision 历史表） | ✅ |
+| 全局 | 所有 `datetime.utcnow()` 替换为 `datetime.now(timezone.utc)` | ✅ |
+| 全局 | 后端单元测试覆盖（42 个测试全绿） | ✅ |
+
+### 11.2 剩余待办事项
+
+| 编号 | 事项 | 优先级 | 说明 |
+|------|------|:--:|------|
+| — | 企微通讯录 Secret 配置 | P0 | `WECOM_CONTACT_SECRET` 仍为空，需用户在企微后台获取 |
+| — | Git 用户信息配置 | 建议 | 当前 commit author 为自动生成，建议配置 `git config --global user.name/email` |
+| — | Alembic 迁移脚本补录 | 建议 | P1-3/P1-5 的数据库变更是手动 DDL，建议补 `alembic revision --autogenerate` |
+
+### 11.3 部署状态
+
+- **公网访问**：`https://shanghai.idc.matrixorigin.cn:30088/`
+- **后端**：`python3 -m uvicorn pms.main:app --host 0.0.0.0 --port 8000`
+- **后端启动方式**：`cd /opt/pms/pms/backend && PYTHONPATH=src nohup python3 -m uvicorn pms.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &`
+- **健康检查**：`GET /api/v1/health` → `{"status":"ok"}`
+- **数据库**：Docker `pms-mysql`，宿主机端口 `3307`
+- **缓存**：Docker `pms-redis`，宿主机端口 `6379`
+
+### 11.4 已知风险
+
+1. **MySQL `.env` 密码修正**：服务器 `/opt/pms/pms/backend/.env` 中的 `MYSQL_PASSWORD` 已从错误的 `pms_password` 修正为 `Pms_Prod_2024_Secure`（与 `deploy/.env.prod` 一致）。后续部署若重新覆盖 `.env` 需保留正确密码。
+2. **手动 DDL**：`objective_revision` 表和 `performance_cycle.exclusion_rules` 字段为手动创建，后续新环境部署需执行对应 DDL 或使用 Alembic 重新生成迁移。
+3. **企微通讯录同步不可用**：`WECOM_CONTACT_SECRET` 为空，每日通讯录同步任务会失败。
 
 ---
 
