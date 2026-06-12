@@ -154,6 +154,7 @@ def import_objectives(
         session.delete(obj)
     session.flush()
 
+    now = datetime.now(timezone.utc)
     for idx, p in enumerate(parsed):
         session.add(Objective(
             cycle_id=cycle_id,
@@ -163,6 +164,9 @@ def import_objectives(
             measure_criteria=p["measure_criteria"],
             weight=p["weight"],
             order_num=idx,
+            status="approved",          # Excel 导入视为已确认目标
+            reviewed_by=hr.wecom_userid,
+            reviewed_at=now,
         ))
 
     write_audit(

@@ -1,6 +1,6 @@
 // HR 管理台：周期管理 + 参与人 + Excel 导入/导出 + 催办 + 考核对象过滤
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Alert,
   Button,
@@ -223,6 +223,7 @@ export default function HrConsole() {
               title: "操作",
               render: (_, r) => (
                 <Space>
+                  <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>查看详情</Link>
                   {selectedCycle.status === "published" && (
                     <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>写反馈</a>
                   )}
