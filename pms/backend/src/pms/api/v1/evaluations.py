@@ -31,7 +31,7 @@ class ObjectiveView(BaseModel):
     id: int
     title: str
     description: str
-    measure_criteria: str
+    measure_criteria: str | None = None
     weight: int
 
 
