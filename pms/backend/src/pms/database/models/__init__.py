@@ -16,6 +16,7 @@ from pms.database.models.calibration import CalibrationRecord, CycleApproval
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.objective import Objective
+from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import Department, User
 
@@ -30,6 +31,7 @@ __all__ = [
     "PerformanceCycle",
     "Evaluation",
     "Objective",
+    "ObjectiveRevision",
     "PeerInvitation",
     "PeerEvaluation",
     "AnonymousFeedback",

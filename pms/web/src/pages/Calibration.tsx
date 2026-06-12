@@ -13,6 +13,7 @@ import {
   Space,
   Statistic,
   Table,
+  Tabs,
   Tag,
   Typography,
   message,
@@ -31,10 +32,60 @@ interface CalItem {
   participant_status: string;
 }
 interface Dist { level: string; label: string; count: number; percent: number; target_percent: string; warning: boolean }
+interface MatrixRow { group: string; excellent: number; exceed_part: number; meet: number; below_part: number; below: number; unset: number; total: number }
+interface MatrixData { by_dept: MatrixRow[]; by_level: MatrixRow[] }
 
 const PERF_LABEL: Record<string, string> = {
   excellent: "优秀", exceed_part: "部分超出", meet: "符合", below_part: "部分不符", below: "不符合",
 };
+const MATRIX_LEVELS: { key: keyof Omit<MatrixRow, "group" | "total">; label: string }[] = [
+  { key: "excellent", label: "优秀" },
+  { key: "exceed_part", label: "部分超出" },
+  { key: "meet", label: "符合" },
+  { key: "below_part", label: "部分不符" },
+  { key: "below", label: "不符合" },
+  { key: "unset", label: "未评定" },
+];
+
+function MatrixTable({ data }: { data: MatrixRow[] }) {
+  // 计算每列最大值，用于颜色归一化
+  const maxMap: Record<string, number> = {};
+  for (const col of MATRIX_LEVELS) {
+    maxMap[col.key] = Math.max(1, ...data.map((d) => d[col.key]));
+  }
+
+  const cellStyle = (val: number, max: number): React.CSSProperties => {
+    if (val === 0) return { textAlign: "center" };
+    const ratio = val / max;
+    const lightness = 95 - Math.round(ratio * 45); // 95% -> 50%
+    return {
+      textAlign: "center",
+      backgroundColor: `hsl(210, 90%, ${lightness}%)`,
+      fontWeight: ratio > 0.5 ? 600 : 400,
+      color: ratio > 0.5 ? "#fff" : "#000",
+    };
+  };
+
+  return (
+    <Table
+      size="small"
+      pagination={false}
+      dataSource={data}
+      rowKey="group"
+      columns={[
+        { title: "分组", dataIndex: "group", fixed: "left", width: 120 },
+        ...MATRIX_LEVELS.map((col) => ({
+          title: col.label,
+          dataIndex: col.key,
+          width: 90,
+          render: (v: number) => <div style={cellStyle(v, maxMap[col.key])}>{v || "—"}</div>,
+        })),
+        { title: "合计", dataIndex: "total", width: 80, render: (v: number) => <strong>{v}</strong> },
+      ]}
+      scroll={{ x: 720 }}
+    />
+  );
+}
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 const APPROVAL_LABEL: Record<string, string> = {
   calibrating: "校准中",
@@ -51,6 +102,7 @@ export default function Calibration() {
   const [selectedCid, setSelectedCid] = useState<number | null>(null);
   const [items, setItems] = useState<CalItem[]>([]);
   const [distribution, setDistribution] = useState<Dist[]>([]);
+  const [matrix, setMatrix] = useState<MatrixData | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<string>("calibrating");
   const [rejectReason, setRejectReason] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<CalItem | null>(null);
@@ -74,6 +126,7 @@ export default function Calibration() {
       const r = await api.get(`/v1/calibration/cycles/${selectedCid}/view`);
       setItems(r.data.items);
       setDistribution(r.data.distribution);
+      setMatrix(r.data.matrix);
       setApprovalStatus(r.data.approval_status);
       setRejectReason(r.data.reject_reason);
     } catch (e: any) {
@@ -160,6 +213,26 @@ export default function Calibration() {
           ))}
         </Space>
       </Card>
+
+      {/* 校准矩阵热力图 */}
+      {matrix && (
+        <Card title="校准矩阵">
+          <Tabs
+            items={[
+              {
+                key: "dept",
+                label: "按部门",
+                children: <MatrixTable data={matrix.by_dept} />,
+              },
+              {
+                key: "level",
+                label: "按职级",
+                children: <MatrixTable data={matrix.by_level} />,
+              },
+            ]}
+          />
+        </Card>
+      )}
 
       {/* 参与人列表 */}
       <Card title="校准明细">

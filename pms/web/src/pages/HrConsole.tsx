@@ -24,8 +24,9 @@ import dayjs from "dayjs";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
-interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null }
-interface UserBrief { id: number; name: string; role: string; position: string | null }
+interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null; exclusion_rules?: Record<string, any> | null }
+interface UserBrief { id: number; name: string; role: string; position: string | null; level: string | null; department_id: number | null }
+interface DeptBrief { id: number; name: string }
 interface Participant { id: number; cycle_id: number; user_id: number; user_name: string; user_position: string | null; status: string; final_perf_level: string | null; final_perf_score: number | null; final_value_belief: string | null; final_value_team: string | null; final_value_growth: string | null }
 
 const STATUS_LABEL: Record<string, string> = { draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档" };
@@ -39,6 +40,7 @@ export default function HrConsole() {
   const [selectedCycle, setSelectedCycle] = useState<Cycle | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [users, setUsers] = useState<UserBrief[]>([]);
+  const [departments, setDepartments] = useState<DeptBrief[]>([]);
   const [addingIds, setAddingIds] = useState<number[]>([]);
   const [urgeOpen, setUrgeOpen] = useState(false);
   const [urgeIds, setUrgeIds] = useState<number[]>([]);
@@ -47,9 +49,23 @@ export default function HrConsole() {
 
   async function loadCycles() { const r = await api.get<Cycle[]>("/v1/cycles"); setCycles(r.data); }
   async function loadUsers() { const r = await api.get<UserBrief[]>("/v1/users"); setUsers(r.data); }
+  async function loadDepartments() { const r = await api.get<DeptBrief[]>("/v1/admin/departments"); setDepartments(r.data); }
   async function loadParticipants(cid: number) { const r = await api.get<{items: Participant[]; total: number}>(`/v1/cycles/${cid}/participants?page_size=9999`); setParticipants(r.data.items); }
-  useEffect(() => { loadCycles(); loadUsers(); }, []);
+  useEffect(() => { loadCycles(); loadUsers(); loadDepartments(); }, []);
   useEffect(() => { if (selectedCycle) loadParticipants(selectedCycle.id); }, [selectedCycle]);
+  // 筛选弹窗打开时，用周期已保存的规则预填充表单
+  useEffect(() => {
+    if (filterOpen && selectedCycle?.exclusion_rules) {
+      const rules = selectedCycle.exclusion_rules;
+      filterForm.setFieldsValue({
+        exclude_roles: rules.exclude_roles,
+        exclude_user_ids: rules.exclude_user_ids,
+        exclude_dept_ids: rules.exclude_dept_ids,
+        exclude_levels: rules.exclude_levels,
+        min_hired_before: rules.min_hired_before ? dayjs(rules.min_hired_before) : null,
+      });
+    }
+  }, [filterOpen]);
 
   async function onCreate(values: any) {
     try {
@@ -113,17 +129,25 @@ export default function HrConsole() {
   // === 考核对象过滤 ===
   async function onFilter(values: any) {
     if (!selectedCycle) return;
+    const rules: Record<string, any> = {};
+    if (values.exclude_roles?.length) rules.exclude_roles = values.exclude_roles;
+    if (values.exclude_user_ids?.length) rules.exclude_user_ids = values.exclude_user_ids;
+    if (values.exclude_dept_ids?.length) rules.exclude_dept_ids = values.exclude_dept_ids;
+    if (values.exclude_levels?.length) rules.exclude_levels = values.exclude_levels;
+    if (values.min_hired_before) rules.min_hired_before = values.min_hired_before.format("YYYY-MM-DD");
+
     try {
-      const r = await api.post(`/v1/cycles/${selectedCycle.id}/suggest-participants`, {
-        exclude_roles: values.exclude_roles || [],
-        min_hired_before: values.min_hired_before?.format("YYYY-MM-DD") || null,
-      });
+      // 先保存排除规则到周期
+      await api.put(`/v1/cycles/${selectedCycle.id}`, { exclusion_rules: rules });
+      // 再调用 suggest（不传 body，自动使用 cycle 保存的规则）
+      const r = await api.post(`/v1/cycles/${selectedCycle.id}/suggest-participants`, {});
       const ids = r.data.map((u: any) => u.id);
       if (ids.length === 0) { message.warning("按条件未筛选到人"); return; }
       await api.post(`/v1/cycles/${selectedCycle.id}/participants`, { user_ids: ids });
       message.success(`已按条件添加 ${ids.length} 人`);
       setFilterOpen(false); filterForm.resetFields();
       await loadParticipants(selectedCycle.id);
+      await loadCycles(); // 刷新周期列表以更新 exclusion_rules
     } catch (e: any) { message.error(e?.response?.data?.detail ?? "操作失败"); }
   }
 
@@ -230,17 +254,30 @@ export default function HrConsole() {
       )}
 
       {/* 按条件筛选参与人弹窗 */}
-      <Modal title="按条件筛选参与人" open={filterOpen} onCancel={() => setFilterOpen(false)} onOk={() => filterForm.submit()}>
+      <Modal title="按条件筛选参与人" open={filterOpen} onCancel={() => setFilterOpen(false)} onOk={() => filterForm.submit()} width={560}>
         <Form form={filterForm} layout="vertical" onFinish={onFilter}>
           <Form.Item name="exclude_roles" label="排除角色">
             <Select mode="multiple" options={[
               { value: "super_admin", label: "超级管理员" },
               { value: "hrbp", label: "HR" },
               { value: "dept_leader", label: "部门 Leader" },
+              { value: "direct_leader", label: "直属上级" },
             ]} />
           </Form.Item>
+          <Form.Item name="exclude_user_ids" label="排除指定人员">
+            <Select mode="multiple" placeholder="选择要排除的员工" style={{ width: "100%" }}
+              options={users.map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }))} />
+          </Form.Item>
+          <Form.Item name="exclude_dept_ids" label="排除部门">
+            <Select mode="multiple" placeholder="选择要排除的部门" style={{ width: "100%" }}
+              options={departments.map((d) => ({ value: d.id, label: d.name }))} />
+          </Form.Item>
+          <Form.Item name="exclude_levels" label="排除职级">
+            <Select mode="multiple" placeholder="选择要排除的职级" style={{ width: "100%" }}
+              options={Array.from(new Set(users.map((u) => u.level).filter(Boolean))).map((lvl) => ({ value: lvl, label: lvl }))} />
+          </Form.Item>
           <Form.Item name="min_hired_before" label="入职日期不晚于" extra="只纳入在此日期前入职的员工">
-            <DatePicker />
+            <DatePicker style={{ width: "100%" }} />
           </Form.Item>
         </Form>
       </Modal>

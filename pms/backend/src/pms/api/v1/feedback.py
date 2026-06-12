@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # 绩效反馈 API（PRD 3.4.8）
 # 上级创建/编辑面谈记录 → 员工确认/有异议
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -24,6 +24,11 @@ class FeedbackCreate(BaseModel):
     strengths: str       # 员工优势
     improvements: str    # 待改进项
     next_goals: str      # 下阶段目标/期望
+
+    def validate(self) -> None:
+        for field, label in [(self.strengths, "员工优势"), (self.improvements, "待改进项"), (self.next_goals, "下阶段目标")]:
+            if not field or not field.strip():
+                raise ValueError(f"{label} 不能为空")
 
 
 class FeedbackView(BaseModel):
@@ -60,7 +65,7 @@ def create_or_update_feedback(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_superior = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_superior or is_admin):
         raise HTTPException(status_code=403, detail="你不是该员工的直属上级")
 
@@ -70,6 +75,11 @@ def create_or_update_feedback(
     # 必须在 published 状态才能写反馈（校准完才有最终结果）
     if cycle.status != "published":
         raise HTTPException(status_code=400, detail="周期未发布，不能填写反馈")
+
+    try:
+        payload.validate()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # upsert
     existing = session.exec(
@@ -128,7 +138,7 @@ def get_feedback(
         raise HTTPException(status_code=404, detail="员工不存在")
     is_self = current.id == user_id
     is_superior = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_self or is_superior or is_admin):
         raise HTTPException(status_code=403, detail="无权查看")
 
@@ -166,13 +176,13 @@ def confirm_feedback(
 
     if payload.action == "confirmed":
         fb.confirm_status = "confirmed"
-        fb.confirmed_at = datetime.utcnow()
+        fb.confirmed_at = datetime.now(timezone.utc)
     elif payload.action == "disputed":
         if not payload.comment or not payload.comment.strip():
             raise HTTPException(status_code=400, detail="有异议时必须填写原因")
         fb.confirm_status = "disputed"
         fb.dispute_comment = payload.comment
-        fb.confirmed_at = datetime.utcnow()
+        fb.confirmed_at = datetime.now(timezone.utc)
     else:
         raise HTTPException(status_code=400, detail="action 只能是 confirmed/disputed")
 
@@ -199,7 +209,7 @@ def list_feedback_status(
     current: User = Depends(get_current_user),
 ):
     # Leader / HR 查看本周期所有反馈状态
-    if current.role not in ("dept_leader", "hrbp", "super_admin"):
+    if current.role not in ("dept_leader", "hrbp", "super_admin", "direct_leader"):
         raise HTTPException(status_code=403, detail="无权限")
 
     from pms.services.scope import visible_user_ids

@@ -5,7 +5,7 @@ from __future__ import annotations
 #   - 员工视角：邀请互评人 / 我的互评任务
 #   - Leader 视角：审核互评名单 / 发起正式互评 / 看下属的互评汇总
 #   - 任意员工：匿名主动评价
-from datetime import datetime
+from datetime import datetime, timezone
 from statistics import mean
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -194,7 +194,7 @@ def list_pending_peers_for_review(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="无权查看")
 
@@ -231,7 +231,7 @@ def approve_peer_list(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="无权审核")
 
@@ -403,7 +403,7 @@ def submit_peer_evaluation(
     task.value_growth_grade = payload.value_growth_grade
     task.value_growth_example = payload.value_growth_example
     task.comment = payload.comment
-    task.submitted_at = datetime.utcnow()
+    task.submitted_at = datetime.now(timezone.utc)
     task.status = "submitted"
     session.add(task)
 
@@ -441,7 +441,7 @@ def get_peer_summary(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="被评人本人不可见自己收到的互评")
 
@@ -479,8 +479,50 @@ def get_peer_summary(
                 }
             )
 
+    # 手松手紧：统计该周期内每位评价人的打分均值 vs 全局均值
+    rater_stats = []
+    if submitted:
+        from statistics import mean as stat_mean
+        # 该周期内所有已提交的互评（不限于当前被评人）
+        all_evals = session.exec(
+            select(PeerEvaluation).where(
+                PeerEvaluation.cycle_id == cycle_id,
+                PeerEvaluation.status == "submitted",
+                PeerEvaluation.perf_score is not None,
+            )
+        ).all()
+        global_avg = stat_mean([e.perf_score for e in all_evals]) if all_evals else 0
+
+        # 按评价人分组统计
+        from collections import defaultdict
+        by_rater: dict[int, list[float]] = defaultdict(list)
+        for e in all_evals:
+            by_rater[e.evaluator_user_id].append(e.perf_score)
+
+        for idx, (rater_id, scores) in enumerate(by_rater.items(), 1):
+            rater_avg = stat_mean(scores)
+            diff = rater_avg - global_avg
+            if diff > 0.5:
+                bias = "偏松"
+            elif diff < -0.5:
+                bias = "偏紧"
+            else:
+                bias = "正常"
+            rater_stats.append({
+                "label": f"评价人{idx}",
+                "count": len(scores),
+                "avg": round(rater_avg, 2),
+                "global_avg": round(global_avg, 2),
+                "diff": round(diff, 2),
+                "bias": bias,
+            })
+        # 按偏差程度排序（偏松/偏紧的放前面）
+        rater_stats.sort(key=lambda x: abs(x["diff"]), reverse=True)
+
+    summary["rater_bias"] = rater_stats
+
     # 额外查：匿名主动评价（仅 HR/部门 Leader 可见；**直属上级不可见**）
-    can_see_anon = current.role in ("hrbp", "super_admin", "dept_leader")
+    can_see_anon = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
     anon_list = []
     if can_see_anon:
         anons = session.exec(

@@ -22,14 +22,14 @@ def validate_perf_score(score: float) -> float:
 
 
 def derive_perf_level(score: float) -> PerfLevel:
-    # 分段规则摘自 PRD 3.4.1
+    # 分段规则摘自 PRD 3.4.1（边界值归入高等级）
     if score > 4.5:
         return PerfLevel.EXCELLENT
-    if score > 4.0:
+    if score >= 4.0:
         return PerfLevel.EXCEED_PART
-    if score > 3.5:
+    if score >= 3.5:
         return PerfLevel.MEET
-    if score > 3.0:
+    if score >= 3.0:
         return PerfLevel.BELOW_PART
     return PerfLevel.BELOW
 

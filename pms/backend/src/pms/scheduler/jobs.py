@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # APScheduler 定时任务：提醒扫描 + 通讯录同步
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from loguru import logger
 from sqlmodel import Session, select
@@ -49,7 +49,7 @@ def _try_send(notification: NotificationLog, s: Session) -> None:
             url=f"{settings.frontend_origin}",
         )
         notification.status = "sent"
-        notification.sent_at = datetime.utcnow()
+        notification.sent_at = datetime.now(timezone.utc)
     except Exception as e:
         notification.retry_count = (notification.retry_count or 0) + 1
         notification.error_msg = str(e)[:256]

@@ -55,10 +55,15 @@ def _build_user_response(user: User, session: Session) -> dict:
     }
 
 
-# ---------- 开发用 mock 登录 ----------
+# ---------- 开发用 mock 登录（生产环境禁用） ----------
+
+_PROD_ENV = settings.app_env == "prod"
+
 
 @router.get("/mock-users")
 def list_mock_users(session: Session = Depends(get_session)) -> list[dict]:
+    if _PROD_ENV:
+        raise HTTPException(status_code=404, detail="Not Found")
     users = session.exec(select(User).where(User.status == "active")).all()
     return [
         {"id": u.id, "wecom_userid": u.wecom_userid, "name": u.name, "role": u.role, "position": u.position}
@@ -68,6 +73,8 @@ def list_mock_users(session: Session = Depends(get_session)) -> list[dict]:
 
 @router.post("/mock-login", response_model=TokenResponse)
 def mock_login(payload: MockLoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
+    if _PROD_ENV:
+        raise HTTPException(status_code=404, detail="Not Found")
     user = session.exec(select(User).where(User.wecom_userid == payload.wecom_userid)).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")

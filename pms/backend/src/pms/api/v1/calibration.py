@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # 绩效校准 + 公司级审批 API（PRD 3.4.7）
 # 流程：上级初评完 → 部门 Leader 校准 → 提交审批 → HR 批/驳 → CEO 批/驳 → 锁定
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -56,6 +56,7 @@ class CalibrationView(BaseModel):
     user_name: str
     user_position: str | None
     dept_name: str | None
+    user_level: str | None
     initial_perf_score: float | None  # 上级初评
     initial_perf_level: str | None
     initial_value_belief: str | None
@@ -69,7 +70,55 @@ class CalibrationView(BaseModel):
     participant_status: str
 
 
+class MatrixRow(BaseModel):
+    group: str
+    excellent: int
+    exceed_part: int
+    meet: int
+    below_part: int
+    below: int
+    unset: int
+    total: int
+
+
 # ============ 3-6-1 分布计算 ============
+
+def _compute_matrix(rows: list) -> dict[str, list[MatrixRow]]:
+    """按部门和职级分组，统计各绩效等级人数"""
+    from collections import defaultdict
+
+    def _build(groups: dict) -> list[MatrixRow]:
+        result = []
+        for g, counts in sorted(groups.items()):
+            total = sum(counts.values())
+            result.append(MatrixRow(
+                group=g,
+                excellent=counts.get("excellent", 0),
+                exceed_part=counts.get("exceed_part", 0),
+                meet=counts.get("meet", 0),
+                below_part=counts.get("below_part", 0),
+                below=counts.get("below", 0),
+                unset=counts.get("unset", 0),
+                total=total,
+            ))
+        return result
+
+    by_dept: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_level: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for p, u, _ in rows:
+        dept = p.dept_name_snapshot or "未分组"
+        level = p.final_perf_level or "unset"
+        by_dept[dept][level] += 1
+
+        user_level = u.level or "未设置"
+        by_level[user_level][level] += 1
+
+    return {
+        "by_dept": [r.model_dump() for r in _build(by_dept)],
+        "by_level": [r.model_dump() for r in _build(by_level)],
+    }
+
 
 def _compute_distribution(participants: list[CycleParticipant]) -> list[DistributionItem]:
     # 根据当前 final_perf_level 统计 A/B/C 三档占比
@@ -160,6 +209,7 @@ def get_calibration_view(
             user_name=u.name,
             user_position=u.position,
             dept_name=p.dept_name_snapshot,
+            user_level=u.level,
             initial_perf_score=sup_eval.perf_score if sup_eval else None,
             initial_perf_level=sup_eval.perf_level if sup_eval else None,
             initial_value_belief=sup_eval.value_belief_grade if sup_eval else None,
@@ -179,6 +229,7 @@ def get_calibration_view(
 
     all_participants = [p for p, _, _ in rows]
     distribution = _compute_distribution(all_participants)
+    matrix = _compute_matrix(rows)
 
     # 分页
     total = len(items)
@@ -194,6 +245,7 @@ def get_calibration_view(
         "page": page,
         "page_size": page_size,
         "distribution": [d.model_dump() for d in distribution],
+        "matrix": matrix,
     }
 
 
@@ -312,7 +364,7 @@ def submit_calibration(
     if not approval:
         approval = CycleApproval(cycle_id=cycle_id)
     approval.status = "pending_hr"
-    approval.submitted_at = datetime.utcnow()
+    approval.submitted_at = datetime.now(timezone.utc)
     approval.reject_reason = None
     approval.rejected_by = None
     approval.rejected_at = None
@@ -355,7 +407,7 @@ def process_approval(
     if not approval:
         raise HTTPException(status_code=400, detail="尚未提交校准")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # 判断当前应该谁审批
     if approval.status == "pending_hr":

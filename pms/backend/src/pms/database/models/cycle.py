@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # 绩效周期（项目）与参与人快照
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import Column, JSON
@@ -26,9 +26,11 @@ class PerformanceCycle(SQLModel, table=True):
     enable_feedback: bool = Field(default=True)
     # 时间线配置（JSON）
     stage_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # 考核对象排除规则（PRD 3.2.2）
+    exclusion_rules: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     # 创建人 wecom_userid
     created_by: str = Field(max_length=64)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     published_at: datetime | None = None
 
 

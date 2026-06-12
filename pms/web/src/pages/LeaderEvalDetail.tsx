@@ -58,12 +58,12 @@ function PeerReviewSection({
   async function load() {
     const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/users/${userId}/peer/pending`);
     setCands(r.data);
-    const u = await api.get<any[]>(`/v1/auth/mock-users`);
+    const u = await api.get<{items: any[]; total: number}>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
     setAllUsers(
-      u.data
+      u.data.items
         .filter((x) => x.role !== "super_admin" && x.role !== "hrbp")
-        .filter((x) => x.id !== userId)
-        .map((x) => ({ id: x.id, name: x.name, position: x.position }))
+        .filter((x) => x.user_id !== userId)
+        .map((x) => ({ id: x.user_id, name: x.user_name, position: x.user_position }))
     );
   }
   useEffect(() => {
@@ -183,12 +183,22 @@ function PeerReviewSection({
 }
 
 // ========== 互评汇总（被评人收到的） ==========
+interface RaterBias {
+  label: string;
+  count: number;
+  avg: number;
+  global_avg: number;
+  diff: number;
+  bias: string;
+}
+
 interface PeerSummary {
   total: number;
   submitted: number;
   avg_perf_score: number | null;
   value_grade_dist: Record<string, number>;
   comments: { perf_score: number; value_belief_grade: string | null; value_team_grade: string | null; value_growth_grade: string | null; comment: string }[];
+  rater_bias: RaterBias[];
   anonymous_feedback:
     | { perf_score: number | null; value_grade: string | null; comment: string; created_at: string }[]
     | null;
@@ -223,6 +233,21 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
           );
         })}
       </Space>
+      {sum.rater_bias && sum.rater_bias.length > 0 && (
+        <Card type="inner" size="small" title="手松手紧提示" style={{ marginBottom: 12 }}>
+          <Space wrap>
+            {sum.rater_bias.map((r) => (
+              <Tag
+                key={r.label}
+                color={r.bias === "偏松" ? "red" : r.bias === "偏紧" ? "orange" : "default"}
+              >
+                {r.label}：均分 {r.avg}（{r.bias}，共评 {r.count} 人）
+              </Tag>
+            ))}
+          </Space>
+        </Card>
+      )}
+
       {sum.comments.length > 0 ? (
         <Table
           size="small"
@@ -276,6 +301,199 @@ function perfLevel(s: number): string {
   return "below";
 }
 
+// ========== 目标审批 ==========
+const OBJ_STATUS_LABEL: Record<string, { text: string; color: string }> = {
+  draft: { text: "草稿", color: "default" },
+  pending_review: { text: "待审批", color: "orange" },
+  approved: { text: "已确认", color: "green" },
+  locked: { text: "已锁定", color: "blue" },
+};
+
+function ObjectivesReviewSection({
+  cycleId,
+  userId,
+  objectives,
+  cycleStatus,
+  onChanged,
+}: {
+  cycleId: number;
+  userId: number;
+  objectives: any[];
+  cycleStatus: string;
+  onChanged: () => void;
+}) {
+  const [rejectReason, setRejectReason] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [adjRejectReason, setAdjRejectReason] = useState("");
+  const [adjProcessing, setAdjProcessing] = useState(false);
+
+  const pendingCount = objectives.filter((o) => o.status === "pending_review").length;
+  const canEdit = cycleStatus === "in_progress" || cycleStatus === "draft";
+
+  async function loadAdjustments() {
+    try {
+      const r = await api.get(`/v1/cycles/${cycleId}/objectives/adjustments?user_id=${userId}`);
+      setAdjustments(r.data);
+    } catch { setAdjustments([]); }
+  }
+  useEffect(() => { loadAdjustments(); }, [cycleId, userId]);
+
+  async function onApprove() {
+    setProcessing(true);
+    try {
+      await api.post(`/v1/cycles/${cycleId}/objectives/users/${userId}/approve`);
+      message.success("目标已批准");
+      onChanged();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? "操作失败");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function onReject() {
+    if (!rejectReason.trim()) {
+      message.error("请填写驳回原因");
+      return;
+    }
+    setProcessing(true);
+    try {
+      await api.post(`/v1/cycles/${cycleId}/objectives/users/${userId}/reject`, {
+        reason: rejectReason.trim(),
+      });
+      message.success("目标已驳回，员工可修改后重新提交");
+      setRejectReason("");
+      onChanged();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? "操作失败");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  const pendingAdjustment = adjustments.find((a) => a.status === "pending");
+
+  async function onApproveAdjustment(revisionId: number) {
+    setAdjProcessing(true);
+    try {
+      await api.post(`/v1/cycles/${cycleId}/objectives/adjustments/${revisionId}/approve`);
+      message.success("调整申请已批准");
+      await loadAdjustments();
+      onChanged();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? "操作失败");
+    } finally { setAdjProcessing(false); }
+  }
+
+  async function onRejectAdjustment(revisionId: number) {
+    if (!adjRejectReason.trim()) { message.error("请填写驳回原因"); return; }
+    setAdjProcessing(true);
+    try {
+      await api.post(`/v1/cycles/${cycleId}/objectives/adjustments/${revisionId}/reject`, { reason: adjRejectReason.trim() });
+      message.success("调整申请已驳回");
+      setAdjRejectReason("");
+      await loadAdjustments();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail ?? "操作失败");
+    } finally { setAdjProcessing(false); }
+  }
+
+  return (
+    <Card
+      title={
+        <Space>
+          员工目标
+          {pendingCount > 0 && <Tag color="red">{pendingCount} 条待审批</Tag>}
+        </Space>
+      }
+      extra={
+        canEdit && pendingCount > 0 ? (
+          <Space>
+            <Button type="primary" onClick={onApprove} loading={processing}>
+              批准目标
+            </Button>
+          </Space>
+        ) : null
+      }
+    >
+      {objectives.length === 0 ? (
+        <Alert type="warning" message="员工尚未填写目标" />
+      ) : (
+        <>
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={objectives}
+            columns={[
+              { title: "目标", dataIndex: "title" },
+              { title: "描述", dataIndex: "description", ellipsis: true },
+              { title: "衡量标准", dataIndex: "measure_criteria", ellipsis: true },
+              { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
+              {
+                title: "状态",
+                dataIndex: "status",
+                render: (v) => {
+                  const s = OBJ_STATUS_LABEL[v] ?? { text: v, color: "default" };
+                  return <Tag color={s.color}>{s.text}</Tag>;
+                },
+              },
+            ]}
+          />
+          {canEdit && pendingCount > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Input.TextArea
+                  rows={2}
+                  placeholder="如需驳回，请填写原因（员工会收到此原因并修改后重新提交）"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                />
+                <Button danger onClick={onReject} loading={processing}>
+                  驳回目标
+                </Button>
+              </Space>
+            </div>
+          )}
+          {objectives.some((o) => o.reject_reason) && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginTop: 12 }}
+              message={`上次驳回原因：${objectives.find((o) => o.reject_reason)?.reject_reason}`}
+            />
+          )}
+
+          {/* 目标调整审批 */}
+          {pendingAdjustment && (
+            <Card type="inner" size="small" title="目标调整申请" style={{ marginTop: 16 }}>
+              <Alert type="warning" showIcon message={`员工申请调整目标，原因：${pendingAdjustment.reason}`} style={{ marginBottom: 12 }} />
+              <Typography.Text strong>调整前：</Typography.Text>
+              <Table size="small" pagination={false} dataSource={pendingAdjustment.old_objectives || []} columns={[
+                { title: "目标", dataIndex: "title" },
+                { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
+              ]} />
+              <Typography.Text strong style={{ display: "block", marginTop: 12 }}>调整后：</Typography.Text>
+              <Table size="small" pagination={false} dataSource={pendingAdjustment.new_objectives || []} columns={[
+                { title: "目标", dataIndex: "title" },
+                { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
+              ]} />
+              <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+                <Input.TextArea rows={2} placeholder="如需驳回，请填写原因" value={adjRejectReason} onChange={(e) => setAdjRejectReason(e.target.value)} />
+                <Space>
+                  <Button type="primary" onClick={() => onApproveAdjustment(pendingAdjustment.id)} loading={adjProcessing}>批准调整</Button>
+                  <Button danger onClick={() => onRejectAdjustment(pendingAdjustment.id)} loading={adjProcessing}>驳回调整</Button>
+                </Space>
+              </Space>
+            </Card>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function LeaderEvalDetail() {
   const { cycleId, userId } = useParams();
   const [detail, setDetail] = useState<any>(null);
@@ -327,20 +545,39 @@ export default function LeaderEvalDetail() {
         </Descriptions>
       </Card>
 
-      <Card title="员工目标">
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
-          dataSource={detail.objectives}
-          columns={[
-            { title: "目标", dataIndex: "title" },
-            { title: "描述", dataIndex: "description" },
-            { title: "衡量标准", dataIndex: "measure_criteria" },
-            { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
-          ]}
-        />
-      </Card>
+      {detail.history_perf && detail.history_perf.length > 0 && (
+        <Card title="历史绩效" size="small">
+          <Table
+            rowKey="cycle_id"
+            size="small"
+            pagination={false}
+            dataSource={detail.history_perf}
+            columns={[
+              { title: "周期", dataIndex: "cycle_name" },
+              { title: "业绩分", dataIndex: "final_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+              { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
+              {
+                title: "价值观",
+                render: (_: any, r: any) => (
+                  <Space>
+                    <span>信念 {VALUE_LABEL[r.final_value_belief] ?? "-"}</span>
+                    <span>团队 {VALUE_LABEL[r.final_value_team] ?? "-"}</span>
+                    <span>成长 {VALUE_LABEL[r.final_value_growth] ?? "-"}</span>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      )}
+
+      <ObjectivesReviewSection
+        cycleId={Number(cycleId)}
+        userId={Number(userId)}
+        objectives={detail.objectives}
+        cycleStatus={detail.cycle.status}
+        onChanged={reload}
+      />
 
       <PeerReviewSection cycleId={Number(cycleId)} userId={Number(userId)} cycleStatus={detail.cycle.status} />
 

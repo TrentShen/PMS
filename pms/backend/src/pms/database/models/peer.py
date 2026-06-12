@@ -5,9 +5,13 @@ from __future__ import annotations
 #   1) PeerInvitation  —— 员工自选互评人，Leader 审核前的状态
 #   2) PeerEvaluation  —— Leader 审核通过后的正式互评任务（含打分内容）
 #   3) AnonymousFeedback —— 未被邀请、主动发起的匿名评价（仅 HR/部门 Leader 可见）
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel, UniqueConstraint
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class PeerInvitation(SQLModel, table=True):
@@ -28,7 +32,7 @@ class PeerInvitation(SQLModel, table=True):
     status: str = Field(default="pending", max_length=16, index=True)
     # 是谁提议的：employee（员工自选）/ leader（Leader 新增）
     proposed_by: str = Field(default="employee", max_length=16)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_now)
 
 
 class PeerEvaluation(SQLModel, table=True):
@@ -80,4 +84,4 @@ class AnonymousFeedback(SQLModel, table=True):
     perf_score: float | None = None
     value_grade: str | None = Field(default=None, max_length=8)
     comment: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_now)

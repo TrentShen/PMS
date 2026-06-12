@@ -3,7 +3,7 @@ from __future__ import annotations
 # 绩效周期管理
 # HR 端：创建周期、加参与人、发布结果、总览
 # 员工端：列出自己参与的周期、我的待办
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -30,6 +30,19 @@ class CycleCreate(BaseModel):
     enable_peer_eval: bool = True
     enable_calibration: bool = True
     enable_feedback: bool = True
+    # 考核对象排除规则（PRD 3.2.2）
+    exclusion_rules: dict[str, Any] | None = None
+
+
+class CycleUpdate(BaseModel):
+    name: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    enable_self_eval: bool | None = None
+    enable_peer_eval: bool | None = None
+    enable_calibration: bool | None = None
+    enable_feedback: bool | None = None
+    exclusion_rules: dict[str, Any] | None = None
 
 
 class ParticipantAdd(BaseModel):
@@ -214,7 +227,7 @@ def publish_cycle(
         session.add(p)
 
     cycle.status = "published"
-    cycle.published_at = datetime.utcnow()
+    cycle.published_at = datetime.now(timezone.utc)
     session.add(cycle)
     write_audit(
         session,
@@ -232,28 +245,86 @@ def publish_cycle(
 
 # ============ HR：考核对象自动过滤（PRD 3.2.2）============
 
+@router.put("/{cycle_id}", response_model=CycleBrief)
+def update_cycle(
+    cycle_id: int,
+    payload: CycleUpdate,
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+) -> CycleBrief:
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    if payload.name is not None:
+        cycle.name = payload.name
+    if payload.start_date is not None:
+        cycle.start_date = payload.start_date
+    if payload.end_date is not None:
+        cycle.end_date = payload.end_date
+    if payload.enable_self_eval is not None:
+        cycle.enable_self_eval = payload.enable_self_eval
+    if payload.enable_peer_eval is not None:
+        cycle.enable_peer_eval = payload.enable_peer_eval
+    if payload.enable_calibration is not None:
+        cycle.enable_calibration = payload.enable_calibration
+    if payload.enable_feedback is not None:
+        cycle.enable_feedback = payload.enable_feedback
+    if payload.exclusion_rules is not None:
+        cycle.exclusion_rules = payload.exclusion_rules
+    session.add(cycle)
+    write_audit(
+        session,
+        operator_userid=hr.wecom_userid,
+        operator_name=hr.name,
+        action="update_cycle",
+        resource_type="performance_cycle",
+        resource_id=str(cycle.id),
+        after={k: v for k, v in payload.model_dump().items() if v is not None},
+    )
+    session.commit()
+    session.refresh(cycle)
+    return CycleBrief.model_validate(cycle, from_attributes=True)
+
+
 @router.post("/{cycle_id}/suggest-participants")
 def suggest_participants(
     cycle_id: int,
-    payload: ParticipantFilter,
+    payload: ParticipantFilter | None = None,
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ) -> list[dict]:
-    """根据过滤规则返回建议参与人列表，前端直接"一键添加"。"""
+    """根据过滤规则返回建议参与人列表，前端直接"一键添加"。
+    若请求体字段为 None，自动使用周期上已保存的排除规则补全。"""
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+
+    saved = cycle.exclusion_rules or {}
+
+    def _pick(key: str):
+        from_payload = getattr(payload, key, None) if payload else None
+        return from_payload if from_payload is not None else saved.get(key)
+
+    exclude_roles = _pick("exclude_roles")
+    exclude_user_ids = _pick("exclude_user_ids")
+    exclude_dept_ids = _pick("exclude_dept_ids")
+    exclude_levels = _pick("exclude_levels")
+    min_hired_before = _pick("min_hired_before")
+
     q = select(User).where(User.status == "active")
 
-    if payload.exclude_roles:
-        q = q.where(User.role.notin_(payload.exclude_roles))
-    if payload.exclude_user_ids:
-        q = q.where(User.id.notin_(payload.exclude_user_ids))
-    if payload.exclude_dept_ids:
+    if exclude_roles:
+        q = q.where(User.role.notin_(exclude_roles))
+    if exclude_user_ids:
+        q = q.where(User.id.notin_(exclude_user_ids))
+    if exclude_dept_ids:
         q = q.where(
-            (User.department_id == None) | User.department_id.notin_(payload.exclude_dept_ids)  # noqa: E711
+            (User.department_id == None) | User.department_id.notin_(exclude_dept_ids)  # noqa: E711
         )
-    if payload.exclude_levels:
-        q = q.where(User.level.notin_(payload.exclude_levels))
-    if payload.min_hired_before:
-        q = q.where(User.hired_at <= payload.min_hired_before)
+    if exclude_levels:
+        q = q.where(User.level.notin_(exclude_levels))
+    if min_hired_before:
+        q = q.where(User.hired_at <= min_hired_before)
 
     # "谁参加考核"是管理决策，不受"查看绩效"的利益回避限制
     # 仅按 hrbp_scope_dept_ids 做管辖范围限制（如果有）
@@ -267,7 +338,8 @@ def suggest_participants(
     users = session.exec(q).all()
     return [
         {"id": u.id, "name": u.name, "role": u.role, "position": u.position,
-         "department_id": u.department_id, "hired_at": u.hired_at.isoformat() if u.hired_at else None}
+         "department_id": u.department_id, "level": u.level,
+         "hired_at": u.hired_at.isoformat() if u.hired_at else None}
         for u in users
     ]
 

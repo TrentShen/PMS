@@ -141,6 +141,32 @@ def get_evaluation_detail(
         if not fb or fb.confirm_status == "pending":
             show_final = False
 
+    # 历史绩效：该员工所有已发布周期的结果
+    history_perf = []
+    if can_see_superior:
+        from pms.database.models.cycle import PerformanceCycle as PC
+        hist = session.exec(
+            select(CycleParticipant, PC)
+            .join(PC, PC.id == CycleParticipant.cycle_id)
+            .where(
+                CycleParticipant.user_id == user_id,
+                PC.status == "published",
+                PC.id != cycle_id,
+            )
+            .order_by(PC.end_date.desc())
+            .limit(5)
+        ).all()
+        for hp, hc in hist:
+            history_perf.append({
+                "cycle_name": hc.name,
+                "cycle_id": hc.id,
+                "final_perf_score": hp.final_perf_score,
+                "final_perf_level": hp.final_perf_level,
+                "final_value_belief": hp.final_value_belief,
+                "final_value_team": hp.final_value_team,
+                "final_value_growth": hp.final_value_growth,
+            })
+
     return {
         "cycle": {
             "id": cycle.id,
@@ -169,6 +195,7 @@ def get_evaluation_detail(
         ],
         "self_evaluation": _eva_view(self_eva),
         "superior_evaluation": _eva_view(superior_eva) if can_see_superior else None,
+        "history_perf": history_perf,
     }
 
 
