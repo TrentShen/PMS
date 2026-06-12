@@ -160,6 +160,7 @@
 - [ ] 一次修改超过 3 个文件
 - [ ] 修改其他模块/PRD 的代码（越界）
 - [ ] 修改配置文件（`vite.config.ts`、`docker-compose.yml`、`nginx.conf`）
+- [ ] 部署时覆盖生产 `.env`（必须先备份并人工确认）
 - [ ] 删表/清数据（migration 删字段/表）
 - [ ] 引入新基础设施（Celery、消息队列等——当前系统**没有**这些）
 
@@ -174,6 +175,7 @@
 - 直接拼接 SQL（必须用 ORM/参数化）
 - 生产环境暴露 `/mock-users` 等调试接口
 - `.env` 提交到 git
+- 部署时覆盖生产 `.env`（必须先 diff 确认）
 - 接口不经权限校验返回敏感数据
 
 ### 质量
@@ -269,14 +271,16 @@ cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 - **后端**：`python3 -m uvicorn pms.main:app --host 0.0.0.0 --port 8000`
 - **后端启动方式**：`cd /opt/pms/pms/backend && PYTHONPATH=src nohup python3 -m uvicorn pms.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &`
 - **健康检查**：`GET /api/v1/health` → `{"status":"ok"}`
+- **企微登录**：已修复（`WECOM_REDIRECT_URI` 已恢复为生产域名，`APP_ENV=prod`）
 - **数据库**：Docker `pms-mysql`，宿主机端口 `3307`
 - **缓存**：Docker `pms-redis`，宿主机端口 `6379`
 
 ### 11.4 已知风险
 
-1. **MySQL `.env` 密码修正**：服务器 `/opt/pms/pms/backend/.env` 中的 `MYSQL_PASSWORD` 已从错误的 `pms_password` 修正为 `Pms_Prod_2024_Secure`（与 `deploy/.env.prod` 一致）。后续部署若重新覆盖 `.env` 需保留正确密码。
-2. **手动 DDL**：`objective_revision` 表和 `performance_cycle.exclusion_rules` 字段为手动创建，后续新环境部署需执行对应 DDL 或使用 Alembic 重新生成迁移。
-3. **企微通讯录同步不可用**：`WECOM_CONTACT_SECRET` 为空，每日通讯录同步任务会失败。
+1. **MySQL `.env` 密码修正**：服务器 `/opt/pms/pms/backend/.env` 中的 `MYSQL_PASSWORD` 已从错误的 `pms_password` 修正为 `Pms_Prod_2024_Secure`（与 `deploy/.env.prod` 一致）。
+2. **`.env` 覆盖事件教训**：2026-06-12 部署时，本地开发 `.env` 被部署包覆盖到服务器，导致 `WECOM_REDIRECT_URI` 变为 `localhost:5173`，企微登录失败且 `APP_ENV=local` 暴露调试接口。已修复并新增 HARNESS 规则禁止此行为。
+3. **手动 DDL**：`objective_revision` 表和 `performance_cycle.exclusion_rules` 字段为手动创建，后续新环境部署需执行对应 DDL 或使用 Alembic 重新生成迁移。
+4. **企微通讯录同步不可用**：`WECOM_CONTACT_SECRET` 仍为空，每日通讯录同步任务会失败。
 
 ---
 
