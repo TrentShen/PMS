@@ -7,6 +7,16 @@ import { hasAnyRole } from "@/components/RequireRole";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
+interface ProbationPlanBrief {
+  id: number;
+  user_id: number;
+  status: string;
+  status_text: string;
+  start_date: string;
+  end_date: string;
+  remaining_days: number;
+}
+
 interface MyCycleItem {
   cycle: {
     id: number;
@@ -52,14 +62,17 @@ export default function Home() {
   const user = useAuth((s) => s.user)!;
   const navigate = useNavigate();
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
+  const [myProbation, setMyProbation] = useState<ProbationPlanBrief | null>(null);
 
   useEffect(() => {
     api.get<MyCycleItem[]>("/v1/cycles/mine").then((r) => setCycles(r.data));
+    api.get<ProbationPlanBrief | null>("/v1/probation/mine").then((r) => setMyProbation(r.data));
   }, []);
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
   const isLeader = hasAnyRole(user.role, [...ROLE.LEADER]);
   const isHr = hasAnyRole(user.role, [...ROLE.HR]);
+  const canSeeProbationMenu = isHr || isLeader || user?.has_hr_permission || user?.has_subordinates;
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -73,8 +86,33 @@ export default function Home() {
           {(isLeader || isHr) && (
             <Button onClick={() => navigate("/leader")}>下属评估</Button>
           )}
+          {canSeeProbationMenu && (
+            <Button onClick={() => navigate("/probation")}>试用期管理</Button>
+          )}
         </Space>
       </Card>
+
+      {myProbation && (
+        <Card title="我的试用期">
+          <Space direction="vertical">
+            <span>
+              试用期：{myProbation.start_date} ~ {myProbation.end_date}
+            </span>
+            <span>
+              状态：<Tag>{myProbation.status_text}</Tag>
+            </span>
+            <span>
+              剩余天数：
+              {myProbation.remaining_days < 0
+                ? `已逾期 ${Math.abs(myProbation.remaining_days)} 天`
+                : `${myProbation.remaining_days} 天`}
+            </span>
+            <Button type="primary" onClick={() => navigate(`/probation/${myProbation?.user_id}`)}>
+              查看详情
+            </Button>
+          </Space>
+        </Card>
+      )}
 
       <Card title="我参与的周期">
         {cycles.length === 0 ? (

@@ -4,7 +4,7 @@
 > 适用：PMS 绩效管理系统（FastAPI + React）  
 > 工具：Kimi（主 AI 助手）  
 > 配套：agents.md、.harness/rules/、.harness/errors.md  
-> 最后更新：2026-06-12
+> 最后更新：2026-06-24
 
 ---
 
@@ -255,17 +255,35 @@ cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 | P1-4 | 结构化面谈模板（后端必填校验） | ✅ |
 | P1-5 | 目标中途调整（审批流 + revision 历史表） | ✅ |
 | 全局 | 所有 `datetime.utcnow()` 替换为 `datetime.now(timezone.utc)` | ✅ |
-| 全局 | 后端单元测试覆盖（42 个测试全绿） | ✅ |
+| 全局 | 后端单元测试覆盖（50 个测试全绿） | ✅ |
+| P2-1 | 试用期管理模块：自动创建计划、目标填写/审批、上级评估、转正建议 | ✅ |
+| P2-2 | 试用期即时消息通知 + 可复用企微消息推送服务 | ✅ |
 
 ### 11.2 剩余待办事项
 
 | 编号 | 事项 | 优先级 | 说明 |
 |------|------|:--:|------|
-| — | 企微通讯录 Secret 配置 | P0 | `WECOM_CONTACT_SECRET` 仍为空，需用户在企微后台获取 |
 | — | Git 用户信息配置 | 建议 | 当前 commit author 为自动生成，建议配置 `git config --global user.name/email` |
-| — | Alembic 迁移脚本补录 | 建议 | P1-3/P1-5 的数据库变更是手动 DDL，建议补 `alembic revision --autogenerate` |
+| — | 生产环境执行新迁移 | P0 | 初始迁移已重写为单一完整迁移 `a088a1294289`，新环境执行 `alembic upgrade head` 即可从零建库 |
+| — | 人事助手权限验证 | P0 | 需确认自建应用有「人事助手」接口权限，且员工在应用可见范围内 |
+| — | 全量 utcnow 清理 | P1 | 已替换 src/ 下所有 `datetime.utcnow()` |
+| — | 完整 UAT | P0 | 本地 happy path 已跑通，发现并修复 4 个问题（含 Alembic 初始迁移） |
 
-### 11.3 部署状态
+### 11.3 冲刺计划
+
+> 当前策略：全力冲刺月底绩效启动会；若赶不上，启用**试用期管理**作为兜底方案。详见 `docs/月底冲刺计划-20260616.md`。
+
+**冲刺关键事项**：
+| 编号 | 事项 | 优先级 | 状态 |
+|------|------|:------:|:----:|
+| S-1 | 前端 `LeaderEvalDetail.tsx` 三维度检查 | P0 | ✅ 已确认 |
+| S-2 | 前端 `AnonymousFeedback.tsx` 选人接口改用 `/v1/users` | P0 | ✅ 已完成 |
+| S-3 | 后端全局 `datetime.utcnow()` 替换 | P1 | ✅ 已完成 |
+| S-4 | Alembic 初始迁移重写（UAT-4） | P1 | ✅ 已修复：新环境 `alembic upgrade head` 可一次性创建所有表 |
+| S-5 | User 人事字段 + 人事助手 API 封装 | P1 | ✅ 已完成 |
+| S-6 | 人事助手接口权限与可见范围 | P0 | 待验证 |
+
+### 11.4 部署状态
 
 - **公网访问**：`https://shanghai.idc.matrixorigin.cn:30088/`
 - **后端**：`python3 -m uvicorn pms.main:app --host 0.0.0.0 --port 8000`
@@ -275,12 +293,13 @@ cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 - **数据库**：Docker `pms-mysql`，宿主机端口 `3307`
 - **缓存**：Docker `pms-redis`，宿主机端口 `6379`
 
-### 11.4 已知风险
+### 11.5 已知风险
 
 1. **MySQL `.env` 密码修正**：服务器 `/opt/pms/pms/backend/.env` 中的 `MYSQL_PASSWORD` 已从错误的 `pms_password` 修正为 `Pms_Prod_2024_Secure`（与 `deploy/.env.prod` 一致）。
 2. **`.env` 覆盖事件教训**：2026-06-12 部署时，本地开发 `.env` 被部署包覆盖到服务器，导致 `WECOM_REDIRECT_URI` 变为 `localhost:5173`，企微登录失败且 `APP_ENV=local` 暴露调试接口。已修复并新增 HARNESS 规则禁止此行为。
-3. **手动 DDL**：`objective_revision` 表和 `performance_cycle.exclusion_rules` 字段为手动创建，后续新环境部署需执行对应 DDL 或使用 Alembic 重新生成迁移。
-4. **企微通讯录同步不可用**：`WECOM_CONTACT_SECRET` 仍为空，每日通讯录同步任务会失败。
+3. **Alembic 初始迁移重写**：`a088a1294289_v0_9_initial_schema.py` 已重写为包含全部 16 张表的完整初始迁移，并删除已冗余的后续增量迁移。新环境执行 `alembic upgrade head` 即可从零建库；已存在数据的环境需执行 `alembic stamp a088a1294289` 对齐版本号。
+4. **人事助手权限待验证**：PMS 已改用自建应用 `WECOM_SECRET` 调用通讯录和人事助手接口，需确认应用有「人事助手」接口权限且员工在可见范围内。
+5. **全量 utcnow 清理**：`datetime.utcnow()` 已全部替换为 `datetime.now(timezone.utc)`，但需在完整测试环境中验证无回归。
 
 ---
 

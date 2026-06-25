@@ -31,6 +31,7 @@ export default function AppLayout() {
     { key: "/anonymous", label: "匿名评价" },
     (hasAnyRole(user?.role, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/leader", label: "下属评估" },
     (hasAnyRole(user?.role, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/calibration", label: "校准" },
+    (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission || user?.has_subordinates) && { key: "/probation", label: "试用期管理" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
     (hasAnyRole(user?.role, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
   ].filter(Boolean) as { key: string; label: string }[];

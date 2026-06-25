@@ -20,6 +20,8 @@ import Calibration from "@/pages/Calibration";
 import Notifications from "@/pages/Notifications";
 import Feedback from "@/pages/Feedback";
 import History from "@/pages/History";
+import Probation from "@/pages/Probation";
+import ProbationDetail from "@/pages/ProbationDetail";
 
 // 集中定义角色分组，避免各处散落字符串
 export const ROLE = {
@@ -60,6 +62,12 @@ export default function App() {
           {/* HR 管理台：hrbp/super_admin + HR 部门 Leader */}
           <Route element={<RequireRole roles={[...ROLE.HR]} fallback="forbid" allowHrPermission />}>
             <Route path="/hr" element={<HrConsole />} />
+          </Route>
+
+          {/* 试用期管理：Leader/HR 可见 */}
+          <Route element={<RequireRole roles={[...ROLE.HR, ...ROLE.LEADER]} fallback="forbid" allowHrPermission allowHasSubordinates />}>
+            <Route path="/probation" element={<Probation />} />
+            <Route path="/probation/:userId" element={<ProbationDetail />} />
           </Route>
 
           {/* 仅超级管理员可见 */}
