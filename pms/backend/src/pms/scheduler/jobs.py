@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 # APScheduler 定时任务：提醒扫描 + 通讯录同步
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from loguru import logger
 from sqlmodel import Session, select
 
 from pms.database.models.audit import NotificationLog
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
+from pms.database.models.enums import ProbationPlanStatus
+from pms.database.models.probation import ProbationPlan
 from pms.database.models.user import User
 from pms.database.session import engine
+from pms.services.notification import get_hrbp_userids, send_textcard_notification
 
 STAGE_LABELS = {
     "self_eval": "自评",
@@ -35,27 +38,6 @@ def _already_notified(s: Session, userid: str, title: str, today: date) -> bool:
         )
     ).first()
     return exists is not None
-
-
-def _try_send(notification: NotificationLog, s: Session) -> None:
-    """调企微发送并更新日志"""
-    from pms.services.wecom import send_textcard
-    from pms.configs import settings
-    try:
-        send_textcard(
-            user_ids=[notification.target_userid],
-            title=notification.title,
-            description=notification.content,
-            url=f"{settings.frontend_origin}",
-        )
-        notification.status = "sent"
-        notification.sent_at = datetime.now(timezone.utc)
-    except Exception as e:
-        notification.retry_count = (notification.retry_count or 0) + 1
-        notification.error_msg = str(e)[:256]
-        notification.status = "retry" if notification.retry_count < 3 else "failed"
-        logger.warning("企微消息发送失败: {} -> {} {}", notification.title, notification.target_userid, e)
-    s.commit()
 
 
 def check_stage_reminders():
@@ -102,21 +84,17 @@ def check_stage_reminders():
                 ).all()
 
                 sent_count = 0
-                for p, u in participants:
+                for _p, u in participants:
                     if _already_notified(s, u.wecom_userid, title, today):
                         continue
-                    notification = NotificationLog(
-                        target_userid=u.wecom_userid,
-                        channel="wecom",
+                    send_textcard_notification(
+                        target_userids=[u.wecom_userid],
                         title=title,
-                        content=content,
+                        description=content,
+                        url="/",
                         payload={"cycle_id": cycle.id, "stage": stage_key, "days_left": days_left},
-                        status="pending",
                     )
-                    s.add(notification)
-                    s.flush()  # 生成 id 但不提交事务
                     sent_count += 1
-                    _try_send(notification, s)
 
                 if sent_count:
                     logger.info("周期 {} / {} 截止提醒: {} 人", cycle.name, label, sent_count)
@@ -139,37 +117,165 @@ def check_deadline_reminders():
                 )
             ).all()
             sent_count = 0
-            for p, u in pending:
+            for _p, u in pending:
                 title = "自评截止提醒"
                 if _already_notified(s, u.wecom_userid, title, today):
                     continue
-                notification = NotificationLog(
-                    target_userid=u.wecom_userid,
-                    channel="wecom",
+                send_textcard_notification(
+                    target_userids=[u.wecom_userid],
                     title=title,
-                    content=f"「{cycle.name}」自评尚未完成，请尽快提交。",
+                    description=f"「{cycle.name}」自评尚未完成，请尽快提交。",
+                    url="/",
                     payload={"cycle_id": cycle.id},
-                    status="pending",
                 )
-                s.add(notification)
-                s.flush()
                 sent_count += 1
-                _try_send(notification, s)
             if sent_count:
                 logger.info("周期 {} 通用提醒 {} 人", cycle.name, sent_count)
 
 
 def sync_contacts_daily():
-    """每日 02:00 全量同步企微通讯录"""
-    from pms.api.v1.users import _sync_departments, _sync_users
+    """每日 02:00 全量同步企微通讯录 + 人事字段"""
+    from pms.api.v1.users import _enrich_users_hr_info, _sync_departments, _sync_users
     from pms.database.session import Session, engine
     with Session(engine) as s:
         try:
             _sync_departments(s)
             count = _sync_users(s)
-            logger.info("每日通讯录同步完成: {} 个用户", count)
+            hr_count = _enrich_users_hr_info(s)
+            logger.info("每日通讯录同步完成: {} 个用户, {} 个人事字段补充", count, hr_count)
         except Exception:
             logger.exception("每日通讯录同步失败")
+
+
+def _add_months(d: date, months: int) -> date:
+    """返回 date 加上指定月数后的日期，处理月末越界。"""
+    total_months = d.month - 1 + months
+    year = d.year + total_months // 12
+    month = total_months % 12 + 1
+    max_day = [31, 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+    day = min(d.day, max_day)
+    return date(year, month, day)
+
+
+def sync_probation_plans():
+    """每日扫描试用期员工，自动创建试用期计划；临转正前更新状态为待评估。"""
+    default_probation_months = 6
+    pending_evaluation_days = 7
+
+    with Session(engine) as s:
+        try:
+            # 1. 自动创建缺失的计划
+            probation_users = s.exec(
+                select(User).where(User.employee_status == "probation", User.status == "active")
+            ).all()
+            existing_user_ids = set(s.exec(select(ProbationPlan.user_id)).all())
+
+            created = 0
+            for user in probation_users:
+                if user.id in existing_user_ids or not user.hired_at:
+                    continue
+                months = user.probation if user.probation else default_probation_months
+                plan = ProbationPlan(
+                    user_id=user.id,
+                    start_date=user.hired_at,
+                    end_date=_add_months(user.hired_at, months),
+                    probation_months=months,
+                    status=ProbationPlanStatus.DRAFT,
+                )
+                s.add(plan)
+                created += 1
+
+            if created:
+                s.commit()
+                logger.info("自动创建试用期计划: {} 人", created)
+
+                # 通知员工计划已创建
+                for user in probation_users:
+                    if user.id in existing_user_ids or not user.hired_at:
+                        continue
+                    send_textcard_notification(
+                        target_userids=[user.wecom_userid],
+                        title="试用期计划已创建",
+                        description="你的试用期计划已创建，请尽快填写试用期目标并提交审批。",
+                        url=f"/probation/{user.id}",
+                        payload={"user_id": user.id, "event": "plan_created"},
+                    )
+
+            # 2. 临转正前进入待评估状态
+            today = _today()
+            threshold = today + timedelta(days=pending_evaluation_days)
+            in_progress_plans = s.exec(
+                select(ProbationPlan).where(
+                    ProbationPlan.status == ProbationPlanStatus.IN_PROGRESS,
+                    ProbationPlan.end_date <= threshold,
+                    ProbationPlan.end_date >= today,
+                )
+            ).all()
+
+            pending_users: list[User] = []
+            pending_count = 0
+            for plan in in_progress_plans:
+                plan.status = ProbationPlanStatus.PENDING_EVALUATION
+                plan.updated_at = datetime.now(timezone.utc)
+                s.add(plan)
+                pending_count += 1
+                user = s.get(User, plan.user_id)
+                if user:
+                    pending_users.append(user)
+
+            if pending_count:
+                s.commit()
+                logger.info("试用期进入待评估状态: {} 人", pending_count)
+
+                for user in pending_users:
+                    recipients: list[User | str] = []
+                    if user.leader_userid:
+                        recipients.append(user.leader_userid)
+                    recipients.extend(get_hrbp_userids(s, user))
+                    if recipients:
+                        send_textcard_notification(
+                            target_userids=recipients,
+                            title="试用期评估提醒",
+                            description=f"员工 {user.name} 即将结束试用期，请尽快完成试用期评估。",
+                            url=f"/probation/{user.id}",
+                            payload={"user_id": user.id, "event": "pending_evaluation"},
+                        )
+
+        except Exception:
+            logger.exception("试用期计划同步失败")
+
+
+def probation_evaluation_reminder():
+    """提醒上级对临转正员工做试用期评估。"""
+    today = _today()
+    with Session(engine) as s:
+        try:
+            pending_plans = s.exec(
+                select(ProbationPlan, User)
+                .join(User, ProbationPlan.user_id == User.id)
+                .where(ProbationPlan.status == ProbationPlanStatus.PENDING_EVALUATION)
+            ).all()
+
+            sent_count = 0
+            for plan, user in pending_plans:
+                if not user.leader_userid:
+                    continue
+                title = "试用期评估提醒"
+                if _already_notified(s, user.leader_userid, title, today):
+                    continue
+                send_textcard_notification(
+                    target_userids=[user.leader_userid],
+                    title=title,
+                    description=f"员工 {user.name} 即将结束试用期，请尽快完成试用期评估。",
+                    url=f"/probation/{user.id}",
+                    payload={"probation_plan_id": plan.id, "user_id": user.id},
+                )
+                sent_count += 1
+
+            if sent_count:
+                logger.info("试用期评估提醒发送: {} 人", sent_count)
+        except Exception:
+            logger.exception("试用期评估提醒失败")
 
 
 def start_scheduler():
@@ -182,5 +288,9 @@ def start_scheduler():
     scheduler.add_job(check_deadline_reminders, "cron", hour=9, id="deadline_remind")
     # 每日凌晨 2 点同步通讯录
     scheduler.add_job(sync_contacts_daily, "cron", hour=2, id="contact_sync")
+    # 每日凌晨 2:30 同步试用期计划并标记临转正员工
+    scheduler.add_job(sync_probation_plans, "cron", hour=2, minute=30, id="probation_sync")
+    # 每日早上 9 点提醒上级做试用期评估
+    scheduler.add_job(probation_evaluation_reminder, "cron", hour=9, id="probation_eval_remind")
     scheduler.start()
-    logger.info("APScheduler started: stage_remind + deadline_remind + contact_sync")
+    logger.info("APScheduler started: stage_remind + deadline_remind + contact_sync + probation_sync + probation_eval_remind")
