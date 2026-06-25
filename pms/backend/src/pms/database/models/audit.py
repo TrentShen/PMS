@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 # 审计日志 + 导出日志 + 消息日志
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
@@ -24,7 +24,7 @@ class AuditLog(SQLModel, table=True):
     after_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     reason: str | None = Field(default=None, max_length=512)
     ip: str | None = Field(default=None, max_length=64)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
 
 
 class ExportLog(SQLModel, table=True):
@@ -38,7 +38,7 @@ class ExportLog(SQLModel, table=True):
     filter_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     row_count: int = Field(default=0)
     file_name: str | None = Field(default=None, max_length=256)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
 
 
 class NotificationLog(SQLModel, table=True):
@@ -55,4 +55,4 @@ class NotificationLog(SQLModel, table=True):
     retry_count: int = Field(default=0)
     sent_at: datetime | None = None
     error_msg: str | None = Field(default=None, max_length=1024)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

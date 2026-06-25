@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, Header, HTTPException
@@ -19,8 +19,8 @@ USER_CACHE_TTL = 300  # 5 minutes
 def sign_token(wecom_userid: str) -> str:
     payload = {
         "sub": wecom_userid,
-        "exp": datetime.utcnow() + JWT_TTL,
-        "iat": datetime.utcnow(),
+        "exp": datetime.now(timezone.utc) + JWT_TTL,
+        "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, settings.app_secret, algorithm=JWT_ALGO)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 # Excel 目标批量导入（PRD 3.3.1 一次性过渡功能）
 # HRBP 下载模板 → 填写 → 上传 → 系统校验 → 导入
 import io
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse

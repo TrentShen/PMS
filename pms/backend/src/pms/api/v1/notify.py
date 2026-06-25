@@ -2,8 +2,7 @@ from __future__ import annotations
 
 # 消息提醒 + 催办 API
 # 催办写 notification_log 后即时调企微发送；失败标记待重试
-import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
@@ -47,7 +46,7 @@ def _send_and_log(notification: NotificationLog, session: Session) -> None:
             url=f"{settings.frontend_origin}",
         )
         notification.status = "sent"
-        notification.sent_at = datetime.utcnow()
+        notification.sent_at = datetime.now(timezone.utc)
         logger.info("企微消息发送成功: {} -> {}", notification.title, notification.target_userid)
     except Exception as e:
         notification.retry_count = (notification.retry_count or 0) + 1

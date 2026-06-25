@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 # 用户列表 + 通讯录同步
-from datetime import datetime
+from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -12,7 +12,11 @@ from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import require_role
 from pms.services.scope import visible_user_ids
-from pms.services.wecom import list_departments, list_users_detail_by_dept
+from pms.services.wecom import (
+    batch_get_hr_staff_info,
+    list_departments,
+    list_users_detail_by_dept,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -25,6 +29,17 @@ class UserBrief(BaseModel):
     position: str | None
     leader_userid: str | None
     department_id: int | None
+
+
+class UserHRInfo(BaseModel):
+    """HR 专用：员工人事信息，包含敏感字段，需严格权限控制"""
+    id: int
+    wecom_userid: str
+    name: str
+    hired_at: date | None
+    confirm_date: date | None
+    probation: int | None
+    employee_status: str | None
 
 
 @router.get("", response_model=list[UserBrief])
@@ -95,8 +110,49 @@ def _map_dept_path(dept_ids: list[int], session: Session) -> str | None:
     return str(local.id) if local else None
 
 
+def _enrich_users_hr_info(session: Session, user_ids: list[int] | None = None) -> int:
+    """批量从人事助手补充员工人事字段（用于后台同步任务，避免请求链路阻塞）"""
+    q = select(User).where(User.status == "active")
+    if user_ids:
+        q = q.where(User.id.in_(user_ids))
+    users = session.exec(q).all()
+    if not users:
+        return 0
+
+    userid_to_user = {u.wecom_userid: u for u in users}
+    results = batch_get_hr_staff_info(list(userid_to_user.keys()))
+
+    updated = 0
+    for userid, info in results.items():
+        user = userid_to_user.get(userid)
+        if not user:
+            continue
+        if info.get("hired_at"):
+            user.hired_at = info["hired_at"]
+        if info.get("confirm_date"):
+            user.confirm_date = info["confirm_date"]
+        if info.get("probation") is not None:
+            user.probation = info["probation"]
+        if info.get("employee_status"):
+            user.employee_status = info["employee_status"]
+        updated += 1
+
+    session.commit()
+    logger.info("人事字段补充完成: {} 人", updated)
+    return updated
+
+
+def _normalize_leader(value: str | list[str] | None) -> str | None:
+    """把企微 direct_leader（可能是字符串或列表）归一化为单个字符串"""
+    if not value:
+        return None
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
 def _sync_users(session: Session) -> int:
-    """全量同步用户（从根部门拉取）"""
+    """全量同步用户基础信息（从根部门拉取），不调用人事助手"""
     userlist = list_users_detail_by_dept(1, fetch_child=True)
     count = 0
     for u in userlist:
@@ -109,15 +165,16 @@ def _sync_users(session: Session) -> int:
         dept_ids = u.get("department", [])
         dept_path = _map_dept_path(dept_ids, session)
         status = "active" if u.get("status") == 1 else "inactive"
+        leader_userid = _normalize_leader(u.get("direct_leader"))
         if local:
             local.name = u.get("name") or local.name
             local.avatar = u.get("avatar")
             local.position = u.get("position")
-            local.leader_userid = u.get("direct_leader")
+            local.leader_userid = leader_userid
             if dept_path and not local.department_id:
                 local.department_id = int(dept_path) if dept_path.isdigit() else None
             local.status = status
-            local.synced_at = datetime.utcnow()
+            local.synced_at = datetime.now(timezone.utc)
         else:
             session.add(User(
                 wecom_userid=wecom_userid,
@@ -125,7 +182,7 @@ def _sync_users(session: Session) -> int:
                 avatar=u.get("avatar"),
                 department_id=int(dept_path) if dept_path and dept_path.isdigit() else None,
                 position=u.get("position"),
-                leader_userid=u.get("direct_leader"),
+                leader_userid=leader_userid,
                 role="employee",
                 status=status,
             ))
@@ -139,12 +196,45 @@ def sync_contacts(
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ):
-    """手动触发通讯录全量同步"""
+    """手动触发通讯录全量同步（基础信息 + 人事字段）"""
     try:
         _sync_departments(session)
         user_count = _sync_users(session)
-        logger.info("通讯录手动同步完成: {} 个用户", user_count)
-        return {"status": "ok", "departments_synced": True, "users_synced": user_count}
+        hr_count = _enrich_users_hr_info(session)
+        logger.info("通讯录手动同步完成: {} 个用户, {} 个人事字段补充", user_count, hr_count)
+        return {
+            "status": "ok",
+            "departments_synced": True,
+            "users_synced": user_count,
+            "hr_enriched": hr_count,
+        }
     except Exception as e:
         logger.error("通讯录同步失败: {}", e)
-        raise HTTPException(status_code=500, detail=f"同步失败: {e}")
+        raise HTTPException(status_code=500, detail=f"同步失败: {e}") from e
+
+
+@router.post("/sync/hr-info")
+def sync_hr_info(
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+):
+    """手动触发人事字段补充（不重新同步通讯录基础信息）"""
+    try:
+        count = _enrich_users_hr_info(session)
+        return {"status": "ok", "hr_enriched": count}
+    except Exception as e:
+        logger.error("人事字段补充失败: {}", e)
+        raise HTTPException(status_code=500, detail=f"同步失败: {e}") from e
+
+
+@router.get("/{user_id}/hr", response_model=UserHRInfo)
+def get_user_hr_info(
+    user_id: int,
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+):
+    """获取员工人事信息（HR/超管专用）"""
+    user = session.exec(select(User).where(User.id == user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return UserHRInfo.model_validate(user, from_attributes=True)

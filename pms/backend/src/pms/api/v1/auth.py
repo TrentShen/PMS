@@ -4,7 +4,6 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
 from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -13,7 +12,7 @@ from pms.configs import settings
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, is_hr_dept_leader, sign_token
-from pms.services.wecom import get_userinfo
+from pms.services.wecom import get_user_detail, get_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -118,14 +117,21 @@ def wecom_callback(code: str, session: Session = Depends(get_session)):
     # 匹配本地用户
     user = session.exec(select(User).where(User.wecom_userid == wecom_userid)).first()
     if not user:
-        # 用户尚未同步到本地——自动注册
+        # 用户尚未同步到本地——自动注册，并尝试从企微拉取详情
         logger.warning("企微用户 {} 不在本地库，自动注册", wecom_userid)
         user = User(
             wecom_userid=wecom_userid,
-            name=wecom_userid,  # 临时用 userid 当名字，通讯录同步后会更新
+            name=wecom_userid,
             role="employee",
             status="active",
         )
+        _fill_user_basic_from_wecom(session, user)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+    elif not user.name or user.name == wecom_userid:
+        # 已存在但信息不完整（如之前只存了 userid），登录时顺手补齐基础信息
+        _fill_user_basic_from_wecom(session, user)
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -136,6 +142,29 @@ def wecom_callback(code: str, session: Session = Depends(get_session)):
     token = sign_token(user.wecom_userid)
     user_info = _build_user_response(user, session)
     return TokenResponse(token=token, user=user_info)
+
+
+def _fill_user_basic_from_wecom(session: Session, user: User) -> None:
+    """从企微通讯录补全用户基础信息（登录时使用，不阻塞、不调用人事助手）"""
+    from pms.database.models.user import Department
+
+    try:
+        detail = get_user_detail(user.wecom_userid)
+        if detail.get("errcode") in (0, None):
+            user.name = detail.get("name") or user.name
+            user.avatar = detail.get("avatar") or user.avatar
+            user.position = detail.get("position") or user.position
+            user.leader_userid = detail.get("direct_leader") or user.leader_userid
+            # 绑定主部门
+            dept_ids = detail.get("department", [])
+            if dept_ids:
+                dept = session.exec(
+                    select(Department).where(Department.wecom_dept_id == dept_ids[0])
+                ).first()
+                if dept:
+                    user.department_id = dept.id
+    except Exception as e:
+        logger.warning("企微用户详情获取失败 [{}]: {}", user.wecom_userid, e)
 
 
 # ---------- 当前用户 ----------
