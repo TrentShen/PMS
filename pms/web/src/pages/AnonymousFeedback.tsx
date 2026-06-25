@@ -38,7 +38,7 @@ export default function AnonymousFeedback() {
 
   useEffect(() => {
     api.get<Cycle[]>("/v1/cycles").then((r) => setCycles(r.data.filter((c) => c.status === "in_progress")));
-    api.get<MockUser[]>("/v1/auth/mock-users").then((r) => setUsers(r.data));
+    api.get<MockUser[]>("/v1/users").then((r) => setUsers(r.data));
   }, []);
 
   async function onSubmit() {

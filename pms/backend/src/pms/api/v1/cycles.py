@@ -4,6 +4,7 @@ from __future__ import annotations
 # HR 端：创建周期、加参与人、发布结果、总览
 # 员工端：列出自己参与的周期、我的待办
 from datetime import date, datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from pms.database.models.enums import ParticipantStatus
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, require_role
+from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/cycles", tags=["cycles"])
@@ -182,6 +184,10 @@ def start_cycle(
     )
     session.commit()
     session.refresh(cycle)
+
+    # 通知所有参与人
+    _notify_cycle_started(session, cycle)
+
     return CycleBrief.model_validate(cycle, from_attributes=True)
 
 
@@ -200,15 +206,16 @@ def publish_cycle(
     if cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail=f"当前状态 {cycle.status}，不能发布")
 
-    # 必须通过校准审批流程才能发布
-    approval = session.exec(
-        select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
-    ).first()
-    if not approval or approval.status != "approved":
-        raise HTTPException(
-            status_code=400,
-            detail="必须完成校准审批（HR→CEO 批准）后才能发布结果",
-        )
+    # 若开启校准，必须通过校准审批流程才能发布
+    if cycle.enable_calibration:
+        approval = session.exec(
+            select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
+        ).first()
+        if not approval or approval.status != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail="必须完成校准审批（HR→CEO 批准）后才能发布结果",
+            )
 
     participants = session.exec(
         select(CycleParticipant).where(CycleParticipant.cycle_id == cycle_id)
@@ -220,6 +227,27 @@ def publish_cycle(
             status_code=400,
             detail=f"尚有 {len(unfinished)} 人未确定最终评分：{', '.join(names)}",
         )
+
+    # 若开启绩效反馈，必须完成反馈闭环（每个参与人都有反馈记录且已确认/异议）
+    if cycle.enable_feedback:
+        from pms.database.models.feedback import FeedbackRecord
+
+        feedback_map = {
+            fb.user_id: fb
+            for fb in session.exec(
+                select(FeedbackRecord).where(FeedbackRecord.cycle_id == cycle_id)
+            ).all()
+        }
+        pending_feedback = [
+            p for p in participants
+            if p.user_id not in feedback_map or feedback_map[p.user_id].confirm_status == "pending"
+        ]
+        if pending_feedback:
+            names = [session.get(User, p.user_id).name for p in pending_feedback]
+            raise HTTPException(
+                status_code=400,
+                detail=f"尚有 {len(pending_feedback)} 人未完成绩效反馈确认：{', '.join(names)}",
+            )
 
     # 校准后 final_* 已经有值了，只需把状态改为 published
     for p in participants:
@@ -237,6 +265,51 @@ def publish_cycle(
         resource_type="performance_cycle",
         resource_id=str(cycle.id),
         after={"status": cycle.status, "participant_count": len(participants)},
+    )
+    session.commit()
+    session.refresh(cycle)
+
+    # 通知所有参与人结果已发布
+    _notify_cycle_published(session, cycle)
+
+    return CycleBrief.model_validate(cycle, from_attributes=True)
+
+
+@router.post("/{cycle_id}/close", response_model=CycleBrief)
+def close_cycle(
+    cycle_id: int,
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+) -> CycleBrief:
+    """published -> closed：归档周期。未完成的参与人标记为 excluded，避免 closed 周期仍存在 pending。"""
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    if cycle.status != "published":
+        raise HTTPException(status_code=400, detail=f"当前状态 {cycle.status}，不能归档")
+
+    participants = session.exec(
+        select(CycleParticipant).where(CycleParticipant.cycle_id == cycle_id)
+    ).all()
+    closed_count = 0
+    for p in participants:
+        if p.status in (ParticipantStatus.PENDING.value, ParticipantStatus.SELF_DONE.value, ParticipantStatus.LEADER_DONE.value):
+            p.status = ParticipantStatus.EXCLUDED.value
+            session.add(p)
+            closed_count += 1
+
+    before = {"status": cycle.status}
+    cycle.status = "closed"
+    session.add(cycle)
+    write_audit(
+        session,
+        operator_userid=hr.wecom_userid,
+        operator_name=hr.name,
+        action="close_cycle",
+        resource_type="performance_cycle",
+        resource_id=str(cycle.id),
+        before=before,
+        after={"status": cycle.status, "excluded_count": closed_count, "participant_count": len(participants)},
     )
     session.commit()
     session.refresh(cycle)
@@ -447,7 +520,28 @@ def add_participants(
     )
     session.commit()
 
-    return list_participants(cycle_id, session=session, current=hr, page_size=9999)
+    return [
+        ParticipantDetail(
+            id=p.id,
+            cycle_id=p.cycle_id,
+            user_id=p.user_id,
+            user_name=u.name,
+            user_position=u.position,
+            leader_userid_snapshot=p.leader_userid_snapshot,
+            dept_name_snapshot=p.dept_name_snapshot,
+            status=p.status,
+            final_perf_score=p.final_perf_score,
+            final_perf_level=p.final_perf_level,
+            final_value_belief=p.final_value_belief,
+            final_value_team=p.final_value_team,
+            final_value_growth=p.final_value_growth,
+        )
+        for p, u in (
+            (p, session.get(User, p.user_id))
+            for p in added
+        )
+        if u
+    ]
 
 
 # ============ 员工 / Leader：我的周期 / 我的待办 ============
@@ -498,3 +592,39 @@ def my_cycles(
             "result_pending_feedback": not show_final,
         })
     return result
+
+
+def _notify_cycle_started(session: Session, cycle: PerformanceCycle) -> None:
+    """周期启动后通知所有参与人。"""
+    rows = session.exec(
+        select(User)
+        .join(CycleParticipant, CycleParticipant.user_id == User.id)
+        .where(CycleParticipant.cycle_id == cycle.id, User.status == "active")
+    ).all()
+    if not rows:
+        return
+    send_textcard_notification(
+        target_userids=list(rows),
+        title="绩效周期已启动",
+        description=f"「{cycle.name}」已启动，请尽快完成自评。",
+        url=f"/cycles/{cycle.id}/self-eval",
+        payload={"cycle_id": cycle.id, "event": "cycle_started"},
+    )
+
+
+def _notify_cycle_published(session: Session, cycle: PerformanceCycle) -> None:
+    """周期结果发布后通知所有参与人。"""
+    rows = session.exec(
+        select(User)
+        .join(CycleParticipant, CycleParticipant.user_id == User.id)
+        .where(CycleParticipant.cycle_id == cycle.id, User.status == "active")
+    ).all()
+    if not rows:
+        return
+    send_textcard_notification(
+        target_userids=list(rows),
+        title="绩效结果已发布",
+        description=f"「{cycle.name}」绩效结果已发布，请查看并确认反馈。",
+        url=f"/cycles/{cycle.id}/result",
+        payload={"cycle_id": cycle.id, "event": "cycle_published"},
+    )

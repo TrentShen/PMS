@@ -13,6 +13,7 @@ from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user
+from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
@@ -72,14 +73,17 @@ def create_or_update_feedback(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
-    # 必须在 published 状态才能写反馈（校准完才有最终结果）
-    if cycle.status != "published":
-        raise HTTPException(status_code=400, detail="周期未发布，不能填写反馈")
+    if not cycle.enable_feedback:
+        raise HTTPException(status_code=400, detail="当前周期未开启绩效反馈")
+    # 必须在 in_progress 或 published 状态才能写反馈
+    # 校准完成后即可面谈，满足"先沟通后公开"原则
+    if cycle.status not in ("in_progress", "published"):
+        raise HTTPException(status_code=400, detail="当前周期状态不允许填写反馈")
 
     try:
         payload.validate()
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # upsert
     existing = session.exec(
@@ -120,6 +124,17 @@ def create_or_update_feedback(
     )
     session.commit()
     session.refresh(fb)
+
+    # 通知员工查看反馈
+    if target.wecom_userid:
+        send_textcard_notification(
+            target_userids=[target.wecom_userid],
+            title="绩效反馈已填写",
+            description=f"你的「{cycle.name}」绩效反馈已填写，请查看并确认。",
+            url=f"/feedback/{cycle.id}",
+            payload={"cycle_id": cycle.id, "user_id": target.id, "event": "feedback_created"},
+        )
+
     return _to_view(fb)
 
 
@@ -163,6 +178,12 @@ def confirm_feedback(
     current: User = Depends(get_current_user),
 ):
     # 员工只能对自己的反馈做确认
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    if not cycle.enable_feedback:
+        raise HTTPException(status_code=400, detail="当前周期未开启绩效反馈")
+
     fb = session.exec(
         select(FeedbackRecord).where(
             FeedbackRecord.cycle_id == cycle_id,
@@ -197,6 +218,22 @@ def confirm_feedback(
         after={"action": payload.action},
     )
     session.commit()
+
+    # 通知直属上级和 HRBP
+    notify_userids: set[str] = set()
+    if current.leader_userid:
+        notify_userids.add(current.leader_userid)
+    notify_userids.update(get_hrbp_userids(session, current))
+    if notify_userids:
+        action_label = "已确认" if payload.action == "confirmed" else "有异议"
+        send_textcard_notification(
+            target_userids=list(notify_userids),
+            title=f"员工绩效反馈{action_label}",
+            description=f"员工 {current.name} 对「{cycle.name}」绩效反馈{action_label}，请及时处理。",
+            url=f"/feedback/{cycle.id}/list",
+            payload={"cycle_id": cycle.id, "user_id": current.id, "event": "feedback_confirmed"},
+        )
+
     return {"status": fb.confirm_status}
 
 

@@ -17,10 +17,10 @@ from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvi
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user
+from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import (
     derive_perf_level,
-    require_value_example_if_jia,
     validate_perf_score,
 )
 
@@ -109,6 +109,8 @@ def invite_peers(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_peer_eval:
+        raise HTTPException(status_code=400, detail="当前周期未开启互评")
 
     # 必须在参与人列表里
     participant = session.exec(
@@ -238,6 +240,8 @@ def approve_peer_list(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_peer_eval:
+        raise HTTPException(status_code=400, detail="当前周期未开启互评")
 
     # 删除
     if payload.remove_user_ids:
@@ -327,6 +331,24 @@ def approve_peer_list(
     )
     session.commit()
 
+    # 通知所有被确认的互评人
+    approved_peer_user_ids = [
+        inv.peer_user_id for inv in all_invs if inv.status == "approved"
+    ]
+    if approved_peer_user_ids:
+        peer_users = session.exec(
+            select(User).where(User.id.in_(approved_peer_user_ids))
+        ).all()
+        notify_userids = [u.wecom_userid for u in peer_users if u.wecom_userid]
+        if notify_userids:
+            send_textcard_notification(
+                target_userids=notify_userids,
+                title="你被邀请参与互评",
+                description=f"你已被邀请为 {target.name} 的「{cycle.name}」互评人，请尽快完成评价。",
+                url="/peer/my-tasks",
+                payload={"cycle_id": cycle.id, "target_user_id": target.id, "event": "peer_invitation_approved"},
+            )
+
     return {
         "approved_tasks": approved_count,
         "total_peers": len([inv for inv in all_invs if inv.status == "approved"]),
@@ -381,6 +403,8 @@ def submit_peer_evaluation(
     cycle = session.get(PerformanceCycle, task.cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_peer_eval:
+        raise HTTPException(status_code=400, detail="当前周期未开启互评")
 
     try:
         score = validate_perf_score(payload.perf_score)
@@ -423,6 +447,18 @@ def submit_peer_evaluation(
         },
     )
     session.commit()
+
+    # 通知被评人直属上级
+    target = session.get(User, task.target_user_id)
+    if target and target.leader_userid:
+        send_textcard_notification(
+            target_userids=[target.leader_userid],
+            title="互评已完成",
+            description=f"你团队成员 {target.name} 的「{cycle.name}」互评已有新提交，请查看汇总。",
+            url=f"/leader/{cycle.id}/users/{target.id}",
+            payload={"cycle_id": cycle.id, "user_id": target.id, "event": "peer_evaluation_submitted"},
+        )
+
     return {"status": "submitted", "task_id": task_id}
 
 
@@ -499,7 +535,7 @@ def get_peer_summary(
         for e in all_evals:
             by_rater[e.evaluator_user_id].append(e.perf_score)
 
-        for idx, (rater_id, scores) in enumerate(by_rater.items(), 1):
+        for idx, (_rater_id, scores) in enumerate(by_rater.items(), 1):
             rater_avg = stat_mean(scores)
             diff = rater_avg - global_avg
             if diff > 0.5:
@@ -522,7 +558,7 @@ def get_peer_summary(
     summary["rater_bias"] = rater_stats
 
     # 额外查：匿名主动评价（仅 HR/部门 Leader 可见；**直属上级不可见**）
-    can_see_anon = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    can_see_anon = current.role in ("hrbp", "super_admin", "dept_leader")
     anon_list = []
     if can_see_anon:
         anons = session.exec(

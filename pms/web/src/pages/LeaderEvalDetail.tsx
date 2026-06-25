@@ -29,6 +29,12 @@ const PERF_LEVEL_LABEL: Record<string, string> = {
   below_part: "部分不符合预期",
   below: "不符合预期",
 };
+const CYCLE_STATUS_LABEL: Record<string, string> = {
+  draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已关闭",
+};
+const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
+  pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
+};
 
 // ========== 互评名单审核 ==========
 // 互评三态：pending（员工选的）/ approved（已发起）/ removed（Leader 删除）
@@ -435,6 +441,7 @@ function ObjectivesReviewSection({
                 title: "状态",
                 dataIndex: "status",
                 render: (v) => {
+                  if (!v) return "-";
                   const s = OBJ_STATUS_LABEL[v] ?? { text: v, color: "default" };
                   return <Tag color={s.color}>{s.text}</Tag>;
                 },
@@ -539,9 +546,13 @@ export default function LeaderEvalDetail() {
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card title={`${detail.user.name} · ${detail.cycle.name}`}>
         <Descriptions column={3} size="small">
-          <Descriptions.Item label="职位">{detail.user.position}</Descriptions.Item>
-          <Descriptions.Item label="状态">{detail.participant_status}</Descriptions.Item>
-          <Descriptions.Item label="周期">{detail.cycle.status}</Descriptions.Item>
+          <Descriptions.Item label="职位">{detail.user.position ?? "-"}</Descriptions.Item>
+          <Descriptions.Item label="状态">
+            <Tag>{PARTICIPANT_STATUS_LABEL[detail.participant_status] ?? detail.participant_status}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="周期">
+            <Tag>{CYCLE_STATUS_LABEL[detail.cycle.status] ?? detail.cycle.status}</Tag>
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 

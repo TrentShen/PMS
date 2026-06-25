@@ -5,12 +5,14 @@ import {
   Alert,
   Button,
   Card,
+  Col,
   DatePicker,
   Form,
   Input,
   List,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Table,
@@ -23,6 +25,7 @@ import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import { useMobile } from "@/hooks/useMobile";
 
 interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null; exclusion_rules?: Record<string, any> | null }
 interface UserBrief { id: number; name: string; role: string; position: string | null; level: string | null; department_id: number | null }
@@ -34,6 +37,7 @@ const STATUS_LABEL: Record<string, string> = { draft: "草稿", in_progress: "�
 export default function HrConsole() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
+  const isMobile = useMobile();
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
@@ -67,11 +71,21 @@ export default function HrConsole() {
     }
   }, [filterOpen]);
 
+  function formatError(e: any, fallback: string) {
+    const status = e?.response?.status;
+    const detail = e?.response?.data?.detail;
+    const statusText = status ? `（${status}）` : "";
+    if (typeof detail === "string" && detail.trim()) return `${detail}${statusText}`;
+    if (typeof detail === "object" && detail !== null) return `${JSON.stringify(detail)}${statusText}`;
+    if (e?.message) return `${e.message}${statusText}`;
+    return `${fallback}${statusText}`;
+  }
+
   async function onCreate(values: any) {
     try {
       await api.post("/v1/cycles", { name: values.name, start_date: values.range[0].format("YYYY-MM-DD"), end_date: values.range[1].format("YYYY-MM-DD") });
       message.success("周期已创建"); setCreateOpen(false); form.resetFields(); loadCycles();
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "创建失败"); }
+    } catch (e: any) { message.error(formatError(e, "创建失败")); }
   }
   async function onAddParticipants() {
     if (!selectedCycle || addingIds.length === 0) return;
@@ -86,7 +100,11 @@ export default function HrConsole() {
   }
   async function onPublish(c: Cycle) {
     try { await api.post(`/v1/cycles/${c.id}/publish`); message.success("已发布"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
-    catch (e: any) { message.error(e?.response?.data?.detail ?? "发布失败"); }
+    catch (e: any) { message.error(formatError(e, "发布失败")); }
+  }
+  async function onClose(c: Cycle) {
+    try { await api.post(`/v1/cycles/${c.id}/close`); message.success("已归档"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
+    catch (e: any) { message.error(formatError(e, "归档失败")); }
   }
 
   // === Excel 导入 ===
@@ -165,6 +183,7 @@ export default function HrConsole() {
               <a key="sel" onClick={() => setSelectedCycle(c)}>详情</a>,
               c.status === "draft" && <Popconfirm key="start" title="启动后不能再加人，确认？" onConfirm={() => onStart(c)}><a>启动</a></Popconfirm>,
               c.status === "in_progress" && <Popconfirm key="pub" title="需要先完成校准审批，确认发布？" onConfirm={() => onPublish(c)}><a style={{ color: "#f59e0b" }}>发布</a></Popconfirm>,
+              c.status === "published" && <Popconfirm key="close" title="归档后周期将关闭，未完成员工会被标记为 excluded，确认？" onConfirm={() => onClose(c)}><a style={{ color: "#6b7280" }}>归档</a></Popconfirm>,
             ].filter(Boolean) as any}>
               <List.Item.Meta
                 title={<Space>{c.name} <Tag color="blue">{STATUS_LABEL[c.status]}</Tag></Space>}
@@ -200,7 +219,7 @@ export default function HrConsole() {
           {/* 草稿：加参与人 */}
           {selectedCycle.status === "draft" && (
             <Space style={{ marginBottom: 16 }} wrap>
-              <Select mode="multiple" placeholder="选择员工" style={{ minWidth: 360 }} value={addingIds} onChange={setAddingIds}
+              <Select mode="multiple" placeholder="选择员工" style={{ width: "100%", minWidth: 200 }} value={addingIds} onChange={setAddingIds}
                 options={availableUsers.map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }))} />
               <Button type="primary" onClick={onAddParticipants}>添加</Button>
               <Button onClick={() => setFilterOpen(true)}>按条件筛选添加</Button>
@@ -209,28 +228,56 @@ export default function HrConsole() {
           {selectedCycle.status === "draft" && participants.length === 0 && (
             <Alert type="info" message="尚未添加参与人" />
           )}
-          <Table rowKey="id" size="small" dataSource={participants} pagination={false} columns={[
-            { title: "姓名", dataIndex: "user_name" },
-            { title: "职位", dataIndex: "user_position" },
-            { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag> },
-            { title: "业绩", render: (_, r) => r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-" },
-            { title: "价值观", render: (_, r) => (
-              <span>
-                信念 {r.final_value_belief ?? "-"} / 团队 {r.final_value_team ?? "-"} / 成长 {r.final_value_growth ?? "-"}
-              </span>
-            ) },
-            {
-              title: "操作",
-              render: (_, r) => (
-                <Space>
-                  <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>查看详情</Link>
-                  {selectedCycle.status === "published" && (
-                    <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>写反馈</a>
-                  )}
-                </Space>
-              ),
-            },
-          ]} />
+          <Table
+            rowKey="id"
+            size="small"
+            dataSource={participants}
+            pagination={false}
+            scroll={{ x: isMobile ? 360 : undefined }}
+            columns={
+              isMobile
+                ? [
+                    { title: "姓名", dataIndex: "user_name", fixed: "left", width: 80 },
+                    { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag>, width: 90 },
+                    { title: "业绩", render: (_, r) => (r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-"), width: 80 },
+                    {
+                      title: "操作",
+                      fixed: "right",
+                      width: 90,
+                      render: (_, r) => (
+                        <Space direction="vertical" size="small">
+                          <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>详情</Link>
+                          {selectedCycle.status === "published" && (
+                            <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>反馈</a>
+                          )}
+                        </Space>
+                      ),
+                    },
+                  ]
+                : [
+                    { title: "姓名", dataIndex: "user_name" },
+                    { title: "职位", dataIndex: "user_position" },
+                    { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag> },
+                    { title: "业绩", render: (_, r) => (r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-") },
+                    { title: "价值观", render: (_, r) => (
+                      <span>
+                        信念 {r.final_value_belief ?? "-"} / 团队 {r.final_value_team ?? "-"} / 成长 {r.final_value_growth ?? "-"}
+                      </span>
+                    ) },
+                    {
+                      title: "操作",
+                      render: (_, r) => (
+                        <Space>
+                          <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>查看详情</Link>
+                          {selectedCycle.status === "published" && (
+                            <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>写反馈</a>
+                          )}
+                        </Space>
+                      ),
+                    },
+                  ]
+            }
+          />
         </Card>
       )}
 
@@ -255,7 +302,7 @@ export default function HrConsole() {
       )}
 
       {/* 按条件筛选参与人弹窗 */}
-      <Modal title="按条件筛选参与人" open={filterOpen} onCancel={() => setFilterOpen(false)} onOk={() => filterForm.submit()} width={560}>
+      <Modal title="按条件筛选参与人" open={filterOpen} onCancel={() => setFilterOpen(false)} onOk={() => filterForm.submit()} style={{ top: 20 }}>
         <Form form={filterForm} layout="vertical" onFinish={onFilter}>
           <Form.Item name="exclude_roles" label="排除角色">
             <Select mode="multiple" options={[
@@ -336,19 +383,29 @@ function StageConfigPanel({ cycleId, cycleStatus }: { cycleId: number; cycleStat
     }>
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
         message="配置后系统会在截止前3天、1天和当天自动发送提醒（企微消息接入后自动推送）" />
-      <Form form={stageForm} layout="inline" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {STAGES.map((s) => (
-          <Space key={s.key} style={{ display: "flex", alignItems: "center" }}>
-            <span style={{ width: 100 }}>{s.label}：</span>
-            <Form.Item name={`${s.key}_start`} noStyle><DatePicker placeholder="开始" size="small" /></Form.Item>
-            <span>~</span>
-            <Form.Item name={`${s.key}_end`} noStyle><DatePicker placeholder="截止" size="small" /></Form.Item>
-          </Space>
-        ))}
-        <Space style={{ display: "flex", alignItems: "center" }}>
-          <span style={{ width: 100 }}>结果公布：</span>
-          <Form.Item name="publish_date" noStyle><DatePicker placeholder="公布日" size="small" /></Form.Item>
-        </Space>
+      <Form form={stageForm} layout="vertical">
+        <Row gutter={[12, 12]}>
+          {STAGES.map((s) => (
+            <Col key={s.key} xs={24} md={12} lg={8}>
+              <div style={{ marginBottom: 4, fontWeight: 500 }}>{s.label}</div>
+              <Space style={{ display: "flex", width: "100%" }}>
+                <Form.Item name={`${s.key}_start`} noStyle style={{ flex: 1 }}>
+                  <DatePicker placeholder="开始" size="small" style={{ width: "100%" }} />
+                </Form.Item>
+                <span>~</span>
+                <Form.Item name={`${s.key}_end`} noStyle style={{ flex: 1 }}>
+                  <DatePicker placeholder="截止" size="small" style={{ width: "100%" }} />
+                </Form.Item>
+              </Space>
+            </Col>
+          ))}
+          <Col xs={24} md={12} lg={8}>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>结果公布</div>
+            <Form.Item name="publish_date" noStyle>
+              <DatePicker placeholder="公布日" size="small" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
       </Form>
     </Card>
   );

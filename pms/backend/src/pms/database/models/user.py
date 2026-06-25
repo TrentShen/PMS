@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # 用户与部门模型
 # V0.9 说明：mock 模式下手工 seed 数据；Sprint 1 会从企微通讯录同步
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -28,9 +28,12 @@ class User(SQLModel, table=True):
     # 仅对 role=hrbp 生效；super_admin 永远全局；其他角色此字段忽略
     hrbp_scope_dept_ids: list[int] | None = Field(default=None, sa_column=Column(JSON))
     hired_at: date | None = None
+    confirm_date: date | None = None  # 转正日期（来自企微人事助手）
+    probation: int | None = None      # 试用期（月）
+    employee_status: str | None = Field(default=None, max_length=16)  # regular/probation/resigned/pending
     # 状态：active / inactive（离职）
     status: str = Field(default="active", max_length=16, index=True)
-    synced_at: datetime = Field(default_factory=datetime.utcnow)
+    synced_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Department(SQLModel, table=True):

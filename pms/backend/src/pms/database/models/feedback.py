@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # 绩效反馈面谈记录（PRD 3.4.8）
 # 流程：上级填写面谈记录 → 员工查看 → 员工点击"确认收到"或"有异议"
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Text
 from sqlmodel import Field, SQLModel, UniqueConstraint
@@ -31,5 +31,5 @@ class FeedbackRecord(SQLModel, table=True):
     # 员工异议内容（confirm_status=disputed 时填写）
     dispute_comment: str | None = Field(default=None, sa_column=Column(Text))
     # 时间戳
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     confirmed_at: datetime | None = None

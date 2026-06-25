@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # 自评 + 上级评估接口
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from pms.database.models.objective import Objective
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user
+from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import ensure_can_view_user
 from pms.utils.audit import write_audit
 from pms.utils.score import (
@@ -144,16 +145,16 @@ def get_evaluation_detail(
     # 历史绩效：该员工所有已发布周期的结果
     history_perf = []
     if can_see_superior:
-        from pms.database.models.cycle import PerformanceCycle as PC
+        from pms.database.models.cycle import PerformanceCycle as PerfCycle
         hist = session.exec(
-            select(CycleParticipant, PC)
-            .join(PC, PC.id == CycleParticipant.cycle_id)
+            select(CycleParticipant, PerfCycle)
+            .join(PerfCycle, PerfCycle.id == CycleParticipant.cycle_id)
             .where(
                 CycleParticipant.user_id == user_id,
-                PC.status == "published",
-                PC.id != cycle_id,
+                PerfCycle.status == "published",
+                PerfCycle.id != cycle_id,
             )
-            .order_by(PC.end_date.desc())
+            .order_by(PerfCycle.end_date.desc())
             .limit(5)
         ).all()
         for hp, hc in hist:
@@ -212,6 +213,8 @@ def submit_self_evaluation(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中，无法提交自评")
+    if not cycle.enable_self_eval:
+        raise HTTPException(status_code=400, detail="当前周期未开启自评")
 
     participant = session.exec(
         select(CycleParticipant).where(
@@ -263,7 +266,7 @@ def submit_self_evaluation(
         eva.value_growth_example = payload.value_growth_example
         eva.key_results = payload.key_results
         eva.comment = payload.comment
-        eva.submitted_at = datetime.utcnow()
+        eva.submitted_at = datetime.now(timezone.utc)
         eva.status = "submitted"
     else:
         eva = Evaluation(
@@ -281,7 +284,7 @@ def submit_self_evaluation(
             value_growth_example=payload.value_growth_example,
             key_results=payload.key_results,
             comment=payload.comment,
-            submitted_at=datetime.utcnow(),
+            submitted_at=datetime.now(timezone.utc),
             status="submitted",
         )
     session.add(eva)
@@ -303,6 +306,17 @@ def submit_self_evaluation(
     )
     session.commit()
     session.refresh(eva)
+
+    # 通知直属上级
+    if current.leader_userid:
+        send_textcard_notification(
+            target_userids=[current.leader_userid],
+            title="员工自评已完成",
+            description=f"员工 {current.name} 已完成「{cycle.name}」的自评，请尽快完成上级评估。",
+            url=f"/leader/{cycle.id}/users/{current.id}",
+            payload={"cycle_id": cycle.id, "user_id": current.id, "event": "self_eval_submitted"},
+        )
+
     return EvaluationView.model_validate(eva, from_attributes=True)
 
 
@@ -390,7 +404,7 @@ def submit_superior_evaluation(
         eva.key_results = payload.key_results
         eva.comment = payload.comment
         eva.evaluator_userid = current.wecom_userid
-        eva.submitted_at = datetime.utcnow()
+        eva.submitted_at = datetime.now(timezone.utc)
         eva.status = "submitted"
     else:
         eva = Evaluation(
@@ -408,7 +422,7 @@ def submit_superior_evaluation(
             value_growth_example=payload.value_growth_example,
             key_results=payload.key_results,
             comment=payload.comment,
-            submitted_at=datetime.utcnow(),
+            submitted_at=datetime.now(timezone.utc),
             status="submitted",
         )
     session.add(eva)
@@ -434,4 +448,16 @@ def submit_superior_evaluation(
     )
     session.commit()
     session.refresh(eva)
+
+    # 通知 HRBP
+    hrbp_userids = get_hrbp_userids(session, target)
+    if hrbp_userids:
+        send_textcard_notification(
+            target_userids=hrbp_userids,
+            title="上级评估已完成",
+            description=f"员工 {target.name} 的「{cycle.name}」上级评估已完成，请查看。",
+            url=f"/leader/{cycle.id}/users/{target.id}",
+            payload={"cycle_id": cycle.id, "user_id": target.id, "event": "superior_eval_submitted"},
+        )
+
     return EvaluationView.model_validate(eva, from_attributes=True)

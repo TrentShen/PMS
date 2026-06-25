@@ -40,6 +40,10 @@ interface ObjView {
   reject_reason: string | null;
 }
 
+const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
+  pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
+};
+
 interface Detail {
   cycle: { id: number; name: string; status: string };
   user: { id: number; name: string; position: string | null };
@@ -464,7 +468,7 @@ export default function SelfEval() {
         <Descriptions column={2} size="small">
           <Descriptions.Item label="被考核人">{detail.user.name}</Descriptions.Item>
           <Descriptions.Item label="职位">{detail.user.position ?? "-"}</Descriptions.Item>
-          <Descriptions.Item label="进度">{detail.participant_status}</Descriptions.Item>
+          <Descriptions.Item label="进度">{PARTICIPANT_STATUS_LABEL[detail.participant_status] ?? detail.participant_status}</Descriptions.Item>
         </Descriptions>
       </Card>
 

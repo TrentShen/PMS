@@ -25,12 +25,14 @@ const PSTATUS_LABEL: Record<string, string> = {
   self_done: "等待上级评估",
   leader_done: "已完成上级评估",
   published: "已公布",
+  excluded: "已排除",
 };
 const PSTATUS_COLOR: Record<string, string> = {
   pending: "default",
   self_done: "orange",
   leader_done: "blue",
   published: "green",
+  excluded: "gray",
 };
 
 export default function LeaderEval() {

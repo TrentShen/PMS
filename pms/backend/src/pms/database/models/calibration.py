@@ -3,7 +3,7 @@ from __future__ import annotations
 # 绩效校准 + 公司级审批（PRD 3.4.7）
 # 校准流程：上级初评 → 部门 Leader 校准（可改分）→ HR 审批 → CEO 审批 → 结果锁定
 # 驳回时退回到部门 Leader 重新校准
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -24,7 +24,7 @@ class CalibrationRecord(SQLModel, table=True):
     old_value: str = Field(max_length=64)
     new_value: str = Field(max_length=64)
     reason: str = Field(max_length=512)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
 
 
 class CycleApproval(SQLModel, table=True):
@@ -55,4 +55,4 @@ class CycleApproval(SQLModel, table=True):
     rejected_at: datetime | None = None
     # 时间戳
     submitted_at: datetime | None = None  # Leader 提交校准的时间
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

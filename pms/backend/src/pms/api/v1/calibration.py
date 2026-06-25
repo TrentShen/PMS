@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from pms.database.models.audit import AuditLog
 from pms.database.models.calibration import CalibrationRecord, CycleApproval
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import PerfLevel
@@ -15,6 +16,7 @@ from pms.database.models.evaluation import Evaluation
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, is_hr_dept_leader
+from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import derive_perf_level, validate_perf_score
 
@@ -265,6 +267,8 @@ def calibrate(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_calibration:
+        raise HTTPException(status_code=400, detail="当前周期未开启校准")
 
     # 审批状态必须是 calibrating 或 被驳回才能改
     approval = session.exec(
@@ -348,6 +352,8 @@ def submit_calibration(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_calibration:
+        raise HTTPException(status_code=400, detail="当前周期未开启校准")
 
     # 检查所有参与人都有 final_perf_score（即上级评估或校准都赋值了）
     parts = session.exec(
@@ -380,6 +386,18 @@ def submit_calibration(
         after={"status": "pending_hr"},
     )
     session.commit()
+
+    # 通知 HRBP 进行审批
+    hrbp_userids = get_hrbp_userids(session)
+    if hrbp_userids:
+        send_textcard_notification(
+            target_userids=hrbp_userids,
+            title="校准结果待审批",
+            description=f"「{cycle.name}」校准结果已提交，请尽快进行 HR 审批。",
+            url=f"/calibration/{cycle.id}/approval",
+            payload={"cycle_id": cycle.id, "event": "calibration_submitted"},
+        )
+
     return {"status": "pending_hr"}
 
 
@@ -400,6 +418,8 @@ def process_approval(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="周期不在进行中")
+    if not cycle.enable_calibration:
+        raise HTTPException(status_code=400, detail="当前周期未开启校准")
 
     approval = session.exec(
         select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
@@ -453,6 +473,10 @@ def process_approval(
         after={"action": payload.action, "new_status": approval.status},
     )
     session.commit()
+
+    # 审批状态变化通知
+    _notify_after_approval(session, cycle, approval, payload)
+
     return {"status": approval.status}
 
 
@@ -483,3 +507,63 @@ def get_calibration_history(
         }
         for r in records
     ]
+
+
+def _notify_after_approval(
+    session: Session,
+    cycle: PerformanceCycle,
+    approval: CycleApproval,
+    payload: ApprovalAction,
+) -> None:
+    """根据审批结果推送关键节点通知。"""
+    # 获取提交人（从 audit log 找最近一条 submit_calibration）
+    submit_audit = session.exec(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "submit_calibration",
+            AuditLog.resource_type == "cycle_approval",
+            AuditLog.resource_id == str(cycle.id),
+        )
+        .order_by(AuditLog.created_at.desc())
+    ).first()
+    submitter_userid = submit_audit.operator_userid if submit_audit else None
+
+    if approval.status == "pending_ceo":
+        # HR 已通过，通知 CEO/超级管理员进入下一轮审批
+        ceo_users = session.exec(
+            select(User).where(User.role == "super_admin", User.status == "active")
+        ).all()
+        notify_userids = [u.wecom_userid for u in ceo_users if u.wecom_userid]
+        if notify_userids:
+            send_textcard_notification(
+                target_userids=notify_userids,
+                title="校准结果待 CEO 审批",
+                description=f"「{cycle.name}」已通过 HR 审批，请尽快进行 CEO 审批。",
+                url=f"/calibration/{cycle.id}/approval",
+                payload={"cycle_id": cycle.id, "event": "calibration_pending_ceo"},
+            )
+    elif approval.status == "approved":
+        # CEO 审批通过，通知所有部门 Leader 和 HRBP
+        dept_leaders = session.exec(
+            select(User).where(User.role == "dept_leader", User.status == "active")
+        ).all()
+        notify_userids = {u.wecom_userid for u in dept_leaders if u.wecom_userid}
+        notify_userids.update(get_hrbp_userids(session))
+        if notify_userids:
+            send_textcard_notification(
+                target_userids=list(notify_userids),
+                title="校准审批已通过",
+                description=f"「{cycle.name}」校准结果已审批通过，绩效结果已锁定。",
+                url=f"/calibration/{cycle.id}/view",
+                payload={"cycle_id": cycle.id, "event": "calibration_approved"},
+            )
+    elif approval.status in ("rejected_by_hr", "rejected_by_ceo"):
+        # 驳回时通知提交人
+        if submitter_userid:
+            send_textcard_notification(
+                target_userids=[submitter_userid],
+                title="校准审批被驳回",
+                description=f"「{cycle.name}」校准结果已被{approval.status.replace('rejected_by_', '')}驳回，请修改后重新提交。",
+                url=f"/calibration/{cycle.id}/view",
+                payload={"cycle_id": cycle.id, "event": "calibration_rejected"},
+            )

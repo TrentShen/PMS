@@ -21,6 +21,7 @@ import {
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import ValueGradeForm from "@/components/ValueGradeForm";
+import { useMobile } from "@/hooks/useMobile";
 
 interface Cycle { id: number; name: string; status: string }
 interface CalItem {
@@ -48,6 +49,7 @@ const MATRIX_LEVELS: { key: keyof Omit<MatrixRow, "group" | "total">; label: str
 ];
 
 function MatrixTable({ data }: { data: MatrixRow[] }) {
+  const isMobile = useMobile();
   // 计算每列最大值，用于颜色归一化
   const maxMap: Record<string, number> = {};
   for (const col of MATRIX_LEVELS) {
@@ -67,23 +69,33 @@ function MatrixTable({ data }: { data: MatrixRow[] }) {
   };
 
   return (
-    <Table
-      size="small"
-      pagination={false}
-      dataSource={data}
-      rowKey="group"
-      columns={[
-        { title: "分组", dataIndex: "group", fixed: "left", width: 120 },
-        ...MATRIX_LEVELS.map((col) => ({
-          title: col.label,
-          dataIndex: col.key,
-          width: 90,
-          render: (v: number) => <div style={cellStyle(v, maxMap[col.key])}>{v || "—"}</div>,
-        })),
-        { title: "合计", dataIndex: "total", width: 80, render: (v: number) => <strong>{v}</strong> },
-      ]}
-      scroll={{ x: 720 }}
-    />
+    <>
+      {isMobile && (
+        <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+          矩阵较宽，手机端建议横屏查看
+        </Typography.Text>
+      )}
+      <div style={{ overflowX: "auto" }}>
+        <Table
+          size="small"
+          pagination={false}
+          dataSource={data}
+          rowKey="group"
+          columns={[
+            { title: "分组", dataIndex: "group", fixed: "left", width: 120 },
+            ...MATRIX_LEVELS.map((col) => ({
+              title: isMobile ? col.label.slice(0, 2) : col.label,
+              dataIndex: col.key,
+              width: isMobile ? 64 : 90,
+              render: (v: number) => <div style={cellStyle(v, maxMap[col.key])}>{v || "—"}</div>,
+            })),
+            { title: "合计", dataIndex: "total", width: isMobile ? 60 : 80, render: (v: number) => <strong>{v}</strong> },
+          ]}
+          scroll={{ x: isMobile ? 520 : 720 }}
+          style={{ minWidth: isMobile ? 520 : 720 }}
+        />
+      </div>
+    </>
   );
 }
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
@@ -108,6 +120,7 @@ export default function Calibration() {
   const [editingItem, setEditingItem] = useState<CalItem | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const isMobile = useMobile();
 
   const isHr = user.role === "hrbp" || user.role === "super_admin";
   const isLeader = user.role === "dept_leader";
@@ -190,7 +203,7 @@ export default function Calibration() {
           <Select
             value={selectedCid ?? undefined}
             onChange={setSelectedCid}
-            style={{ width: 300 }}
+            style={{ width: "100%", maxWidth: 300 }}
             options={cycles.map((c) => ({ value: c.id, label: c.name }))}
           />
         }
@@ -205,7 +218,7 @@ export default function Calibration() {
       <Card title="强制分布（3-6-1）">
         <Space size="large" wrap>
           {distribution.map((d) => (
-            <Card key={d.level} type="inner" size="small" style={{ width: 200 }}>
+            <Card key={d.level} type="inner" size="small" style={{ flex: "1 1 160px", minWidth: 160, maxWidth: 220 }}>
               <Statistic title={`${d.level} 档：${d.label}`} value={`${d.count} 人（${d.percent}%）`} />
               <Typography.Text type="secondary">目标：{d.target_percent}</Typography.Text>
               {d.warning && <Progress percent={d.percent} status="exception" size="small" />}
@@ -241,37 +254,89 @@ export default function Calibration() {
           size="small"
           pagination={false}
           dataSource={items}
-          columns={[
-            { title: "姓名", dataIndex: "user_name" },
-            { title: "部门", dataIndex: "dept_name" },
-            { title: "初评分", dataIndex: "initial_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
-            { title: "初评等级", dataIndex: "initial_perf_level", render: (v) => PERF_LABEL[v ?? ""] ?? "-" },
-            { title: "初评价值观", render: (_, r) => (
-              <Space>
-                <span>信念 {VALUE_LABEL[r.initial_value_belief ?? ""] ?? "-"}</span>
-                <span>团队 {VALUE_LABEL[r.initial_value_team ?? ""] ?? "-"}</span>
-                <span>成长 {VALUE_LABEL[r.initial_value_growth ?? ""] ?? "-"}</span>
-              </Space>
-            ) },
-            { title: "校准分", dataIndex: "calibrated_perf_score", render: (v) => v != null ? <Tag color="blue">{v.toFixed(2)}</Tag> : "-" },
-            { title: "校准等级", dataIndex: "calibrated_perf_level", render: (v) => v ? <Tag>{PERF_LABEL[v]}</Tag> : "-" },
-            { title: "校准价值观", render: (_, r) => (
-              <Space>
-                {r.calibrated_value_belief ? <Tag>信念 {VALUE_LABEL[r.calibrated_value_belief]}</Tag> : "-"}
-                {r.calibrated_value_team ? <Tag>团队 {VALUE_LABEL[r.calibrated_value_team]}</Tag> : null}
-                {r.calibrated_value_growth ? <Tag>成长 {VALUE_LABEL[r.calibrated_value_growth]}</Tag> : null}
-              </Space>
-            ) },
-            {
-              title: "操作",
-              render: (_, r) =>
-                canCalibrate ? (
-                  <a onClick={() => { setEditingItem(r); form.setFieldsValue({ perf_score: r.calibrated_perf_score, value_belief_grade: r.calibrated_value_belief, value_team_grade: r.calibrated_value_team, value_growth_grade: r.calibrated_value_growth, reason: "" }); }}>
-                    校准
-                  </a>
-                ) : null,
-            },
-          ]}
+          scroll={{ x: isMobile ? 420 : undefined }}
+          expandable={
+            isMobile
+              ? {
+                  expandedRowRender: (r: CalItem) => (
+                    <Space direction="vertical" size="small">
+                      <div>初评分：{r.initial_perf_score?.toFixed(2) ?? "-"}</div>
+                      <div>初评等级：{PERF_LABEL[r.initial_perf_level ?? ""] ?? "-"}</div>
+                      <div>
+                        初评价值观：信念 {VALUE_LABEL[r.initial_value_belief ?? ""] ?? "-"} /
+                        团队 {VALUE_LABEL[r.initial_value_team ?? ""] ?? "-"} /
+                        成长 {VALUE_LABEL[r.initial_value_growth ?? ""] ?? "-"}
+                      </div>
+                      <div>
+                        校准价值观：
+                        {r.calibrated_value_belief ? `信念 ${VALUE_LABEL[r.calibrated_value_belief]} ` : ""}
+                        {r.calibrated_value_team ? `团队 ${VALUE_LABEL[r.calibrated_value_team]} ` : ""}
+                        {r.calibrated_value_growth ? `成长 ${VALUE_LABEL[r.calibrated_value_growth]}` : ""}
+                      </div>
+                    </Space>
+                  ),
+                }
+              : undefined
+          }
+          columns={
+            isMobile
+              ? [
+                  { title: "姓名", dataIndex: "user_name", fixed: "left", width: 80 },
+                  { title: "部门", dataIndex: "dept_name", ellipsis: true },
+                  {
+                    title: "校准分",
+                    dataIndex: "calibrated_perf_score",
+                    render: (v) => (v != null ? <Tag color="blue">{v.toFixed(2)}</Tag> : "-"),
+                  },
+                  {
+                    title: "校准等级",
+                    dataIndex: "calibrated_perf_level",
+                    render: (v) => (v ? <Tag>{PERF_LABEL[v]}</Tag> : "-"),
+                  },
+                  {
+                    title: "操作",
+                    fixed: "right",
+                    width: 60,
+                    render: (_, r) =>
+                      canCalibrate ? (
+                        <a onClick={() => { setEditingItem(r); form.setFieldsValue({ perf_score: r.calibrated_perf_score, value_belief_grade: r.calibrated_value_belief, value_team_grade: r.calibrated_value_team, value_growth_grade: r.calibrated_value_growth, reason: "" }); }}>
+                          校准
+                        </a>
+                      ) : null,
+                  },
+                ]
+              : [
+                  { title: "姓名", dataIndex: "user_name" },
+                  { title: "部门", dataIndex: "dept_name" },
+                  { title: "初评分", dataIndex: "initial_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+                  { title: "初评等级", dataIndex: "initial_perf_level", render: (v) => PERF_LABEL[v ?? ""] ?? "-" },
+                  { title: "初评价值观", render: (_, r) => (
+                    <Space>
+                      <span>信念 {VALUE_LABEL[r.initial_value_belief ?? ""] ?? "-"}</span>
+                      <span>团队 {VALUE_LABEL[r.initial_value_team ?? ""] ?? "-"}</span>
+                      <span>成长 {VALUE_LABEL[r.initial_value_growth ?? ""] ?? "-"}</span>
+                    </Space>
+                  ) },
+                  { title: "校准分", dataIndex: "calibrated_perf_score", render: (v) => v != null ? <Tag color="blue">{v.toFixed(2)}</Tag> : "-" },
+                  { title: "校准等级", dataIndex: "calibrated_perf_level", render: (v) => v ? <Tag>{PERF_LABEL[v]}</Tag> : "-" },
+                  { title: "校准价值观", render: (_, r) => (
+                    <Space>
+                      {r.calibrated_value_belief ? <Tag>信念 {VALUE_LABEL[r.calibrated_value_belief]}</Tag> : "-"}
+                      {r.calibrated_value_team ? <Tag>团队 {VALUE_LABEL[r.calibrated_value_team]}</Tag> : null}
+                      {r.calibrated_value_growth ? <Tag>成长 {VALUE_LABEL[r.calibrated_value_growth]}</Tag> : null}
+                    </Space>
+                  ) },
+                  {
+                    title: "操作",
+                    render: (_, r) =>
+                      canCalibrate ? (
+                        <a onClick={() => { setEditingItem(r); form.setFieldsValue({ perf_score: r.calibrated_perf_score, value_belief_grade: r.calibrated_value_belief, value_team_grade: r.calibrated_value_team, value_growth_grade: r.calibrated_value_growth, reason: "" }); }}>
+                          校准
+                        </a>
+                      ) : null,
+                  },
+                ]
+          }
         />
       </Card>
 
@@ -311,7 +376,7 @@ export default function Calibration() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="perf_score" label="调整后业绩分（1-5，0.25 分段）">
-            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+            <InputNumber min={1} max={5} step={0.25} style={{ width: "100%" }} />
           </Form.Item>
           <ValueGradeForm prefix="value" />
           <Form.Item name="reason" label="调整原因（必填）" rules={[{ required: true }]}>
