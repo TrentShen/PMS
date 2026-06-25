@@ -21,6 +21,8 @@ dependencies = [
     "redis>=5.2",
     # HTTP 客户端（调用企微 API）
     "httpx>=0.27",
+    # 表单解析（FastAPI UploadFile 依赖）
+    "python-multipart>=0.0.12",
     # 定时任务
     "apscheduler>=3.10",
     # 鉴权
@@ -52,4 +54,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    "B008",  # FastAPI Depends/require_role 必须在参数默认值中调用
+    "UP017", # datetime.UTC 别名建议；timezone.utc 在 py312 仍有效且更清晰
+]
