@@ -170,6 +170,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker exec pms-backend alembic upgrade head
 ```
 
+> **注意**：初始迁移 `a088a1294289_v0_9_initial_schema.py` 已重写为完整版本，会一次性创建所有 16 张表。新环境直接执行 `alembic upgrade head` 即可；若从旧版本升级且数据库中已存在这些表，需先执行 `alembic stamp a088a1294289` 对齐版本号，再执行 `alembic upgrade head`。
+
 ### 6. 验证
 
 ```bash
