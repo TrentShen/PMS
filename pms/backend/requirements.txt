@@ -8,6 +8,7 @@ cryptography>=43
 alembic>=1.13
 redis>=5.2
 httpx>=0.27
+python-multipart>=0.0.12  # FastAPI UploadFile / form data
 apscheduler>=3.10
 pyjwt>=2.9
 loguru>=0.7
