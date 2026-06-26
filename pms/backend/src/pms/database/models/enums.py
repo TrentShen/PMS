@@ -2,7 +2,16 @@ from __future__ import annotations
 
 # 通用枚举常量定义
 # 用字符串枚举而非 int，数据库可读性更好、迁移友好
-from enum import StrEnum
+from enum import Enum
+
+try:
+    from enum import StrEnum
+except ImportError:  # Python < 3.11
+    class StrEnum(str, Enum):  # noqa: UP042
+        """兼容 Python 3.10 的字符串枚举。"""
+
+        def __str__(self) -> str:
+            return self.value
 
 
 class Role(StrEnum):

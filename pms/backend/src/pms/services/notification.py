@@ -4,7 +4,15 @@ from __future__ import annotations
 # 支持企微应用消息的 text / textcard / markdown 三种格式
 # 所有发送记录写入 NotificationLog，便于追踪和审计
 from datetime import datetime, timezone
-from enum import StrEnum
+from enum import Enum
+
+try:
+    from enum import StrEnum
+except ImportError:  # Python < 3.11
+    class StrEnum(str, Enum):  # noqa: UP042
+        def __str__(self) -> str:
+            return self.value
+
 from typing import Any
 
 from loguru import logger
