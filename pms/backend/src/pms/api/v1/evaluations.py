@@ -13,7 +13,7 @@ from pms.database.models.evaluation import Evaluation
 from pms.database.models.objective import Objective
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user
+from pms.services.auth import get_current_user, has_any_role, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import ensure_can_view_user
 from pms.utils.audit import write_audit
@@ -23,7 +23,11 @@ from pms.utils.score import (
     validate_value_grades,
 )
 
-router = APIRouter(prefix="/cycles/{cycle_id}", tags=["evaluations"])
+router = APIRouter(
+    prefix="/cycles/{cycle_id}",
+    tags=["evaluations"],
+    dependencies=[Depends(require_fte)],
+)
 
 
 # ============ Schema ============
@@ -121,7 +125,7 @@ def get_evaluation_detail(
 
     # 员工本人如果周期未发布，不允许看到上级评估的分数（只看自己的自评）
     can_see_superior = (
-        current.role in ("hrbp", "super_admin", "dept_leader")
+        has_any_role(current, "hrbp", "super_admin", "dept_leader")
         or current.wecom_userid == user.leader_userid
         or cycle.status == "published"
     )

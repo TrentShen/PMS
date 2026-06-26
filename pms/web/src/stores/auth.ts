@@ -6,17 +6,21 @@ export interface CurrentUser {
   id: number;
   wecom_userid: string;
   name: string;
-  role: string;
+  role: string; // 当前生效角色（可能通过 switch-role 切换）
+  base_role: string; // 数据库原始角色，决定用户固有哪些权限
   position?: string | null;
   leader_userid?: string | null;
   has_hr_permission?: boolean;
   has_subordinates?: boolean;
+  switchable_roles?: string[];
 }
 
 interface AuthState {
   token: string | null;
   user: CurrentUser | null;
   setAuth: (token: string, user: CurrentUser) => void;
+  setUser: (user: CurrentUser) => void;
+  setToken: (token: string) => void;
   clear: () => void;
 }
 
@@ -45,6 +49,14 @@ export const useAuth = create<AuthState>((set) => ({
     safeSet(TOKEN_KEY, token);
     safeSet(USER_KEY, JSON.stringify(user));
     set({ token, user });
+  },
+  setUser: (user) => {
+    safeSet(USER_KEY, JSON.stringify(user));
+    set({ user });
+  },
+  setToken: (token) => {
+    safeSet(TOKEN_KEY, token);
+    set({ token });
   },
   clear: () => {
     safeRemove(TOKEN_KEY);

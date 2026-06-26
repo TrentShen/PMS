@@ -13,10 +13,14 @@ from pms.database.models.objective import Objective
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user
+from pms.services.auth import get_current_user, has_any_role, require_fte
 from pms.utils.audit import write_audit
 
-router = APIRouter(prefix="/cycles/{cycle_id}/objectives", tags=["objectives"])
+router = APIRouter(
+    prefix="/cycles/{cycle_id}/objectives",
+    tags=["objectives"],
+    dependencies=[Depends(require_fte)],
+)
 
 
 class ObjectiveInput(BaseModel):
@@ -227,7 +231,7 @@ def approve_objectives(
         raise HTTPException(status_code=404, detail="用户不存在")
 
     is_superior = target.leader_userid == current.wecom_userid
-    is_hr = current.role in ("hrbp", "super_admin")
+    is_hr = has_any_role(current, "hrbp", "super_admin")
     if not (is_superior or is_hr):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
@@ -281,7 +285,7 @@ def reject_objectives(
         raise HTTPException(status_code=404, detail="用户不存在")
 
     is_superior = target.leader_userid == current.wecom_userid
-    is_hr = current.role in ("hrbp", "super_admin")
+    is_hr = has_any_role(current, "hrbp", "super_admin")
     if not (is_superior or is_hr):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
@@ -472,13 +476,13 @@ def list_adjustments(
             raise HTTPException(status_code=404, detail="用户不存在")
         is_superior = target.leader_userid == current.wecom_userid
         is_self = current.id == user_id
-        is_admin = current.role in ("hrbp", "super_admin", "dept_leader")
+        is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader")
         if not (is_self or is_superior or is_admin):
             raise HTTPException(status_code=403, detail="无权查看")
         q = q.where(ObjectiveRevision.user_id == user_id)
     else:
         # 不传 user_id 时，普通员工只能看自己，HR/Leader 看全部
-        if current.role not in ("hrbp", "super_admin", "dept_leader", "direct_leader"):
+        if not has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader"):
             q = q.where(ObjectiveRevision.user_id == current.id)
 
     revisions = session.exec(q.order_by(ObjectiveRevision.created_at.desc())).all()
@@ -519,7 +523,7 @@ def approve_adjustment(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
     is_superior = target.leader_userid == current.wecom_userid
-    is_hr = current.role in ("hrbp", "super_admin")
+    is_hr = has_any_role(current, "hrbp", "super_admin")
     if not (is_superior or is_hr):
         raise HTTPException(status_code=403, detail="无权审批")
 
@@ -591,7 +595,7 @@ def reject_adjustment(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
     is_superior = target.leader_userid == current.wecom_userid
-    is_hr = current.role in ("hrbp", "super_admin")
+    is_hr = has_any_role(current, "hrbp", "super_admin")
     if not (is_superior or is_hr):
         raise HTTPException(status_code=403, detail="无权审批")
 

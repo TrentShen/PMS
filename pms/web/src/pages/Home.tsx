@@ -70,8 +70,10 @@ export default function Home() {
   }, []);
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
-  const isLeader = hasAnyRole(user.role, [...ROLE.LEADER]);
-  const isHr = hasAnyRole(user.role, [...ROLE.HR]);
+  // 首页入口基于原始角色（base_role），保证 leader 无需切换角色也能看到自己的员工入口
+  const baseRole = user.base_role ?? user.role;
+  const isLeader = hasAnyRole(baseRole, [...ROLE.LEADER]);
+  const isHr = hasAnyRole(baseRole, [...ROLE.HR]);
   const canSeeProbationMenu = isHr || isLeader || user?.has_hr_permission || user?.has_subordinates;
 
   return (

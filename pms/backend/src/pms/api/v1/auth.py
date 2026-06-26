@@ -3,7 +3,7 @@ from __future__ import annotations
 # 认证接口：mock 登录（开发用）+ 企微 OAuth 免登（生产）
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from pms.configs import settings
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, is_hr_dept_leader, sign_token
+from pms.services.auth import decode_token, get_current_user, is_hr_dept_leader, require_role, sign_token
 from pms.services.wecom import get_user_detail, get_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -30,28 +30,40 @@ class CurrentUser(BaseModel):
     id: int
     wecom_userid: str
     name: str
-    role: str
+    role: str  # 当前生效角色（可能通过 switch-role 切换）
+    base_role: str  # 数据库原始角色，决定用户固有哪些权限
     position: str | None
     leader_userid: str | None
     has_hr_permission: bool = False
     has_subordinates: bool = False
+    switchable_roles: list[str] = []  # 仅 super_admin 返回可切换角色列表
 
 
-def _build_user_response(user: User, session: Session) -> dict:
-    hr_perm = user.role in ("hrbp", "super_admin") or is_hr_dept_leader(user, session)
+ALLOWED_ROLES = ["super_admin", "hrbp", "dept_leader", "direct_leader", "employee"]
+
+
+def _build_user_response(user: User, session: Session, effective_role: str | None = None) -> dict:
+    base_role = getattr(user, "base_role", None) or user.role
+    role = effective_role or user.role
+    hr_perm = role in ("hrbp", "super_admin") or is_hr_dept_leader(user, session)
     has_subs = session.exec(
         select(User.id).where(User.leader_userid == user.wecom_userid).limit(1)
     ).first() is not None
-    return {
+    result = {
         "id": user.id,
         "wecom_userid": user.wecom_userid,
         "name": user.name,
-        "role": user.role,
+        "role": role,
+        "base_role": base_role,
         "position": user.position,
         "leader_userid": user.leader_userid,
         "has_hr_permission": hr_perm,
         "has_subordinates": has_subs,
     }
+    # super_admin 始终显示可切换角色（即使当前生效角色不是 super_admin）
+    if base_role == "super_admin":
+        result["switchable_roles"] = ALLOWED_ROLES
+    return result
 
 
 # ---------- 开发用 mock 登录（生产环境禁用） ----------
@@ -167,21 +179,32 @@ def _fill_user_basic_from_wecom(session: Session, user: User) -> None:
         logger.warning("企微用户详情获取失败 [{}]: {}", user.wecom_userid, e)
 
 
+class SwitchRoleRequest(BaseModel):
+    role: str
+
+
 # ---------- 当前用户 ----------
 
 @router.get("/me", response_model=CurrentUser)
-def me(current: User = Depends(get_current_user), session: Session = Depends(get_session)) -> CurrentUser:
-    hr_perm = current.role in ("hrbp", "super_admin") or is_hr_dept_leader(current, session)
-    has_subs = session.exec(
-        select(User.id).where(User.leader_userid == current.wecom_userid).limit(1)
-    ).first() is not None
-    return CurrentUser(
-        id=current.id,
-        wecom_userid=current.wecom_userid,
-        name=current.name,
-        role=current.role,
-        position=current.position,
-        leader_userid=current.leader_userid,
-        has_hr_permission=hr_perm,
-        has_subordinates=has_subs,
+def me(
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> CurrentUser:
+    return CurrentUser.model_validate(
+        _build_user_response(current, session), from_attributes=False
     )
+
+
+@router.post("/switch-role", response_model=TokenResponse)
+def switch_role(
+    payload: SwitchRoleRequest,
+    current: User = Depends(require_role("super_admin")),
+    session: Session = Depends(get_session),
+) -> TokenResponse:
+    """super_admin 切换当前生效角色（用于测试不同界面）"""
+    if payload.role not in ALLOWED_ROLES:
+        raise HTTPException(status_code=400, detail=f"不支持的角色：{payload.role}")
+    token = sign_token(current.wecom_userid, active_role=payload.role)
+    # 临时修改内存对象用于构建响应
+    current.role = payload.role
+    return TokenResponse(token=token, user=_build_user_response(current, session))

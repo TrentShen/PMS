@@ -12,6 +12,7 @@ from pms.database.models.enums import ProbationPlanStatus
 from pms.database.models.probation import ProbationPlan
 from pms.database.models.user import User
 from pms.database.session import engine
+from pms.services.auth import is_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 
 STAGE_LABELS = {
@@ -85,6 +86,8 @@ def check_stage_reminders():
 
                 sent_count = 0
                 for _p, u in participants:
+                    if not is_fte(u):
+                        continue
                     if _already_notified(s, u.wecom_userid, title, today):
                         continue
                     send_textcard_notification(
@@ -118,6 +121,8 @@ def check_deadline_reminders():
             ).all()
             sent_count = 0
             for _p, u in pending:
+                if not is_fte(u):
+                    continue
                 title = "自评截止提醒"
                 if _already_notified(s, u.wecom_userid, title, today):
                     continue
@@ -166,7 +171,11 @@ def sync_probation_plans():
         try:
             # 1. 自动创建缺失的计划
             probation_users = s.exec(
-                select(User).where(User.employee_status == "probation", User.status == "active")
+                select(User).where(
+                    User.employee_status == "probation",
+                    User.status == "active",
+                    User.employee_type == "full_time",
+                )
             ).all()
             existing_user_ids = set(s.exec(select(ProbationPlan.user_id)).all())
 

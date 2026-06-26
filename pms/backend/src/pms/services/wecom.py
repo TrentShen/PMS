@@ -37,6 +37,13 @@ HR_EMPLOYEE_STATUS_MAP = {
     6: "abandoned",   # 放弃入职
 }
 
+# 企微员工类型选项 ID → PMS 内部类型
+HR_EMPLOYEE_TYPE_MAP = {
+    1: "full_time",   # 全职
+    2: "intern",      # 实习
+    4: "other",       # 其他
+}
+
 # 企微试用期选项 ID → 月数（根据 get_fields 接口的 option_list）
 HR_PROBATION_MAP = {
     1: 0,   # 无
@@ -182,6 +189,7 @@ def parse_hr_staff_info(data: dict) -> dict:
         "confirm_date": None,
         "probation": None,
         "employee_status": None,
+        "employee_type": None,
         "employee_no": None,
     }
 
@@ -215,6 +223,8 @@ def parse_hr_staff_info(data: dict) -> dict:
             result["probation"] = HR_PROBATION_MAP.get(int(raw))
         elif fid == HR_FIELD_IDS["employee_status"]:
             result["employee_status"] = HR_EMPLOYEE_STATUS_MAP.get(int(raw))
+        elif fid == HR_FIELD_IDS["employee_type"]:
+            result["employee_type"] = HR_EMPLOYEE_TYPE_MAP.get(int(raw))
         elif fid == HR_FIELD_IDS["employee_no"]:
             result["employee_no"] = str(raw) if raw else None
 

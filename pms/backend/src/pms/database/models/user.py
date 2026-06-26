@@ -31,6 +31,7 @@ class User(SQLModel, table=True):
     confirm_date: date | None = None  # 转正日期（来自企微人事助手）
     probation: int | None = None      # 试用期（月）
     employee_status: str | None = Field(default=None, max_length=16)  # regular/probation/resigned/pending
+    employee_type: str | None = Field(default=None, max_length=16)    # full_time/intern/other
     # 状态：active / inactive（离职）
     status: str = Field(default="active", max_length=16, index=True)
     synced_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -14,7 +14,7 @@ from pms.database.models.audit import NotificationLog
 from pms.database.models.cycle import PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, require_role
+from pms.services.auth import get_current_user, has_any_role, require_role
 from pms.services.wecom import send_textcard
 
 router = APIRouter(prefix="/notify", tags=["notify"])
@@ -68,7 +68,7 @@ def send_urge(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    if current.role == "employee":
+    if not has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader"):
         raise HTTPException(status_code=403, detail="普通员工不能发起催办")
 
     cycle = session.get(PerformanceCycle, payload.cycle_id)

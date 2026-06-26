@@ -80,6 +80,7 @@ def invalidate_scope_cache(user_id: int) -> None:
 
 
 def _compute_visible_user_ids(session: Session, current: User) -> set[int] | None:
+    # 可见范围由用户当前生效角色决定（角色切换用于测试不同视角）
     role = current.role
 
     if role == "super_admin":

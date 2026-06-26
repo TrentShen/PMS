@@ -12,12 +12,16 @@ from pms.database.models.enums import ProbationObjectiveStatus, ProbationPlanSta
 from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, require_role
+from pms.services.auth import get_current_user, has_any_role, require_fte, require_role
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import ensure_can_view_user, visible_user_ids
 from pms.utils.audit import write_audit
 
-router = APIRouter(prefix="/probation", tags=["probation"])
+router = APIRouter(
+    prefix="/probation",
+    tags=["probation"],
+    dependencies=[Depends(require_fte)],
+)
 
 DEFAULT_PROBATION_MONTHS = 6
 PENDING_EVALUATION_DAYS = 7  # 临转正前 N 天进入待评估状态
@@ -36,7 +40,7 @@ def _add_months(d: date, months: int) -> date:
 
 
 def _is_hr(user: User) -> bool:
-    return user.role in ("hrbp", "super_admin")
+    return has_any_role(user, "hrbp", "super_admin")
 
 
 def _is_superior(session: Session, current: User, target: User) -> bool:

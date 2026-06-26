@@ -16,7 +16,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user
+from pms.services.auth import get_current_user, has_any_role, require_fte
 from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import (
@@ -24,7 +24,7 @@ from pms.utils.score import (
     validate_perf_score,
 )
 
-router = APIRouter(tags=["peer"])
+router = APIRouter(tags=["peer"], dependencies=[Depends(require_fte)])
 
 MAX_INVITES = 5  # PRD 3.4.5：员工自选不超过 5 人
 
@@ -196,7 +196,7 @@ def list_pending_peers_for_review(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="无权查看")
 
@@ -233,7 +233,7 @@ def approve_peer_list(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="无权审核")
 
@@ -477,7 +477,7 @@ def get_peer_summary(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_leader = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_leader or is_admin):
         raise HTTPException(status_code=403, detail="被评人本人不可见自己收到的互评")
 
@@ -558,7 +558,7 @@ def get_peer_summary(
     summary["rater_bias"] = rater_stats
 
     # 额外查：匿名主动评价（仅 HR/部门 Leader 可见；**直属上级不可见**）
-    can_see_anon = current.role in ("hrbp", "super_admin", "dept_leader")
+    can_see_anon = has_any_role(current, "hrbp", "super_admin", "dept_leader")
     anon_list = []
     if can_see_anon:
         anons = session.exec(

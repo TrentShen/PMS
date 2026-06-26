@@ -23,6 +23,7 @@ export default function RequireRole({ roles, fallback = "redirect", allowHrPermi
   if (!user) return <Navigate to="/login" replace />;
 
   const allowed = roles.includes(user.role)
+    || roles.includes(user.base_role)
     || (allowHrPermission && user.has_hr_permission)
     || (allowHasSubordinates && user.has_subordinates);
 
@@ -43,8 +44,12 @@ export default function RequireRole({ roles, fallback = "redirect", allowHrPermi
 }
 
 
-// 工具函数：判断当前用户是否命中任一角色（用于菜单按钮级显示）
-export function hasAnyRole(userRole: string | undefined, roles: string[]): boolean {
+// 工具函数：判断用户是否具备任一角色（基于 base_role，不受角色切换影响）
+export function hasAnyRole(
+  userRole: string | undefined,
+  roles: string[],
+  baseRole?: string | undefined
+): boolean {
   if (!userRole) return false;
-  return roles.includes(userRole);
+  return roles.includes(userRole) || (baseRole ? roles.includes(baseRole) : false);
 }

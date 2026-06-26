@@ -12,11 +12,15 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user
+from pms.services.auth import get_current_user, has_any_role, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.utils.audit import write_audit
 
-router = APIRouter(prefix="/feedback", tags=["feedback"])
+router = APIRouter(
+    prefix="/feedback",
+    tags=["feedback"],
+    dependencies=[Depends(require_fte)],
+)
 
 
 # ============ Schema ============
@@ -66,7 +70,7 @@ def create_or_update_feedback(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_superior = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_superior or is_admin):
         raise HTTPException(status_code=403, detail="你不是该员工的直属上级")
 
@@ -153,7 +157,7 @@ def get_feedback(
         raise HTTPException(status_code=404, detail="员工不存在")
     is_self = current.id == user_id
     is_superior = target.leader_userid == current.wecom_userid
-    is_admin = current.role in ("hrbp", "super_admin", "dept_leader", "direct_leader")
+    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
     if not (is_self or is_superior or is_admin):
         raise HTTPException(status_code=403, detail="无权查看")
 

@@ -14,7 +14,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import ParticipantStatus
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, require_role
+from pms.services.auth import get_current_user, has_any_role, is_fte, require_fte, require_role
 from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 
@@ -102,7 +102,7 @@ def list_cycles(
 
     q = select(PerformanceCycle).order_by(PerformanceCycle.id.desc())
 
-    has_hr = current.role in ("hrbp", "super_admin") or is_hr_dept_leader(current, session)
+    has_hr = has_any_role(current, "hrbp", "super_admin") or is_hr_dept_leader(current, session)
     if not has_hr:
         # 普通员工/Leader：只看有自己参与的周期
         my_cycle_ids = session.exec(
@@ -498,6 +498,9 @@ def add_participants(
         user = session.get(User, uid)
         if not user:
             continue
+        # 仅全职员工可参与绩效周期
+        if not is_fte(user):
+            continue
         dept = session.get(Department, user.department_id) if user.department_id else None
         cp = CycleParticipant(
             cycle_id=cycle_id,
@@ -549,7 +552,7 @@ def add_participants(
 @router.get("/mine", response_model=list[dict])
 def my_cycles(
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ) -> list[dict]:
     from pms.database.models.feedback import FeedbackRecord
 
@@ -595,12 +598,13 @@ def my_cycles(
 
 
 def _notify_cycle_started(session: Session, cycle: PerformanceCycle) -> None:
-    """周期启动后通知所有参与人。"""
+    """周期启动后通知所有参与人（仅通知 FTE）。"""
     rows = session.exec(
         select(User)
         .join(CycleParticipant, CycleParticipant.user_id == User.id)
         .where(CycleParticipant.cycle_id == cycle.id, User.status == "active")
     ).all()
+    rows = [u for u in rows if is_fte(u)]
     if not rows:
         return
     send_textcard_notification(
@@ -613,12 +617,13 @@ def _notify_cycle_started(session: Session, cycle: PerformanceCycle) -> None:
 
 
 def _notify_cycle_published(session: Session, cycle: PerformanceCycle) -> None:
-    """周期结果发布后通知所有参与人。"""
+    """周期结果发布后通知所有参与人（仅通知 FTE）。"""
     rows = session.exec(
         select(User)
         .join(CycleParticipant, CycleParticipant.user_id == User.id)
         .where(CycleParticipant.cycle_id == cycle.id, User.status == "active")
     ).all()
+    rows = [u for u in rows if is_fte(u)]
     if not rows:
         return
     send_textcard_notification(

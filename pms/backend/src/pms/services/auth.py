@@ -16,16 +16,18 @@ JWT_TTL = timedelta(days=7)
 USER_CACHE_TTL = 300  # 5 minutes
 
 
-def sign_token(wecom_userid: str) -> str:
+def sign_token(wecom_userid: str, active_role: str | None = None) -> str:
     payload = {
         "sub": wecom_userid,
         "exp": datetime.now(timezone.utc) + JWT_TTL,
         "iat": datetime.now(timezone.utc),
     }
+    if active_role:
+        payload["active_role"] = active_role
     return jwt.encode(payload, settings.app_secret, algorithm=JWT_ALGO)
 
 
-def decode_token(token: str) -> str:
+def decode_token(token: str) -> tuple[str, str | None]:
     try:
         payload = jwt.decode(token, settings.app_secret, algorithms=[JWT_ALGO])
     except jwt.ExpiredSignatureError as e:
@@ -35,7 +37,7 @@ def decode_token(token: str) -> str:
     userid = payload.get("sub")
     if not userid:
         raise HTTPException(status_code=401, detail="token 缺少 sub")
-    return userid
+    return userid, payload.get("active_role")
 
 
 def invalidate_user_cache(wecom_userid: str) -> None:
@@ -49,7 +51,7 @@ def get_current_user(
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization.split(" ", 1)[1]
-    wecom_userid = decode_token(token)
+    wecom_userid, active_role = decode_token(token)
 
     # Cache stores user_id for fast PK lookup (vs. index scan on wecom_userid)
     cache_key = f"pms:user:{wecom_userid}"
@@ -62,6 +64,10 @@ def get_current_user(
         if not user:
             redis_client.delete(cache_key)
             raise HTTPException(status_code=401, detail="用户不存在")
+        # 记录原始角色；super_admin 可通过 active_role 切换当前生效角色（用于测试）
+        object.__setattr__(user, "base_role", user.role)
+        if active_role and user.role == "super_admin":
+            user.role = active_role
         return user
 
     user = session.exec(select(User).where(User.wecom_userid == wecom_userid)).first()
@@ -70,17 +76,27 @@ def get_current_user(
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已停用")
 
+    # 记录原始角色；super_admin 可通过 active_role 切换当前生效角色（用于测试）
+    object.__setattr__(user, "base_role", user.role)
+    if active_role and user.role == "super_admin":
+        user.role = active_role
+
     redis_client.setex(
         cache_key,
         USER_CACHE_TTL,
-        json.dumps({"id": user.id, "status": user.status, "role": user.role}),
+        json.dumps({"id": user.id, "status": user.status, "role": user.base_role}),
     )
     return user
 
 
+def _effective_role(user: User) -> str:
+    """返回用户当前生效角色（优先 base_role，不存在则回退 role）"""
+    return getattr(user, "base_role", None) or user.role
+
+
 def is_hr_dept_leader(user: User, session: Session) -> bool:
     """判断用户是否为 HR 部门的 Leader（等同于 hrbp 权限）"""
-    if user.role != "dept_leader" or user.department_id is None:
+    if _effective_role(user) != "dept_leader" or user.department_id is None:
         return False
     from pms.database.models.user import Department
     dept = session.get(Department, user.department_id)
@@ -93,11 +109,32 @@ def is_hr_dept_leader(user: User, session: Session) -> bool:
     return has_hrbp is not None
 
 
+def is_fte(user: User) -> bool:
+    """判断是否为全职（FTE）员工。
+
+    以企微人事助手的 employee_type 为准；未同步到时默认放行（避免误拦截）。
+    """
+    return user.employee_type is None or user.employee_type == "full_time"
+
+
+def require_fte(user: User = Depends(get_current_user)) -> User:
+    """绩效相关接口守卫：仅允许 FTE 员工访问"""
+    if not is_fte(user):
+        raise HTTPException(status_code=403, detail="仅全职员工可参与绩效流程")
+    return user
+
+
+def has_any_role(user: User, *allowed_roles: str) -> bool:
+    """判断用户是否具备任一角色（考虑角色切换后的 base_role）"""
+    base = getattr(user, "base_role", None)
+    return user.role in allowed_roles or (base is not None and base in allowed_roles)
+
+
 def require_role(*allowed_roles: str):
     # 角色守卫；用法 Depends(require_role("hrbp", "super_admin"))
     # 额外规则：HR 部门的 dept_leader 视同 hrbp 权限
     def _guard(user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> User:
-        if user.role in allowed_roles:
+        if has_any_role(user, *allowed_roles):
             return user
         # HR 部门 Leader 享有 hrbp 权限
         if "hrbp" in allowed_roles and is_hr_dept_leader(user, session):

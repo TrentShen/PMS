@@ -29,6 +29,7 @@ class UserBrief(BaseModel):
     position: str | None
     leader_userid: str | None
     department_id: int | None
+    employee_type: str | None
 
 
 class UserHRInfo(BaseModel):
@@ -40,6 +41,7 @@ class UserHRInfo(BaseModel):
     confirm_date: date | None
     probation: int | None
     employee_status: str | None
+    employee_type: str | None
 
 
 @router.get("", response_model=list[UserBrief])
@@ -60,12 +62,40 @@ def list_users(
 def _sync_departments(session: Session) -> None:
     """同步部门树到本地 department 表"""
     depts = list_departments()
-    # 按 parentid 升序排列，确保父部门先于子部门插入
-    depts.sort(key=lambda d: d.get("parentid") or 0)
+
+    # 按树深度（BFS）排序，确保父部门先于子部门插入
+    dept_map = {d["id"]: d for d in depts}
+    children_map: dict[int, list[int]] = {}
+    roots: list[int] = []
+    for d in depts:
+        parent = d.get("parentid") or 0
+        if parent in (0, 1):
+            roots.append(d["id"])
+        else:
+            children_map.setdefault(parent, []).append(d["id"])
+
+    ordered_ids: list[int] = []
+    queue = list(roots)
+    while queue:
+        dept_id = queue.pop(0)
+        if dept_id not in dept_map:
+            continue
+        ordered_ids.append(dept_id)
+        for child_id in children_map.get(dept_id, []):
+            queue.append(child_id)
+
+    # 如果企微返回的部门有循环或孤立节点，追加到末尾
+    seen = set(ordered_ids)
+    for d in depts:
+        if d["id"] not in seen:
+            ordered_ids.append(d["id"])
+            seen.add(d["id"])
 
     # wecom_dept_id -> 本地 id 映射（用于转换 parent_id）
     wecom_to_local: dict[int, int] = {}
-    for d in depts:
+    skipped = 0
+    for dept_id in ordered_ids:
+        d = dept_map[dept_id]
         existing = session.exec(
             select(Department).where(Department.wecom_dept_id == d["id"])
         ).first()
@@ -76,6 +106,7 @@ def _sync_departments(session: Session) -> None:
             local_parent_id = wecom_to_local.get(parent_wecom)
             if local_parent_id is None:
                 logger.warning("部门 {} 的父部门 {} 尚未同步，跳过", d["id"], parent_wecom)
+                skipped += 1
                 continue
 
         if existing:
@@ -96,7 +127,7 @@ def _sync_departments(session: Session) -> None:
             wecom_to_local[d["id"]] = dept.id
 
     session.commit()
-    logger.info("部门同步完成: {} 个部门", len(depts))
+    logger.info("部门同步完成: {} 个部门, 跳过 {} 个", len(depts), skipped)
 
 
 def _map_dept_path(dept_ids: list[int], session: Session) -> str | None:
@@ -135,6 +166,8 @@ def _enrich_users_hr_info(session: Session, user_ids: list[int] | None = None) -
             user.probation = info["probation"]
         if info.get("employee_status"):
             user.employee_status = info["employee_status"]
+        if info.get("employee_type"):
+            user.employee_type = info["employee_type"]
         updated += 1
 
     session.commit()
@@ -151,8 +184,36 @@ def _normalize_leader(value: str | list[str] | None) -> str | None:
     return value
 
 
+def _assign_leader_roles(session: Session) -> int:
+    """根据 direct_leader 关系自动给有下属的用户分配 direct_leader 角色。
+
+    只升级当前 role=employee 的用户；已有的 super_admin/hrbp/dept_leader/direct_leader 不降级。
+    """
+    leader_ids = session.exec(
+        select(User.leader_userid).where(User.leader_userid.isnot(None)).distinct()
+    ).all()
+    assigned = 0
+    for leader_id in leader_ids:
+        if not leader_id:
+            continue
+        leader = session.exec(select(User).where(User.wecom_userid == leader_id)).first()
+        if not leader:
+            continue
+        if leader.role in ("super_admin", "hrbp", "dept_leader", "direct_leader"):
+            continue
+        leader.role = "direct_leader"
+        session.add(leader)
+        assigned += 1
+    if assigned:
+        logger.info("自动分配 direct_leader 角色: {} 人", assigned)
+    return assigned
+
+
 def _sync_users(session: Session) -> int:
-    """全量同步用户基础信息（从根部门拉取），不调用人事助手"""
+    """全量同步用户基础信息（从根部门拉取），不调用人事助手
+
+    注意：部门/姓名/职位/上级均以企微通讯录为准，本地会被覆盖。
+    """
     userlist = list_users_detail_by_dept(1, fetch_child=True)
     count = 0
     for u in userlist:
@@ -171,8 +232,8 @@ def _sync_users(session: Session) -> int:
             local.avatar = u.get("avatar")
             local.position = u.get("position")
             local.leader_userid = leader_userid
-            if dept_path and not local.department_id:
-                local.department_id = int(dept_path) if dept_path.isdigit() else None
+            # 始终以企微主部门覆盖本地部门（修复历史错误绑定）
+            local.department_id = int(dept_path) if dept_path and dept_path.isdigit() else None
             local.status = status
             local.synced_at = datetime.now(timezone.utc)
         else:
@@ -187,6 +248,21 @@ def _sync_users(session: Session) -> int:
                 status=status,
             ))
         count += 1
+
+    # 企微通讯录中已不存在的本地用户标记为 inactive
+    synced_userids = {u.get("userid") for u in userlist if u.get("userid")}
+    stale_users = session.exec(
+        select(User).where(User.status == "active", User.wecom_userid.not_in(synced_userids))
+    ).all()
+    for stale in stale_users:
+        stale.status = "inactive"
+        stale.synced_at = datetime.now(timezone.utc)
+        session.add(stale)
+        logger.warning("企微通讯录中已无用户 {}, 标记为 inactive", stale.wecom_userid)
+
+    # 根据 direct_leader 关系自动给有下属的用户分配 direct_leader 角色
+    _assign_leader_roles(session)
+
     session.commit()
     return count
 

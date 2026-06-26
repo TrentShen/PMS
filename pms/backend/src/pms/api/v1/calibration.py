@@ -15,12 +15,16 @@ from pms.database.models.enums import PerfLevel
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, is_hr_dept_leader
+from pms.services.auth import get_current_user, has_any_role, is_hr_dept_leader, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import derive_perf_level, validate_perf_score
 
-router = APIRouter(prefix="/calibration", tags=["calibration"])
+router = APIRouter(
+    prefix="/calibration",
+    tags=["calibration"],
+    dependencies=[Depends(require_fte)],
+)
 
 
 # ============ Schema ============
@@ -175,7 +179,7 @@ def get_calibration_view(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    if current.role not in ("dept_leader", "hrbp", "super_admin"):
+    if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -261,7 +265,7 @@ def calibrate(
     current: User = Depends(get_current_user),
 ):
     # 仅 dept_leader / hrbp / super_admin 可操作
-    if current.role not in ("dept_leader", "hrbp", "super_admin"):
+    if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权校准")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -346,7 +350,7 @@ def submit_calibration(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    if current.role not in ("dept_leader", "hrbp", "super_admin"):
+    if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权操作")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -411,7 +415,7 @@ def process_approval(
     current: User = Depends(get_current_user),
 ):
     # HR 权限：hrbp / super_admin / HR 部门 Leader
-    has_hr = current.role in ("hrbp", "super_admin") or is_hr_dept_leader(current, session)
+    has_hr = has_any_role(current, "hrbp", "super_admin") or is_hr_dept_leader(current, session)
     if not has_hr:
         raise HTTPException(status_code=403, detail="无权审批")
 
@@ -488,7 +492,7 @@ def get_calibration_history(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    if current.role not in ("dept_leader", "hrbp", "super_admin"):
+    if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 
     records = session.exec(

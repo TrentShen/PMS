@@ -1,11 +1,12 @@
 // 主布局：PC 端顶部导航，移动端抽屉侧边栏
 import { useState } from "react";
-import { Button, Drawer, Layout as AntLayout, Menu, Space, Tag, Typography } from "antd";
-import { MenuOutlined } from "@ant-design/icons";
+import { Button, Drawer, Dropdown, Layout as AntLayout, Menu, Space, Tag, Typography, message } from "antd";
+import { MenuOutlined, SwapOutlined } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE } from "@/App";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
+import { api } from "@/services/api";
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "超级管理员",
@@ -17,10 +18,16 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function AppLayout() {
   const user = useAuth((s) => s.user);
+  const setUser = useAuth((s) => s.setUser);
+  const setToken = useAuth((s) => s.setToken);
   const clear = useAuth((s) => s.clear);
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  // 菜单/入口权限基于原始角色（base_role），不受角色切换影响
+  const baseRole = user?.base_role ?? user?.role;
 
   // 构造菜单项；按角色过滤
   const menuItems = [
@@ -29,11 +36,11 @@ export default function AppLayout() {
     { key: "/notifications", label: "通知" },
     { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },
-    (hasAnyRole(user?.role, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/leader", label: "下属评估" },
-    (hasAnyRole(user?.role, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/calibration", label: "校准" },
-    (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission || user?.has_subordinates) && { key: "/probation", label: "试用期管理" },
-    (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
-    (hasAnyRole(user?.role, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
+    (hasAnyRole(baseRole, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/leader", label: "下属评估" },
+    (hasAnyRole(baseRole, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/calibration", label: "校准" },
+    (hasAnyRole(baseRole, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission || user?.has_subordinates) && { key: "/probation", label: "试用期管理" },
+    (hasAnyRole(baseRole, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
+    (hasAnyRole(baseRole, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
   ].filter(Boolean) as { key: string; label: string }[];
 
   const activeKey =
@@ -74,13 +81,44 @@ export default function AppLayout() {
             <>
               <span className="pms-user-name">{user.name}</span>
               <Tag color="blue">{ROLE_LABEL[user.role] ?? user.role}</Tag>
+              {user.switchable_roles && user.switchable_roles.length > 0 && (
+                <Dropdown
+                  menu={{
+                    items: user.switchable_roles.map((r) => ({
+                      key: r,
+                      label: ROLE_LABEL[r] ?? r,
+                      disabled: r === user.role,
+                    })),
+                    onClick: async ({ key }) => {
+                      if (key === user.role) return;
+                      setSwitching(true);
+                      try {
+                        const res = await api.post("/v1/auth/switch-role", { role: key });
+                        const { token, user: newUser } = res.data;
+                        setToken(token);
+                        setUser(newUser);
+                        message.success(`已切换为 ${ROLE_LABEL[key] ?? key}`);
+                        navigate(0);
+                      } catch (e: any) {
+                        message.error(e?.response?.data?.detail || "切换失败");
+                      } finally {
+                        setSwitching(false);
+                      }
+                    },
+                  }}
+                >
+                  <Button size="small" icon={<SwapOutlined />} loading={switching}>
+                    切换角色
+                  </Button>
+                </Dropdown>
+              )}
             </>
           )}
           <Button
             size="small"
             onClick={() => { clear(); navigate("/login"); }}
           >
-            切换身份
+            退出登录
           </Button>
         </Space>
       </AntLayout.Header>
@@ -91,6 +129,11 @@ export default function AppLayout() {
           <Space>
             <span>{user?.name}</span>
             <Tag color="blue">{ROLE_LABEL[user?.role ?? ""] ?? ""}</Tag>
+            {user?.switchable_roles && user.switchable_roles.length > 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                可切换角色
+              </Typography.Text>
+            )}
           </Space>
         }
         placement="left"
@@ -111,7 +154,7 @@ export default function AppLayout() {
             block
             onClick={() => { clear(); navigate("/login"); setDrawerOpen(false); }}
           >
-            切换身份
+            退出登录
           </Button>
         </div>
       </Drawer>

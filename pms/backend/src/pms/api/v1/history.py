@@ -8,10 +8,14 @@ from sqlmodel import Session, select
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user
+from pms.services.auth import get_current_user, has_any_role, require_fte
 from pms.services.scope import visible_user_ids
 
-router = APIRouter(prefix="/history", tags=["history"])
+router = APIRouter(
+    prefix="/history",
+    tags=["history"],
+    dependencies=[Depends(require_fte)],
+)
 
 
 @router.get("/subordinates")
@@ -20,7 +24,7 @@ def subordinate_history(
     current: User = Depends(get_current_user),
 ):
     """上级/HR 查看自己管辖范围内的员工所有已发布周期的绩效结果"""
-    if current.role == "employee":
+    if not has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader"):
         raise HTTPException(status_code=403, detail="无权限")
 
     scope = visible_user_ids(session, current)
