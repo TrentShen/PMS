@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.objective import Objective
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.user import User
 from pms.database.session import get_session
@@ -17,7 +17,7 @@ from pms.services.auth import can_act_as_superior, get_current_user, has_any_rol
 from pms.utils.audit import write_audit
 
 router = APIRouter(
-    prefix="/cycles/{cycle_id}/objectives",
+    prefix="/objective-cycles/{objective_cycle_id}/objectives",
     tags=["objectives"],
     dependencies=[Depends(require_fte)],
 )
@@ -56,7 +56,7 @@ class RejectPayload(BaseModel):
 
 @router.get("", response_model=list[ObjectiveView])
 def list_my_objectives(
-    cycle_id: int,
+    objective_cycle_id: int,
     user_id: int | None = None,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
@@ -69,7 +69,7 @@ def list_my_objectives(
 
     objs = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id, Objective.user_id == target_id
+            Objective.objective_cycle_id == objective_cycle_id, Objective.user_id == target_id
         ).order_by(Objective.order_num)
     ).all()
     return [ObjectiveView.model_validate(o, from_attributes=True) for o in objs]
@@ -79,30 +79,20 @@ def list_my_objectives(
 
 @router.put("")
 def save_objectives(
-    cycle_id: int,
+    objective_cycle_id: int,
     payload: ObjectiveBatchSave,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
     # 员工只能改自己的；周期必须在 in_progress 或 draft
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status not in ("draft", "in_progress"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许修改目标")
-
-    # 必须是参与人
-    participant = session.exec(
-        select(CycleParticipant).where(
-            CycleParticipant.cycle_id == cycle_id,
-            CycleParticipant.user_id == current.id,
-        )
-    ).first()
-    if not participant:
-        raise HTTPException(status_code=403, detail="你不在本周期的参与人列表中")
 
     # 已提交审批后不能再改草稿（approved/locked 状态的目标不可改）
     existing = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id, Objective.user_id == current.id
+            Objective.objective_cycle_id == objective_cycle_id, Objective.user_id == current.id
         )
     ).all()
     locked = [o for o in existing if o.status in ("approved", "locked")]
@@ -131,7 +121,7 @@ def save_objectives(
     # 删旧 + 写新（覆盖式），状态为 draft
     old = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id, Objective.user_id == current.id
+            Objective.objective_cycle_id == objective_cycle_id, Objective.user_id == current.id
         )
     ).all()
     for o in old:
@@ -140,7 +130,7 @@ def save_objectives(
 
     for i, item in enumerate(payload.items):
         session.add(Objective(
-            cycle_id=cycle_id,
+            objective_cycle_id=objective_cycle_id,
             user_id=current.id,
             title=item.title.strip(),
             description=item.description.strip(),
@@ -158,27 +148,18 @@ def save_objectives(
 
 @router.post("/submit")
 def submit_objectives_for_review(
-    cycle_id: int,
+    objective_cycle_id: int,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
     """员工提交目标给上级审批。要求：有 draft 状态目标，权重和=100"""
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status not in ("draft", "in_progress"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许提交目标")
 
-    participant = session.exec(
-        select(CycleParticipant).where(
-            CycleParticipant.cycle_id == cycle_id,
-            CycleParticipant.user_id == current.id,
-        )
-    ).first()
-    if not participant:
-        raise HTTPException(status_code=403, detail="你不在本周期的参与人列表中")
-
     objs = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id, Objective.user_id == current.id
+            Objective.objective_cycle_id == objective_cycle_id, Objective.user_id == current.id
         )
     ).all()
     if not objs:
@@ -208,7 +189,7 @@ def submit_objectives_for_review(
         operator_name=current.name,
         action="submit_objectives",
         resource_type="objective",
-        resource_id=str(cycle_id),
+        resource_id=str(objective_cycle_id),
         after={"user_id": current.id, "count": len(drafts)},
     )
     session.commit()
@@ -219,7 +200,7 @@ def submit_objectives_for_review(
 
 @router.post("/users/{user_id}/approve")
 def approve_objectives(
-    cycle_id: int,
+    objective_cycle_id: int,
     user_id: int,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
@@ -233,13 +214,13 @@ def approve_objectives(
     if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status not in ("draft", "in_progress"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
     pending = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id,
+            Objective.objective_cycle_id == objective_cycle_id,
             Objective.user_id == user_id,
             Objective.status == "pending_review",
         )
@@ -260,7 +241,7 @@ def approve_objectives(
         operator_name=current.name,
         action="approve_objectives",
         resource_type="objective",
-        resource_id=str(cycle_id),
+        resource_id=str(objective_cycle_id),
         after={"user_id": user_id, "count": len(pending)},
     )
     session.commit()
@@ -271,7 +252,7 @@ def approve_objectives(
 
 @router.post("/users/{user_id}/reject")
 def reject_objectives(
-    cycle_id: int,
+    objective_cycle_id: int,
     user_id: int,
     payload: RejectPayload,
     session: Session = Depends(get_session),
@@ -285,7 +266,7 @@ def reject_objectives(
     if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status not in ("draft", "in_progress"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
@@ -294,7 +275,7 @@ def reject_objectives(
 
     pending = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id,
+            Objective.objective_cycle_id == objective_cycle_id,
             Objective.user_id == user_id,
             Objective.status == "pending_review",
         )
@@ -315,7 +296,7 @@ def reject_objectives(
         operator_name=current.name,
         action="reject_objectives",
         resource_type="objective",
-        resource_id=str(cycle_id),
+        resource_id=str(objective_cycle_id),
         after={"user_id": user_id, "count": len(pending), "reason": payload.reason.strip()},
     )
     session.commit()
@@ -331,7 +312,7 @@ class AdjustmentRequest(BaseModel):
 
 class AdjustmentView(BaseModel):
     id: int
-    cycle_id: int
+    objective_cycle_id: int
     user_id: int
     reason: str
     old_objectives: list[dict] | None
@@ -375,28 +356,19 @@ def _snapshot_objectives(objs: list[Objective]) -> list[dict]:
 
 @router.post("/request-adjustment")
 def request_adjustment(
-    cycle_id: int,
+    objective_cycle_id: int,
     payload: AdjustmentRequest,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
     """员工对已 approved 的目标发起调整申请"""
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="当前周期状态不允许调整目标")
 
-    participant = session.exec(
-        select(CycleParticipant).where(
-            CycleParticipant.cycle_id == cycle_id,
-            CycleParticipant.user_id == current.id,
-        )
-    ).first()
-    if not participant:
-        raise HTTPException(status_code=403, detail="你不在本周期的参与人列表中")
-
     existing = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id,
+            Objective.objective_cycle_id == objective_cycle_id,
             Objective.user_id == current.id,
         ).order_by(Objective.order_num)
     ).all()
@@ -407,7 +379,7 @@ def request_adjustment(
     # 检查是否已有待审批的调整
     pending_adj = session.exec(
         select(ObjectiveRevision).where(
-            ObjectiveRevision.cycle_id == cycle_id,
+            ObjectiveRevision.objective_cycle_id == objective_cycle_id,
             ObjectiveRevision.user_id == current.id,
             ObjectiveRevision.status == "pending",
         )
@@ -421,7 +393,7 @@ def request_adjustment(
         raise HTTPException(status_code=400, detail="调整原因不能为空")
 
     revision = ObjectiveRevision(
-        cycle_id=cycle_id,
+        objective_cycle_id=objective_cycle_id,
         user_id=current.id,
         reason=payload.reason.strip(),
         old_objectives=_snapshot_objectives(existing),
@@ -454,17 +426,17 @@ def request_adjustment(
 
 @router.get("/adjustments", response_model=list[AdjustmentView])
 def list_adjustments(
-    cycle_id: int,
+    objective_cycle_id: int,
     user_id: int | None = None,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
     """查看目标调整申请列表。员工看自己，上级/HR 看指定用户或全部"""
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
 
-    q = select(ObjectiveRevision).where(ObjectiveRevision.cycle_id == cycle_id)
+    q = select(ObjectiveRevision).where(ObjectiveRevision.objective_cycle_id == objective_cycle_id)
 
     if user_id:
         target = session.get(User, user_id)
@@ -485,7 +457,7 @@ def list_adjustments(
     return [
         AdjustmentView(
             id=r.id,
-            cycle_id=r.cycle_id,
+            objective_cycle_id=r.objective_cycle_id,
             user_id=r.user_id,
             reason=r.reason,
             old_objectives=r.old_objectives,
@@ -503,14 +475,14 @@ def list_adjustments(
 
 @router.post("/adjustments/{revision_id}/approve")
 def approve_adjustment(
-    cycle_id: int,
+    objective_cycle_id: int,
     revision_id: int,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
     """上级批准目标调整申请：用新目标覆盖旧目标"""
     revision = session.get(ObjectiveRevision, revision_id)
-    if not revision or revision.cycle_id != cycle_id:
+    if not revision or revision.objective_cycle_id != objective_cycle_id:
         raise HTTPException(status_code=404, detail="调整申请不存在")
     if revision.status != "pending":
         raise HTTPException(status_code=400, detail=f"当前状态为 {revision.status}，不能审批")
@@ -521,14 +493,14 @@ def approve_adjustment(
     if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批")
 
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle or cycle.status != "in_progress":
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
     # 删除当前 objective 表中该用户该周期的所有目标
     old_objs = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id,
+            Objective.objective_cycle_id == objective_cycle_id,
             Objective.user_id == revision.user_id,
         )
     ).all()
@@ -540,7 +512,7 @@ def approve_adjustment(
     if revision.new_objectives:
         for i, item in enumerate(revision.new_objectives):
             session.add(Objective(
-                cycle_id=cycle_id,
+                objective_cycle_id=objective_cycle_id,
                 user_id=revision.user_id,
                 title=item.get("title", ""),
                 description=item.get("description", ""),
@@ -572,7 +544,7 @@ def approve_adjustment(
 
 @router.post("/adjustments/{revision_id}/reject")
 def reject_adjustment(
-    cycle_id: int,
+    objective_cycle_id: int,
     revision_id: int,
     payload: RejectPayload,
     session: Session = Depends(get_session),
@@ -580,7 +552,7 @@ def reject_adjustment(
 ):
     """上级驳回目标调整申请"""
     revision = session.get(ObjectiveRevision, revision_id)
-    if not revision or revision.cycle_id != cycle_id:
+    if not revision or revision.objective_cycle_id != objective_cycle_id:
         raise HTTPException(status_code=404, detail="调整申请不存在")
     if revision.status != "pending":
         raise HTTPException(status_code=400, detail=f"当前状态为 {revision.status}，不能审批")

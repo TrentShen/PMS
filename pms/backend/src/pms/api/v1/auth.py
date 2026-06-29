@@ -9,6 +9,9 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from pms.configs import settings
+from pms.database.models.cycle import CycleParticipant, PerformanceCycle
+from pms.database.models.objective import Objective
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import decode_token, get_current_user, is_hr_dept_leader, require_role, sign_token
@@ -193,6 +196,74 @@ def me(
     return CurrentUser.model_validate(
         _build_user_response(current, session), from_attributes=False
     )
+
+
+class TaskItem(BaseModel):
+    type: str
+    id: int
+    name: str
+    status: str
+    participant_status: str | None = None
+    objective_status: str | None = None
+
+
+@router.get("/me/tasks")
+def my_tasks(
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    """返回当前用户待处理的评估任务和目标制定任务"""
+    # 评估任务：当前用户作为参与人的周期
+    eval_tasks = []
+    participants = session.exec(
+        select(CycleParticipant, PerformanceCycle)
+        .join(PerformanceCycle, PerformanceCycle.id == CycleParticipant.cycle_id)
+        .where(
+            CycleParticipant.user_id == current.id,
+            PerformanceCycle.status.in_(["draft", "in_progress"]),
+        )
+    ).all()
+    for p, c in participants:
+        eval_tasks.append(TaskItem(
+            type="evaluation",
+            id=c.id,
+            name=c.name,
+            status=c.status,
+            participant_status=p.status,
+        ).model_dump())
+
+    # 目标制定任务：当前用户有待处理目标的目标周期
+    objective_tasks = []
+    oc_ids = session.exec(
+        select(Objective.objective_cycle_id)
+        .where(Objective.user_id == current.id)
+        .distinct()
+    ).all()
+    for oc_id in oc_ids:
+        oc = session.get(ObjectiveCycle, oc_id)
+        if not oc or oc.status not in ("draft", "active"):
+            continue
+        # 取该用户在该周期下的目标状态
+        objs = session.exec(
+            select(Objective).where(
+                Objective.objective_cycle_id == oc_id,
+                Objective.user_id == current.id,
+            )
+        ).all()
+        overall = "draft"
+        if any(o.status == "pending_review" for o in objs):
+            overall = "pending_review"
+        elif all(o.status in ("approved", "locked") for o in objs):
+            overall = "approved"
+        objective_tasks.append(TaskItem(
+            type="objective_setting",
+            id=oc.id,
+            name=oc.name,
+            status=oc.status,
+            objective_status=overall,
+        ).model_dump())
+
+    return {"evaluations": eval_tasks, "objective_settings": objective_tasks}
 
 
 @router.post("/switch-role", response_model=TokenResponse)

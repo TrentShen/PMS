@@ -9,6 +9,7 @@ import AppLayout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RequireRole from "@/components/RequireRole";
 import Home from "@/pages/Home";
+import MyObjectives from "@/pages/MyObjectives";
 import SelfEval from "@/pages/SelfEval";
 import LeaderEval from "@/pages/LeaderEval";
 import LeaderEvalDetail from "@/pages/LeaderEvalDetail";
@@ -40,6 +41,7 @@ export default function App() {
           {/* 所有登录用户可见 */}
           <Route path="/" element={<Home />} />
           <Route path="/self/:cycleId" element={<SelfEval />} />
+          <Route path="/objectives/:objectiveCycleId" element={<MyObjectives />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/peer" element={<PeerTasks />} />
           <Route path="/anonymous" element={<AnonymousFeedbackPage />} />

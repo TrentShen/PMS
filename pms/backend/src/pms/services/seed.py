@@ -13,6 +13,7 @@ from pms.database.models import (
     CycleParticipant,
     Department,
     Objective,
+    ObjectiveCycle,
     PerformanceCycle,
     User,
 )
@@ -73,12 +74,26 @@ def seed() -> None:
         hr_dept.leader_userid = "mock-hr"
         s.add_all([tech_dept, prod_dept, hr_dept])
 
-        # ---- 一个配置完整的测试周期 ----
+        # ---- 目标周期：2025 下半年 ----
+        objective_cycle = ObjectiveCycle(
+            name="2025 下半年度目标（UAT）",
+            start_date=date(2025, 7, 1),
+            end_date=date(2025, 12, 31),
+            status="active",
+            created_by="mock-hr",
+        )
+        s.add(objective_cycle)
+        s.commit()
+        s.refresh(objective_cycle)
+        logger.info("目标周期创建：id={} name={}", objective_cycle.id, objective_cycle.name)
+
+        # ---- 绩效评估周期：2025 下半年 ----
         cycle = PerformanceCycle(
             name="2025 下半年度绩效考核（UAT）",
             start_date=date(2025, 7, 1),
             end_date=date(2025, 12, 31),
             status="in_progress",
+            objective_cycle_id=objective_cycle.id,
             enable_self_eval=True,
             enable_peer_eval=True,
             enable_calibration=True,
@@ -104,7 +119,7 @@ def seed() -> None:
         s.add(cycle)
         s.commit()
         s.refresh(cycle)
-        logger.info("周期创建：id={} name={}", cycle.id, cycle.name)
+        logger.info("绩效周期创建：id={} name={}", cycle.id, cycle.name)
 
         # ---- 4 个员工加入参与人 + 写目标 ----
         employee_users = s.exec(
@@ -130,7 +145,7 @@ def seed() -> None:
             for i, (title, desc, m, w) in enumerate(objectives_template):
                 s.add(
                     Objective(
-                        cycle_id=cycle.id,
+                        objective_cycle_id=objective_cycle.id,
                         user_id=u.id,
                         title=title,
                         description=desc,

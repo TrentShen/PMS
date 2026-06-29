@@ -492,7 +492,7 @@ export default function SelfEval() {
       <ObjectivesSection
         cycleId={Number(cycleId)}
         objectives={detail.objectives}
-        canEdit={!readonly && detail.participant_status === "pending"}
+        canEdit={false}
         onSaved={reload}
       />
 

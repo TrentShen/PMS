@@ -75,8 +75,20 @@ def test_full_performance_cycle(client: TestClient) -> None:
     david_id = uids["mock-david"]
     employee_ids = [alice_id, bob_id, carol_id, david_id]
 
-    # ========== 1. HR 创建周期 ==========
+    # ========== 1. HR 创建目标周期 + 绩效周期 ==========
     hr_token = _login(client, "mock-hr")
+    resp = client.post(
+        "/api/v1/objective-cycles",
+        headers=_headers(hr_token),
+        json={
+            "name": "2025 下半年度目标（自动化测试）",
+            "start_date": "2025-07-01",
+            "end_date": "2025-12-31",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    objective_cycle_id = resp.json()["id"]
+
     resp = client.post(
         "/api/v1/cycles",
         headers=_headers(hr_token),
@@ -84,6 +96,7 @@ def test_full_performance_cycle(client: TestClient) -> None:
             "name": "2025 下半年度绩效考核（自动化测试）",
             "start_date": "2025-07-01",
             "end_date": "2025-12-31",
+            "objective_cycle_id": objective_cycle_id,
             "enable_self_eval": True,
             "enable_peer_eval": True,
             "enable_calibration": True,
@@ -153,7 +166,7 @@ def test_full_performance_cycle(client: TestClient) -> None:
         token = _login(client, f"mock-{_name_by_id(uid)}")
         # 写目标
         resp = client.put(
-            f"/api/v1/cycles/{cycle_id}/objectives",
+            f"/api/v1/objective-cycles/{objective_cycle_id}/objectives",
             headers=_headers(token),
             json=objectives_payload,
         )

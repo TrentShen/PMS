@@ -12,7 +12,7 @@ class ObjectiveRevision(SQLModel, table=True):
     __tablename__ = "objective_revision"
 
     id: int | None = Field(default=None, primary_key=True)
-    cycle_id: int = Field(foreign_key="performance_cycle.id", index=True)
+    objective_cycle_id: int = Field(foreign_key="objective_cycle.id", index=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     # 调整原因
     reason: str

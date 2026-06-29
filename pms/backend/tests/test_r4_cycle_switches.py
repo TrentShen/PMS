@@ -89,7 +89,19 @@ FEEDBACK_PAYLOAD = {
 }
 
 
-def _create_cycle(client: TestClient, hr_token: str, **overrides) -> int:
+def _create_objective_cycle(client: TestClient, hr_token: str, **overrides) -> int:
+    payload = {
+        "name": "R4 测试目标周期",
+        "start_date": "2025-07-01",
+        "end_date": "2025-12-31",
+    }
+    payload.update(overrides)
+    resp = client.post("/api/v1/objective-cycles", headers=_headers(hr_token), json=payload)
+    assert resp.status_code == 200, resp.text
+    return resp.json()["id"]
+
+
+def _create_cycle(client: TestClient, hr_token: str, objective_cycle_id: int | None = None, **overrides) -> int:
     payload = {
         "name": "R4 开关测试周期",
         "start_date": "2025-07-01",
@@ -99,6 +111,8 @@ def _create_cycle(client: TestClient, hr_token: str, **overrides) -> int:
         "enable_calibration": True,
         "enable_feedback": True,
     }
+    if objective_cycle_id is not None:
+        payload["objective_cycle_id"] = objective_cycle_id
     payload.update(overrides)
     resp = client.post("/api/v1/cycles", headers=_headers(hr_token), json=payload)
     assert resp.status_code == 200, resp.text
@@ -152,18 +166,18 @@ OBJECTIVES_PAYLOAD = {
 }
 
 
-def _write_objectives(client: TestClient, cycle_id: int, user_id: int) -> None:
+def _write_objectives(client: TestClient, objective_cycle_id: int, user_id: int) -> None:
     token = _login(client, f"mock-{_name_by_id(user_id)}")
     resp = client.put(
-        f"/api/v1/cycles/{cycle_id}/objectives",
+        f"/api/v1/objective-cycles/{objective_cycle_id}/objectives",
         headers=_headers(token),
         json=OBJECTIVES_PAYLOAD,
     )
     assert resp.status_code == 200, resp.text
 
 
-def _submit_self_eval(client: TestClient, cycle_id: int, user_id: int) -> None:
-    _write_objectives(client, cycle_id, user_id)
+def _submit_self_eval(client: TestClient, cycle_id: int, objective_cycle_id: int, user_id: int) -> None:
+    _write_objectives(client, objective_cycle_id, user_id)
     token = _login(client, f"mock-{_name_by_id(user_id)}")
     resp = client.post(
         f"/api/v1/cycles/{cycle_id}/self-evaluation",
@@ -196,7 +210,8 @@ def _submit_superior_eval(client: TestClient, cycle_id: int, subordinate_id: int
 def test_self_eval_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
     _update_cycle(client, hr_token, cycle_id, enable_self_eval=False)
@@ -214,11 +229,12 @@ def test_self_eval_disabled_returns_400(client: TestClient) -> None:
 def test_peer_eval_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"], uids["mock-bob"]])
     _start_cycle(client, hr_token, cycle_id)
 
-    _submit_self_eval(client, cycle_id, uids["mock-alice"])
+    _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
     _update_cycle(client, hr_token, cycle_id, enable_peer_eval=False)
 
     token = _login(client, "mock-alice")
@@ -234,11 +250,12 @@ def test_peer_eval_disabled_returns_400(client: TestClient) -> None:
 def test_calibration_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
 
-    _submit_self_eval(client, cycle_id, uids["mock-alice"])
+    _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
     _submit_superior_eval(client, cycle_id, uids["mock-alice"], "mock-tech-leader")
     _update_cycle(client, hr_token, cycle_id, enable_calibration=False)
 
@@ -273,11 +290,12 @@ def test_calibration_disabled_returns_400(client: TestClient) -> None:
 def test_publish_without_calibration_skips_approval(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token, enable_calibration=False, enable_feedback=False)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id, enable_calibration=False, enable_feedback=False)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
 
-    _submit_self_eval(client, cycle_id, uids["mock-alice"])
+    _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
     _submit_superior_eval(client, cycle_id, uids["mock-alice"], "mock-tech-leader")
 
     # 上级评估会写入 CycleParticipant.final_perf_score，因此关闭校准时可直接发布。
@@ -290,7 +308,8 @@ def test_publish_without_calibration_skips_approval(client: TestClient) -> None:
 def test_feedback_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
     _update_cycle(client, hr_token, cycle_id, enable_feedback=False)
@@ -308,12 +327,13 @@ def test_feedback_disabled_returns_400(client: TestClient) -> None:
 def test_publish_requires_feedback_confirmation(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
 
     # 完成自评、上级评估、校准、审批
-    _submit_self_eval(client, cycle_id, uids["mock-alice"])
+    _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
     _submit_superior_eval(client, cycle_id, uids["mock-alice"], "mock-tech-leader")
 
     leader_token = _login(client, "mock-tech-leader")
@@ -366,7 +386,8 @@ def test_publish_requires_feedback_confirmation(client: TestClient) -> None:
 def test_anonymous_feedback_not_visible_to_direct_leader(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
-    cycle_id = _create_cycle(client, hr_token)
+    objective_cycle_id = _create_objective_cycle(client, hr_token)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"], uids["mock-bob"]])
     _start_cycle(client, hr_token, cycle_id)
 

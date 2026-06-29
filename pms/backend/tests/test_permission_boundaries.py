@@ -11,18 +11,18 @@ def _headers(token: str) -> dict:
 
 
 class TestPermissionBoundaries:
-    def test_employee_cannot_approve_objectives(self, client: TestClient, carol_token: str, user_ids: dict) -> None:
+    def test_employee_cannot_approve_objectives(self, client: TestClient, carol_token: str, user_ids: dict, objective_cycle_id: int) -> None:
         alice_id = user_ids["mock-alice"]
         resp = client.post(
-            f"/api/v1/cycles/1/objectives/users/{alice_id}/approve",
+            f"/api/v1/objective-cycles/{objective_cycle_id}/objectives/users/{alice_id}/approve",
             headers=_headers(carol_token),
         )
         assert resp.status_code == 403, resp.text
 
-    def test_non_superior_leader_cannot_approve_objectives(self, client: TestClient, tech_leader_token: str, user_ids: dict) -> None:
+    def test_non_superior_leader_cannot_approve_objectives(self, client: TestClient, tech_leader_token: str, user_ids: dict, objective_cycle_id: int) -> None:
         carol_id = user_ids["mock-carol"]
         resp = client.post(
-            f"/api/v1/cycles/1/objectives/users/{carol_id}/approve",
+            f"/api/v1/objective-cycles/{objective_cycle_id}/objectives/users/{carol_id}/approve",
             headers=_headers(tech_leader_token),
         )
         assert resp.status_code == 403, resp.text

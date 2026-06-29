@@ -83,3 +83,13 @@ def hr_token(client: TestClient) -> str:
 @pytest.fixture(scope="session")
 def ceo_token(client: TestClient) -> str:
     return _login(client, "mock-ceo")
+
+
+@pytest.fixture(scope="session")
+def objective_cycle_id(client: TestClient, hr_token: str) -> int:
+    """返回 seed 中第一个目标周期的 ID（默认与第一个绩效周期关联）。"""
+    resp = client.get("/api/v1/objective-cycles", headers=_headers(hr_token))
+    assert resp.status_code == 200, resp.text
+    cycles = resp.json()
+    assert cycles, "没有目标周期"
+    return cycles[0]["id"]

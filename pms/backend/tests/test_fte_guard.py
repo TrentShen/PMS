@@ -47,9 +47,9 @@ class TestFteGuard:
         assert resp.status_code == 403, resp.text
         assert "全职" in resp.json()["detail"]
 
-    def test_intern_blocked_from_objectives(self, client: TestClient, alice_token: str, make_intern) -> None:
+    def test_intern_blocked_from_objectives(self, client: TestClient, alice_token: str, make_intern, objective_cycle_id: int) -> None:
         resp = client.put(
-            "/api/v1/cycles/1/objectives",
+            f"/api/v1/objective-cycles/{objective_cycle_id}/objectives",
             headers=_headers(alice_token),
             json={
                 "items": [

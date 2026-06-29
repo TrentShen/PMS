@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import ParticipantStatus
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, is_fte, require_fte, require_role
@@ -27,6 +28,8 @@ class CycleCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    # 关联目标周期：本评估周期评估哪个目标周期
+    objective_cycle_id: int | None = None
     # 考核模式开关（PRD 3.2.1）
     enable_self_eval: bool = True
     enable_peer_eval: bool = True
@@ -40,6 +43,7 @@ class CycleUpdate(BaseModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    objective_cycle_id: int | None = None
     enable_self_eval: bool | None = None
     enable_peer_eval: bool | None = None
     enable_calibration: bool | None = None
@@ -67,6 +71,7 @@ class CycleBrief(BaseModel):
     start_date: date
     end_date: date
     status: str
+    objective_cycle_id: int | None
     created_by: str
     created_at: datetime
     published_at: datetime | None
@@ -124,11 +129,17 @@ def create_cycle(
 ) -> CycleBrief:
     if payload.end_date <= payload.start_date:
         raise HTTPException(status_code=400, detail="结束日期必须晚于开始日期")
+    if payload.objective_cycle_id:
+        oc = session.get(ObjectiveCycle, payload.objective_cycle_id)
+        if not oc:
+            raise HTTPException(status_code=404, detail="关联的目标周期不存在")
+
     cycle = PerformanceCycle(
         name=payload.name,
         start_date=payload.start_date,
         end_date=payload.end_date,
         status="draft",
+        objective_cycle_id=payload.objective_cycle_id,
         enable_self_eval=payload.enable_self_eval,
         enable_peer_eval=payload.enable_peer_eval,
         enable_calibration=payload.enable_calibration,
@@ -344,6 +355,11 @@ def update_cycle(
         cycle.enable_feedback = payload.enable_feedback
     if payload.exclusion_rules is not None:
         cycle.exclusion_rules = payload.exclusion_rules
+    if payload.objective_cycle_id is not None:
+        oc = session.get(ObjectiveCycle, payload.objective_cycle_id)
+        if not oc:
+            raise HTTPException(status_code=404, detail="关联的目标周期不存在")
+        cycle.objective_cycle_id = payload.objective_cycle_id
     session.add(cycle)
     write_audit(
         session,

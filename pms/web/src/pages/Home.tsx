@@ -17,6 +17,15 @@ interface ProbationPlanBrief {
   remaining_days: number;
 }
 
+interface TaskItem {
+  type: string;
+  id: number;
+  name: string;
+  status: string;
+  participant_status?: string | null;
+  objective_status?: string | null;
+}
+
 interface MyCycleItem {
   cycle: {
     id: number;
@@ -48,6 +57,17 @@ const PSTATUS_LABEL: Record<string, string> = {
   published: "已公布",
 };
 
+const TASK_TYPE_LABEL: Record<string, string> = {
+  evaluation: "绩效评估",
+  objective_setting: "目标制定",
+};
+
+const OBJ_STATUS_LABEL: Record<string, string> = {
+  draft: "待填写",
+  pending_review: "待上级审批",
+  approved: "已确认",
+};
+
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
   exceed_part: "部分超出预期",
@@ -63,10 +83,17 @@ export default function Home() {
   const navigate = useNavigate();
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
   const [myProbation, setMyProbation] = useState<ProbationPlanBrief | null>(null);
+  const [tasks, setTasks] = useState<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>({
+    evaluations: [],
+    objective_settings: [],
+  });
 
   useEffect(() => {
     api.get<MyCycleItem[]>("/v1/cycles/mine").then((r) => setCycles(r.data));
     api.get<ProbationPlanBrief | null>("/v1/probation/mine").then((r) => setMyProbation(r.data));
+    api.get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks").then((r) =>
+      setTasks(r.data)
+    );
   }, []);
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
@@ -91,6 +118,45 @@ export default function Home() {
           )}
         </Space>
       </Card>
+
+      {(tasks.evaluations.length > 0 || tasks.objective_settings.length > 0) && (
+        <Card title="我的待办任务">
+          <Space direction="vertical" style={{ width: "100%" }}>
+            {tasks.evaluations.map((t) => (
+              <Card key={`eval-${t.id}`} type="inner" size="small">
+                <Space>
+                  <Tag color="blue">{TASK_TYPE_LABEL[t.type]}</Tag>
+                  <Typography.Text>{t.name}</Typography.Text>
+                  <Tag>{PSTATUS_LABEL[t.participant_status ?? ""]}</Tag>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => navigate(`/self/${t.id}`)}
+                  >
+                    去处理
+                  </Button>
+                </Space>
+              </Card>
+            ))}
+            {tasks.objective_settings.map((t) => (
+              <Card key={`obj-${t.id}`} type="inner" size="small">
+                <Space>
+                  <Tag color="green">{TASK_TYPE_LABEL[t.type]}</Tag>
+                  <Typography.Text>{t.name}</Typography.Text>
+                  <Tag>{OBJ_STATUS_LABEL[t.objective_status ?? ""]}</Tag>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={() => navigate(`/objectives/${t.id}`)}
+                  >
+                    去填写
+                  </Button>
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        </Card>
+      )}
 
       {myProbation && (
         <Card title="我的试用期">

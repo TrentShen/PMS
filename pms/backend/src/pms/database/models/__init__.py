@@ -8,6 +8,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import (
     CycleStatus,
     EvalType,
+    ObjectiveCycleStatus,
     ParticipantStatus,
     PerfLevel,
     ProbationObjectiveStatus,
@@ -19,6 +20,7 @@ from pms.database.models.enums import (
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.objective import Objective
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.probation import ProbationObjective, ProbationPlan
@@ -33,6 +35,7 @@ __all__ = [
     "FeedbackRecord",
     "CycleParticipant",
     "PerformanceCycle",
+    "ObjectiveCycle",
     "Evaluation",
     "Objective",
     "ObjectiveRevision",
@@ -45,6 +48,7 @@ __all__ = [
     "User",
     "CycleStatus",
     "EvalType",
+    "ObjectiveCycleStatus",
     "ParticipantStatus",
     "PerfLevel",
     "ProbationObjectiveStatus",

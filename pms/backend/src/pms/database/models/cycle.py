@@ -18,6 +18,10 @@ class PerformanceCycle(SQLModel, table=True):
     end_date: date
     # 状态机：draft -> in_progress -> published -> closed
     status: str = Field(default="draft", max_length=32, index=True)
+    # 关联目标周期：本评估周期评估的是哪个目标周期
+    objective_cycle_id: int | None = Field(
+        default=None, foreign_key="objective_cycle.id", index=True, nullable=True
+    )
     # 考核模式开关（PRD 3.2.1：可开关各环节）
     # 默认全开；关闭某环节后该环节自动跳过
     enable_self_eval: bool = Field(default=True)

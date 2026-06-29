@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# 绩效目标：每位员工在每个周期下有一组（3-5 条）目标
+# 绩效目标：每位员工在每个目标周期下有一组（3-5 条）目标
 from datetime import datetime
 
 from sqlalchemy import Column, Text
@@ -11,7 +11,7 @@ class Objective(SQLModel, table=True):
     __tablename__ = "objective"
 
     id: int | None = Field(default=None, primary_key=True)
-    cycle_id: int = Field(foreign_key="performance_cycle.id", index=True)
+    objective_cycle_id: int = Field(foreign_key="objective_cycle.id", index=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     title: str = Field(max_length=256)
     # description / measure_criteria 可能较长，显式用 TEXT

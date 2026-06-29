@@ -31,6 +31,13 @@ class CycleStatus(StrEnum):
     CLOSED = "closed"            # 已归档
 
 
+class ObjectiveCycleStatus(StrEnum):
+    # 目标周期生命周期
+    DRAFT = "draft"          # 制定中，员工可填写/修改目标
+    ACTIVE = "active"        # 已生效/执行中
+    COMPLETED = "completed"  # 已结束
+
+
 class ParticipantStatus(StrEnum):
     # 参与人在某周期下的进度（驱动前端"我的待办"显示）
     PENDING = "pending"            # 待自评

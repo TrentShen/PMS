@@ -11,6 +11,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import EvalType, ParticipantStatus
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.objective import Objective
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, require_fte
@@ -103,11 +104,15 @@ def get_evaluation_detail(
     if not cycle or not user or not participant:
         raise HTTPException(status_code=404, detail="数据不存在")
 
-    objectives = session.exec(
-        select(Objective).where(
-            Objective.cycle_id == cycle_id, Objective.user_id == user_id
-        ).order_by(Objective.order_num)
-    ).all()
+    # 从关联的目标周期获取目标
+    objectives = []
+    if cycle.objective_cycle_id:
+        objectives = session.exec(
+            select(Objective).where(
+                Objective.objective_cycle_id == cycle.objective_cycle_id,
+                Objective.user_id == user_id,
+            ).order_by(Objective.order_num)
+        ).all()
 
     evals = session.exec(
         select(Evaluation).where(
@@ -230,9 +235,14 @@ def submit_self_evaluation(
         raise HTTPException(status_code=403, detail="你不在本周期的参与人列表中")
 
     # 目标校验：PRD 要求 3-5 条目标，至少要有目标才能自评
-    obj_count = len(session.exec(
-        select(Objective).where(Objective.cycle_id == cycle_id, Objective.user_id == current.id)
-    ).all())
+    obj_count = 0
+    if cycle.objective_cycle_id:
+        obj_count = len(session.exec(
+            select(Objective).where(
+                Objective.objective_cycle_id == cycle.objective_cycle_id,
+                Objective.user_id == current.id,
+            )
+        ).all())
     if obj_count == 0:
         raise HTTPException(status_code=400, detail="你还没有绩效目标，请先导入或录入目标后再自评")
 

@@ -10,14 +10,14 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from sqlmodel import Session, select
 
-from pms.database.models.cycle import PerformanceCycle
 from pms.database.models.objective import Objective
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import require_role
 from pms.utils.audit import write_audit
 
-router = APIRouter(prefix="/excel", tags=["excel"])
+router = APIRouter(prefix="/objective-cycles", tags=["objective-cycles"])
 
 # 模板列定义（PRD 3.3.1 字段规范）
 TEMPLATE_HEADERS = [
@@ -32,7 +32,7 @@ TEMPLATE_HEADERS = [
 ]
 
 
-@router.get("/template")
+@router.get("/excel/template")
 def download_template():
     # 生成空白 Excel 模板供 HRBP 下载
     wb = Workbook()
@@ -56,17 +56,17 @@ def download_template():
     )
 
 
-@router.post("/import/{cycle_id}")
+@router.post("/{objective_cycle_id}/excel/import")
 def import_objectives(
-    cycle_id: int,
+    objective_cycle_id: int,
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ):
     # 校验 + 导入
-    cycle = session.get(PerformanceCycle, cycle_id)
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle:
-        raise HTTPException(status_code=404, detail="周期不存在")
+        raise HTTPException(status_code=404, detail="目标周期不存在")
 
     # 读取上传的 Excel
     try:
@@ -147,7 +147,7 @@ def import_objectives(
     user_ids = list({p["user_id"] for p in parsed})
     existing = session.exec(
         select(Objective).where(
-            Objective.cycle_id == cycle_id,
+            Objective.objective_cycle_id == objective_cycle_id,
             Objective.user_id.in_(user_ids),
         )
     ).all()
@@ -158,7 +158,7 @@ def import_objectives(
     now = datetime.now(timezone.utc)
     for idx, p in enumerate(parsed):
         session.add(Objective(
-            cycle_id=cycle_id,
+            objective_cycle_id=objective_cycle_id,
             user_id=p["user_id"],
             title=p["title"],
             description=p["description"],
@@ -176,7 +176,7 @@ def import_objectives(
         operator_name=hr.name,
         action="excel_import_objectives",
         resource_type="objective",
-        resource_id=str(cycle_id),
+        resource_id=str(objective_cycle_id),
         after={"row_count": len(parsed), "user_count": len(user_ids)},
     )
     session.commit()

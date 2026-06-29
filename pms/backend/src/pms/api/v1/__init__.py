@@ -14,6 +14,7 @@ from pms.api.v1 import (
     health,
     history,
     notify,
+    objective_cycles,
     objectives,
     peer,
     probation,
@@ -30,6 +31,7 @@ api_v1_router.include_router(evaluations.router)
 api_v1_router.include_router(peer.router)
 api_v1_router.include_router(calibration.router)
 api_v1_router.include_router(feedback.router)
+api_v1_router.include_router(objective_cycles.router)
 api_v1_router.include_router(objectives.router)
 api_v1_router.include_router(excel_import.router)
 api_v1_router.include_router(export.router)
