@@ -439,6 +439,8 @@ def list_participants(
     )
 
     if only_subordinates:
+        if not has_any_role(current, "direct_leader", "dept_leader", "hrbp", "super_admin"):
+            raise HTTPException(status_code=403, detail="无权限查看下属列表")
         q = q.where(User.leader_userid == current.wecom_userid)
     else:
         scope = visible_user_ids(session, current)

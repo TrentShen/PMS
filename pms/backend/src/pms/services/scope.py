@@ -57,7 +57,7 @@ def _hr_dept_member_ids(session: Session) -> set[int]:
 
 def visible_user_ids(session: Session, current: User) -> set[int] | None:
     """返回 None 表示不做限制（全局可见）；否则返回可见 user.id 集合"""
-    cache_key = f"pms:scope:{current.id}"
+    cache_key = f"pms:scope:{current.id}:{current.role}"
     cached = redis_client.get(cache_key)
     if cached:
         data = json.loads(cached)
@@ -76,7 +76,9 @@ def visible_user_ids(session: Session, current: User) -> set[int] | None:
 
 
 def invalidate_scope_cache(user_id: int) -> None:
-    redis_client.delete(f"pms:scope:{user_id}")
+    # 角色可能切换，按前缀批量清理
+    for key in redis_client.scan_iter(match=f"pms:scope:{user_id}:*"):
+        redis_client.delete(key)
 
 
 def _compute_visible_user_ids(session: Session, current: User) -> set[int] | None:

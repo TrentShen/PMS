@@ -24,6 +24,8 @@ class User(SQLModel, table=True):
     leader_userid: str | None = Field(default=None, max_length=64, index=True)
     # 角色；为简化 V0.9 存单个角色，多角色场景再拆 user_role 关系
     role: str = Field(default="employee", max_length=32, index=True)
+    # 原始角色（角色切换后 base_role 保留真实身份，role 为当前生效角色）
+    base_role: str | None = Field(default=None, max_length=32)
     # HR 的管辖范围：部门 id 列表；None 或空列表 表示全局可见
     # 仅对 role=hrbp 生效；super_admin 永远全局；其他角色此字段忽略
     hrbp_scope_dept_ids: list[int] | None = Field(default=None, sa_column=Column(JSON))

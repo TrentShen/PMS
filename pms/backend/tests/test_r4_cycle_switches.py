@@ -379,31 +379,41 @@ def test_anonymous_feedback_not_visible_to_direct_leader(client: TestClient) -> 
     )
     assert resp.status_code == 200, resp.text
 
-    # 将 mock-prod-leader 改为 direct_leader 角色，且他不是 alice 的直属上级
+    # 将 mock-tech-leader 临时改为 direct_leader（仍是他下属 alice 的直属上级，但不是部门 Leader）
     with Session(engine) as session:
-        prod_leader = session.exec(
-            select(User).where(User.wecom_userid == "mock-prod-leader")
+        tech_leader = session.exec(
+            select(User).where(User.wecom_userid == "mock-tech-leader")
         ).first()
-        assert prod_leader is not None
-        prod_leader.role = "direct_leader"
-        session.add(prod_leader)
+        assert tech_leader is not None
+        original_role = tech_leader.role
+        tech_leader.role = "direct_leader"
+        session.add(tech_leader)
         session.commit()
 
-    # direct_leader 查看 alice 的 peer summary，匿名评价应为 None
-    direct_leader_token = _login(client, "mock-prod-leader")
-    resp = client.get(
-        f"/api/v1/cycles/{cycle_id}/users/{uids['mock-alice']}/peer/summary",
-        headers=_headers(direct_leader_token),
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["anonymous_feedback"] is None
+    try:
+        # direct_leader 可查看下属的 peer summary，但匿名评价对直属上级不可见
+        direct_leader_token = _login(client, "mock-tech-leader")
+        resp = client.get(
+            f"/api/v1/cycles/{cycle_id}/users/{uids['mock-alice']}/peer/summary",
+            headers=_headers(direct_leader_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["anonymous_feedback"] is None
 
-    # 部门 Leader 可以查看
-    dept_leader_token = _login(client, "mock-tech-leader")
-    resp = client.get(
-        f"/api/v1/cycles/{cycle_id}/users/{uids['mock-alice']}/peer/summary",
-        headers=_headers(dept_leader_token),
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["anonymous_feedback"] is not None
-    assert len(resp.json()["anonymous_feedback"]) == 1
+        # HR 可以查看匿名评价
+        hr_token2 = _login(client, "mock-hr")
+        resp = client.get(
+            f"/api/v1/cycles/{cycle_id}/users/{uids['mock-alice']}/peer/summary",
+            headers=_headers(hr_token2),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["anonymous_feedback"] is not None
+        assert len(resp.json()["anonymous_feedback"]) == 1
+    finally:
+        with Session(engine) as session:
+            tech_leader = session.exec(
+                select(User).where(User.wecom_userid == "mock-tech-leader")
+            ).first()
+            tech_leader.role = original_role
+            session.add(tech_leader)
+            session.commit()

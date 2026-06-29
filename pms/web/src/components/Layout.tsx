@@ -26,8 +26,7 @@ export default function AppLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
 
-  // 菜单/入口权限基于原始角色（base_role），不受角色切换影响
-  const baseRole = user?.base_role ?? user?.role;
+  // 菜单/入口权限基于当前生效角色（role），切换角色后菜单同步变化
 
   // 构造菜单项；按角色过滤
   const menuItems = [
@@ -36,11 +35,11 @@ export default function AppLayout() {
     { key: "/notifications", label: "通知" },
     { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },
-    (hasAnyRole(baseRole, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/leader", label: "下属评估" },
-    (hasAnyRole(baseRole, [...ROLE.LEADER]) || user?.has_subordinates) && { key: "/calibration", label: "校准" },
-    (hasAnyRole(baseRole, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission || user?.has_subordinates) && { key: "/probation", label: "试用期管理" },
-    (hasAnyRole(baseRole, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
-    (hasAnyRole(baseRole, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
+    hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/leader", label: "下属评估" },
+    hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/calibration", label: "校准" },
+    (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission) && { key: "/probation", label: "试用期管理" },
+    (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
+    (hasAnyRole(user?.role, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
   ].filter(Boolean) as { key: string; label: string }[];
 
   const activeKey =

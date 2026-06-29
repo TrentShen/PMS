@@ -16,7 +16,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, require_fte
+from pms.services.auth import SUPERIOR_ROLES, can_act_as_superior, get_current_user, has_any_role, require_fte
 from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import (
@@ -195,9 +195,7 @@ def list_pending_peers_for_review(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    is_leader = target.leader_userid == current.wecom_userid
-    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
-    if not (is_leader or is_admin):
+    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="无权查看")
 
     rows = session.exec(
@@ -232,9 +230,7 @@ def approve_peer_list(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    is_leader = target.leader_userid == current.wecom_userid
-    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
-    if not (is_leader or is_admin):
+    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="无权审核")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -476,9 +472,7 @@ def get_peer_summary(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    is_leader = target.leader_userid == current.wecom_userid
-    is_admin = has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader")
-    if not (is_leader or is_admin):
+    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="被评人本人不可见自己收到的互评")
 
     rows = session.exec(

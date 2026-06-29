@@ -13,7 +13,7 @@ from pms.database.models.objective import Objective
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, require_fte
+from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, require_fte
 from pms.utils.audit import write_audit
 
 router = APIRouter(
@@ -230,9 +230,7 @@ def approve_objectives(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    is_superior = target.leader_userid == current.wecom_userid
-    is_hr = has_any_role(current, "hrbp", "super_admin")
-    if not (is_superior or is_hr):
+    if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -284,9 +282,7 @@ def reject_objectives(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    is_superior = target.leader_userid == current.wecom_userid
-    is_hr = has_any_role(current, "hrbp", "super_admin")
-    if not (is_superior or is_hr):
+    if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -522,9 +518,7 @@ def approve_adjustment(
     target = session.get(User, revision.user_id)
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
-    is_superior = target.leader_userid == current.wecom_userid
-    is_hr = has_any_role(current, "hrbp", "super_admin")
-    if not (is_superior or is_hr):
+    if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权审批")
 
     cycle = session.get(PerformanceCycle, cycle_id)

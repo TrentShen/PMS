@@ -198,10 +198,13 @@ def me(
 @router.post("/switch-role", response_model=TokenResponse)
 def switch_role(
     payload: SwitchRoleRequest,
-    current: User = Depends(require_role("super_admin")),
+    current: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> TokenResponse:
     """super_admin 切换当前生效角色（用于测试不同界面）"""
+    base_role = getattr(current, "base_role", None) or current.role
+    if base_role != "super_admin":
+        raise HTTPException(status_code=403, detail="仅超级管理员可切换角色")
     if payload.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"不支持的角色：{payload.role}")
     token = sign_token(current.wecom_userid, active_role=payload.role)

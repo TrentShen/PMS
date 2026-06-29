@@ -12,7 +12,7 @@ from pms.database.models.enums import ProbationObjectiveStatus, ProbationPlanSta
 from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, require_fte, require_role
+from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, require_fte, require_role
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import ensure_can_view_user, visible_user_ids
 from pms.utils.audit import write_audit
@@ -87,7 +87,9 @@ def _ensure_can_write_objectives(session: Session, current: User, target: User) 
 
 
 def _ensure_can_evaluate(session: Session, current: User, target: User) -> None:
-    if not _is_superior(session, current, target):
+    if current.id == target.id:
+        raise HTTPException(status_code=403, detail="不能评估自己")
+    if not can_act_as_superior(current, target):
         raise HTTPException(status_code=403, detail="无权评估该员工")
 
 

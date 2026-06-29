@@ -125,9 +125,49 @@ def require_fte(user: User = Depends(get_current_user)) -> User:
 
 
 def has_any_role(user: User, *allowed_roles: str) -> bool:
-    """判断用户是否具备任一角色（考虑角色切换后的 base_role）"""
-    base = getattr(user, "base_role", None)
-    return user.role in allowed_roles or (base is not None and base in allowed_roles)
+    """判断用户当前生效角色是否命中任一允许角色。
+
+    角色切换后，权限随当前生效角色变化，以保证测试不同角色时看到的是真实权限。
+    """
+    return user.role in allowed_roles
+
+
+SUPERIOR_ROLES = ("direct_leader", "dept_leader", "hrbp", "super_admin")
+LEADER_WRITE_ROLES = ("direct_leader", "dept_leader", "hrbp", "super_admin")
+
+
+def can_act_as_superior(
+    current: User,
+    target: User,
+    allowed_roles: tuple[str, ...] = LEADER_WRITE_ROLES,
+) -> bool:
+    """判断 current 是否可以对 target 执行直属上级/HR 类的写操作。
+
+    角色切换后，current.role 为生效角色；仅当生效角色在允许列表内且满足
+    汇报关系（或本身是 HR/超管）时才放行。
+    """
+    if current.role in ("hrbp", "super_admin"):
+        return True
+    if current.role not in allowed_roles:
+        return False
+    return target.leader_userid == current.wecom_userid
+
+
+def require_superior_or_hr(
+    allowed_roles: tuple[str, ...] = LEADER_WRITE_ROLES,
+):
+    """路由依赖：校验当前用户对目标员工拥有直属上级或 HR 写权限。
+
+    用法：Depends(require_superior_or_hr())，然后在函数内自行查询 target 用户。
+    """
+
+    def _guard(user: User = Depends(get_current_user)) -> User:
+        # 注意：target 需要调用方自行校验，这里只保证当前用户角色具备上级/HR 资质
+        if user.role not in allowed_roles and user.role not in ("hrbp", "super_admin"):
+            raise HTTPException(status_code=403, detail="需要直属上级或 HR 权限")
+        return user
+
+    return _guard
 
 
 def require_role(*allowed_roles: str):
