@@ -9,7 +9,10 @@ import AppLayout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RequireRole from "@/components/RequireRole";
 import Home from "@/pages/Home";
+import HrDashboard from "@/pages/HrDashboard";
 import MyObjectives from "@/pages/MyObjectives";
+import ObjectiveCycleDetail from "@/pages/ObjectiveCycleDetail";
+import ObjectiveCycleList from "@/pages/ObjectiveCycleList";
 import SelfEval from "@/pages/SelfEval";
 import LeaderEval from "@/pages/LeaderEval";
 import LeaderEvalDetail from "@/pages/LeaderEvalDetail";
@@ -64,6 +67,9 @@ export default function App() {
           {/* HR 管理台：hrbp/super_admin + HR 部门 Leader */}
           <Route element={<RequireRole roles={[...ROLE.HR]} fallback="forbid" allowHrPermission />}>
             <Route path="/hr" element={<HrConsole />} />
+            <Route path="/hr/dashboard" element={<HrDashboard />} />
+            <Route path="/objective-cycles" element={<ObjectiveCycleList />} />
+            <Route path="/objective-cycles/:id" element={<ObjectiveCycleDetail />} />
           </Route>
 
           {/* 试用期管理：Leader/HR 可见 */}

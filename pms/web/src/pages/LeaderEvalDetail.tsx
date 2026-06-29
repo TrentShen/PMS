@@ -316,13 +316,13 @@ const OBJ_STATUS_LABEL: Record<string, { text: string; color: string }> = {
 };
 
 function ObjectivesReviewSection({
-  cycleId,
+  objectiveCycleId,
   userId,
   objectives,
   cycleStatus,
   onChanged,
 }: {
-  cycleId: number;
+  objectiveCycleId: number | null;
   userId: number;
   objectives: any[];
   cycleStatus: string;
@@ -338,17 +338,19 @@ function ObjectivesReviewSection({
   const canEdit = cycleStatus === "in_progress" || cycleStatus === "draft";
 
   async function loadAdjustments() {
+    if (!objectiveCycleId) return;
     try {
-      const r = await api.get(`/v1/cycles/${cycleId}/objectives/adjustments?user_id=${userId}`);
+      const r = await api.get(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments?user_id=${userId}`);
       setAdjustments(r.data);
     } catch { setAdjustments([]); }
   }
-  useEffect(() => { loadAdjustments(); }, [cycleId, userId]);
+  useEffect(() => { loadAdjustments(); }, [objectiveCycleId, userId]);
 
   async function onApprove() {
+    if (!objectiveCycleId) return;
     setProcessing(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/users/${userId}/approve`);
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/users/${userId}/approve`);
       message.success("目标已批准");
       onChanged();
     } catch (e: any) {
@@ -363,9 +365,10 @@ function ObjectivesReviewSection({
       message.error("请填写驳回原因");
       return;
     }
+    if (!objectiveCycleId) return;
     setProcessing(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/users/${userId}/reject`, {
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/users/${userId}/reject`, {
         reason: rejectReason.trim(),
       });
       message.success("目标已驳回，员工可修改后重新提交");
@@ -381,9 +384,10 @@ function ObjectivesReviewSection({
   const pendingAdjustment = adjustments.find((a) => a.status === "pending");
 
   async function onApproveAdjustment(revisionId: number) {
+    if (!objectiveCycleId) return;
     setAdjProcessing(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/adjustments/${revisionId}/approve`);
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments/${revisionId}/approve`);
       message.success("调整申请已批准");
       await loadAdjustments();
       onChanged();
@@ -393,10 +397,11 @@ function ObjectivesReviewSection({
   }
 
   async function onRejectAdjustment(revisionId: number) {
+    if (!objectiveCycleId) return;
     if (!adjRejectReason.trim()) { message.error("请填写驳回原因"); return; }
     setAdjProcessing(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/adjustments/${revisionId}/reject`, { reason: adjRejectReason.trim() });
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments/${revisionId}/reject`, { reason: adjRejectReason.trim() });
       message.success("调整申请已驳回");
       setAdjRejectReason("");
       await loadAdjustments();
@@ -582,8 +587,17 @@ export default function LeaderEvalDetail() {
         </Card>
       )}
 
+      {detail.objective_cycle && (
+        <Card size="small" type="inner" title={`关联目标周期：${detail.objective_cycle.name}`}>
+          <span>
+            {detail.objective_cycle.start_date} ~ {detail.objective_cycle.end_date}，状态：
+            <Tag>{detail.objective_cycle.status}</Tag>
+          </span>
+        </Card>
+      )}
+
       <ObjectivesReviewSection
-        cycleId={Number(cycleId)}
+        objectiveCycleId={detail.objective_cycle?.id ?? null}
         userId={Number(userId)}
         objectives={detail.objectives}
         cycleStatus={detail.cycle.status}

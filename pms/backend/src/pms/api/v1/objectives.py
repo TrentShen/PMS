@@ -10,8 +10,9 @@ from sqlmodel import Session, select
 
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
+from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
 from pms.database.models.objective_revision import ObjectiveRevision
-from pms.database.models.user import User
+from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, require_fte
 from pms.utils.audit import write_audit
@@ -140,6 +141,9 @@ def save_objectives(
             status="draft",
         ))
 
+    _ensure_participant(session, objective_cycle_id, current.id)
+    _sync_participant_status(session, objective_cycle_id, current.id)
+
     session.commit()
     return {"saved": len(payload.items)}
 
@@ -182,6 +186,9 @@ def submit_objectives_for_review(
         o.reviewed_at = None
         o.reject_reason = None
         session.add(o)
+
+    _ensure_participant(session, objective_cycle_id, current.id)
+    _sync_participant_status(session, objective_cycle_id, current.id)
 
     write_audit(
         session,
@@ -234,6 +241,8 @@ def approve_objectives(
         o.reviewed_at = datetime.now(timezone.utc)
         o.reject_reason = None
         session.add(o)
+
+    _sync_participant_status(session, objective_cycle_id, user_id)
 
     write_audit(
         session,
@@ -289,6 +298,8 @@ def reject_objectives(
         o.reviewed_at = datetime.now(timezone.utc)
         o.reject_reason = payload.reason.strip()
         session.add(o)
+
+    _sync_participant_status(session, objective_cycle_id, user_id)
 
     write_audit(
         session,
@@ -585,3 +596,57 @@ def reject_adjustment(
     )
     session.commit()
     return {"status": "rejected"}
+
+
+# ============ 参与人状态同步 ============
+
+def _ensure_participant(session: Session, objective_cycle_id: int, user_id: int) -> None:
+    """确保某员工在目标周期的参与人列表中；不存在则自动创建。"""
+    existing = session.exec(
+        select(ObjectiveCycleParticipant).where(
+            ObjectiveCycleParticipant.objective_cycle_id == objective_cycle_id,
+            ObjectiveCycleParticipant.user_id == user_id,
+        )
+    ).first()
+    if existing:
+        return
+    user = session.get(User, user_id)
+    if not user:
+        return
+    dept = session.get(Department, user.department_id) if user.department_id else None
+    session.add(ObjectiveCycleParticipant(
+        objective_cycle_id=objective_cycle_id,
+        user_id=user_id,
+        leader_userid_snapshot=user.leader_userid,
+        dept_name_snapshot=dept.name if dept else None,
+        status="pending",
+    ))
+
+
+def _sync_participant_status(session: Session, objective_cycle_id: int, user_id: int) -> None:
+    """根据该员工当前目标状态，同步 ObjectiveCycleParticipant.status。"""
+    participant = session.exec(
+        select(ObjectiveCycleParticipant).where(
+            ObjectiveCycleParticipant.objective_cycle_id == objective_cycle_id,
+            ObjectiveCycleParticipant.user_id == user_id,
+        )
+    ).first()
+    if not participant:
+        return
+
+    objs = session.exec(
+        select(Objective).where(
+            Objective.objective_cycle_id == objective_cycle_id,
+            Objective.user_id == user_id,
+        )
+    ).all()
+
+    if not objs:
+        participant.status = "pending"
+    elif any(o.status == "pending_review" for o in objs):
+        participant.status = "pending_review"
+    elif all(o.status in ("approved", "locked") for o in objs):
+        participant.status = "approved"
+    else:
+        participant.status = "pending"
+    session.add(participant)

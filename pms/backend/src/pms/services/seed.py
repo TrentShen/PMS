@@ -14,6 +14,7 @@ from pms.database.models import (
     Department,
     Objective,
     ObjectiveCycle,
+    ObjectiveCycleParticipant,
     PerformanceCycle,
     User,
 )
@@ -140,6 +141,15 @@ def seed() -> None:
                     leader_userid_snapshot=u.leader_userid,
                     dept_name_snapshot=dept_name,
                     status="pending",
+                )
+            )
+            s.add(
+                ObjectiveCycleParticipant(
+                    objective_cycle_id=objective_cycle.id,
+                    user_id=u.id,
+                    leader_userid_snapshot=u.leader_userid,
+                    dept_name_snapshot=dept_name,
+                    status="approved",
                 )
             )
             for i, (title, desc, m, w) in enumerate(objectives_template):

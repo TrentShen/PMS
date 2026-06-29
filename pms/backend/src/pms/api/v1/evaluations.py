@@ -177,6 +177,18 @@ def get_evaluation_detail(
                 "final_value_growth": hp.final_value_growth,
             })
 
+    objective_cycle_info = None
+    if cycle.objective_cycle_id:
+        oc = session.get(ObjectiveCycle, cycle.objective_cycle_id)
+        if oc:
+            objective_cycle_info = {
+                "id": oc.id,
+                "name": oc.name,
+                "status": oc.status,
+                "start_date": oc.start_date.isoformat(),
+                "end_date": oc.end_date.isoformat(),
+            }
+
     return {
         "cycle": {
             "id": cycle.id,
@@ -184,7 +196,9 @@ def get_evaluation_detail(
             "status": cycle.status,
             "start_date": cycle.start_date.isoformat(),
             "end_date": cycle.end_date.isoformat(),
+            "objective_cycle_id": cycle.objective_cycle_id,
         },
+        "objective_cycle": objective_cycle_info,
         "user": UserProfile(
             id=user.id,
             name=user.name,

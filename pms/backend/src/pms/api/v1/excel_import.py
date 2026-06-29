@@ -12,7 +12,8 @@ from sqlmodel import Session, select
 
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
-from pms.database.models.user import User
+from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
+from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import require_role
 from pms.utils.audit import write_audit
@@ -154,6 +155,29 @@ def import_objectives(
     for obj in existing:
         session.delete(obj)
     session.flush()
+
+    # 为导入的员工自动创建/更新参与人记录
+    existing_participants = session.exec(
+        select(ObjectiveCycleParticipant).where(
+            ObjectiveCycleParticipant.objective_cycle_id == objective_cycle_id,
+            ObjectiveCycleParticipant.user_id.in_(user_ids),
+        )
+    ).all()
+    participant_user_ids = {p.user_id for p in existing_participants}
+    for uid in user_ids:
+        if uid in participant_user_ids:
+            continue
+        user = session.get(User, uid)
+        if not user:
+            continue
+        dept = session.get(Department, user.department_id) if user.department_id else None
+        session.add(ObjectiveCycleParticipant(
+            objective_cycle_id=objective_cycle_id,
+            user_id=uid,
+            leader_userid_snapshot=user.leader_userid,
+            dept_name_snapshot=dept.name if dept else None,
+            status="approved",
+        ))
 
     now = datetime.now(timezone.utc)
     for idx, p in enumerate(parsed):

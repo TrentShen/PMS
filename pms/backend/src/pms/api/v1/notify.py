@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from pms.configs import settings
 from pms.database.models.audit import NotificationLog
 from pms.database.models.cycle import PerformanceCycle
+from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, require_role
@@ -24,6 +25,12 @@ MAX_RETRIES = 3
 
 class UrgeRequest(BaseModel):
     cycle_id: int
+    user_ids: list[int]
+    message: str | None = None
+
+
+class ObjectiveUrgeRequest(BaseModel):
+    objective_cycle_id: int
     user_ids: list[int]
     message: str | None = None
 
@@ -86,6 +93,38 @@ def send_urge(
             title="催办通知",
             content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的绩效任务",
             payload={"cycle_id": payload.cycle_id, "from": current.wecom_userid},
+            status="pending",
+        )
+        session.add(notification)
+        session.commit()
+        _send_and_log(notification, session)
+        count += 1
+
+    return {"sent": count}
+
+
+@router.post("/urge-objectives")
+def send_objective_urge(
+    payload: ObjectiveUrgeRequest,
+    session: Session = Depends(get_session),
+    current: User = Depends(require_role("hrbp", "super_admin")),
+):
+    """催办目标制定任务"""
+    cycle = session.get(ObjectiveCycle, payload.objective_cycle_id)
+    if not cycle or cycle.status not in ("draft", "active"):
+        raise HTTPException(status_code=400, detail="目标周期不在制定中或执行中")
+
+    count = 0
+    for uid in payload.user_ids:
+        user = session.get(User, uid)
+        if not user:
+            continue
+        notification = NotificationLog(
+            target_userid=user.wecom_userid,
+            channel="wecom",
+            title="目标制定催办",
+            content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的目标制定",
+            payload={"objective_cycle_id": payload.objective_cycle_id, "from": current.wecom_userid},
             status="pending",
         )
         session.add(notification)

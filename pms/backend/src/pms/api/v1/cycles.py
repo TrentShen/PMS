@@ -12,7 +12,11 @@ from sqlmodel import Session, select
 
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import ParticipantStatus
+from pms.database.models.evaluation import Evaluation
+from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
+from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
+from pms.database.models.peer import PeerEvaluation, PeerInvitation
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, is_fte, require_fte, require_role
@@ -651,3 +655,173 @@ def _notify_cycle_published(session: Session, cycle: PerformanceCycle) -> None:
         url=f"/cycles/{cycle.id}/result",
         payload={"cycle_id": cycle.id, "event": "cycle_published"},
     )
+
+
+# ============ HR 看板：周期进度仪表盘 ============
+
+@router.get("/{cycle_id}/dashboard")
+def cycle_dashboard(
+    cycle_id: int,
+    session: Session = Depends(get_session),
+    current: User = Depends(require_role("hrbp", "super_admin")),
+):
+    """返回某个绩效周期的整体进度看板数据，供 HR 监控各环节完成情况。"""
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+
+    # 评估参与人
+    perf_participants = session.exec(
+        select(CycleParticipant).where(CycleParticipant.cycle_id == cycle_id)
+    ).all()
+    perf_user_ids = [p.user_id for p in perf_participants]
+
+    # 目标参与人（来自关联目标周期）
+    objective_participant_count = 0
+    objective_user_ids: list[int] = []
+    if cycle.objective_cycle_id:
+        oc_participants = session.exec(
+            select(ObjectiveCycleParticipant).where(
+                ObjectiveCycleParticipant.objective_cycle_id == cycle.objective_cycle_id
+            )
+        ).all()
+        objective_participant_count = len(oc_participants)
+        objective_user_ids = [p.user_id for p in oc_participants]
+
+    # 自评完成数
+    self_eval_submitted = 0
+    if perf_user_ids:
+        self_eval_submitted = len(session.exec(
+            select(Evaluation).where(
+                Evaluation.cycle_id == cycle_id,
+                Evaluation.user_id.in_(perf_user_ids),
+                Evaluation.eval_type == "self",
+                Evaluation.status == "submitted",
+            )
+        ).all())
+
+    # 上级评估完成数
+    superior_eval_submitted = 0
+    if perf_user_ids:
+        superior_eval_submitted = len(session.exec(
+            select(Evaluation).where(
+                Evaluation.cycle_id == cycle_id,
+                Evaluation.user_id.in_(perf_user_ids),
+                Evaluation.eval_type == "superior",
+                Evaluation.status == "submitted",
+            )
+        ).all())
+
+    # 互评名单确认数：已批准（approved）的互评邀请数
+    peer_approved_count = 0
+    if perf_user_ids:
+        peer_approved_count = len(session.exec(
+            select(PeerInvitation).where(
+                PeerInvitation.cycle_id == cycle_id,
+                PeerInvitation.invitee_user_id.in_(perf_user_ids),
+                PeerInvitation.status == "approved",
+            )
+        ).all())
+
+    # 互评完成数：已提交的正式互评任务数
+    peer_eval_submitted = 0
+    if perf_user_ids:
+        peer_eval_submitted = len(session.exec(
+            select(PeerEvaluation).where(
+                PeerEvaluation.cycle_id == cycle_id,
+                PeerEvaluation.target_user_id.in_(perf_user_ids),
+                PeerEvaluation.status == "submitted",
+            )
+        ).all())
+
+    # 按部门统计：自评完成进度 + 互评完成进度
+    dept_self_progress: list[dict] = []
+    dept_peer_progress: list[dict] = []
+
+    if perf_user_ids:
+        # 批量加载用户和部门
+        users = session.exec(select(User).where(User.id.in_(perf_user_ids))).all()
+        user_map = {u.id: u for u in users}
+        dept_ids = {u.department_id for u in users if u.department_id}
+        depts = session.exec(select(Department).where(Department.id.in_(dept_ids))).all() if dept_ids else []
+        dept_map = {d.id: d.name for d in depts}
+
+        # 自评提交用户
+        self_submitted_user_ids = {
+            e.user_id for e in session.exec(
+                select(Evaluation).where(
+                    Evaluation.cycle_id == cycle_id,
+                    Evaluation.user_id.in_(perf_user_ids),
+                    Evaluation.eval_type == "self",
+                    Evaluation.status == "submitted",
+                )
+            ).all()
+        }
+
+        # 互评完成用户（所有正式互评任务都已提交的被评人）
+        peer_evals = session.exec(
+            select(PeerEvaluation).where(
+                PeerEvaluation.cycle_id == cycle_id,
+                PeerEvaluation.target_user_id.in_(perf_user_ids),
+            )
+        ).all()
+        peer_target_total: dict[int, int] = {}
+        peer_target_submitted: dict[int, int] = {}
+        for ev in peer_evals:
+            peer_target_total[ev.target_user_id] = peer_target_total.get(ev.target_user_id, 0) + 1
+            if ev.status == "submitted":
+                peer_target_submitted[ev.target_user_id] = peer_target_submitted.get(ev.target_user_id, 0) + 1
+        peer_done_user_ids = {
+            uid for uid in peer_target_total
+            if peer_target_submitted.get(uid, 0) >= peer_target_total[uid]
+        }
+
+        # 聚合
+        dept_perf_count: dict[int, int] = {}
+        dept_self_done: dict[int, int] = {}
+        dept_peer_done: dict[int, int] = {}
+        for p in perf_participants:
+            u = user_map.get(p.user_id)
+            if not u or not u.department_id:
+                continue
+            did = u.department_id
+            dept_perf_count[did] = dept_perf_count.get(did, 0) + 1
+            if p.user_id in self_submitted_user_ids:
+                dept_self_done[did] = dept_self_done.get(did, 0) + 1
+            if p.user_id in peer_done_user_ids:
+                dept_peer_done[did] = dept_peer_done.get(did, 0) + 1
+
+        dept_self_progress = [
+            {
+                "department_id": did,
+                "department_name": dept_map.get(did, "未知部门"),
+                "total": total,
+                "done": dept_self_done.get(did, 0),
+                "undone": total - dept_self_done.get(did, 0),
+            }
+            for did, total in dept_perf_count.items()
+        ]
+        dept_peer_progress = [
+            {
+                "department_id": did,
+                "department_name": dept_map.get(did, "未知部门"),
+                "total": total,
+                "done": dept_peer_done.get(did, 0),
+                "undone": total - dept_peer_done.get(did, 0),
+            }
+            for did, total in dept_perf_count.items()
+        ]
+
+    return {
+        "cycle": CycleBrief.model_validate(cycle, from_attributes=True).model_dump(mode="json"),
+        "objective_cycle_participant_count": objective_participant_count,
+        "performance_participant_count": len(perf_participants),
+        "self_eval_done": self_eval_submitted,
+        "self_eval_total": len(perf_participants),
+        "peer_list_confirmed": peer_approved_count,
+        "peer_eval_done": peer_eval_submitted,
+        "superior_eval_done": superior_eval_submitted,
+        "superior_eval_total": len(perf_participants),
+        "self_eval_progress_by_department": dept_self_progress,
+        "peer_eval_progress_by_department": dept_peer_progress,
+    }

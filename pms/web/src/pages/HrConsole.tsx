@@ -27,7 +27,8 @@ import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { useMobile } from "@/hooks/useMobile";
 
-interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null; exclusion_rules?: Record<string, any> | null }
+interface ObjectiveCycle { id: number; name: string; status: string; start_date: string; end_date: string }
+interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null; objective_cycle_id: number | null; exclusion_rules?: Record<string, any> | null }
 interface UserBrief { id: number; name: string; role: string; position: string | null; level: string | null; department_id: number | null }
 interface DeptBrief { id: number; name: string }
 interface Participant { id: number; cycle_id: number; user_id: number; user_name: string; user_position: string | null; status: string; final_perf_level: string | null; final_perf_score: number | null; final_value_belief: string | null; final_value_team: string | null; final_value_growth: string | null }
@@ -39,6 +40,7 @@ export default function HrConsole() {
   const user = useAuth((s) => s.user)!;
   const isMobile = useMobile();
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [objectiveCycles, setObjectiveCycles] = useState<ObjectiveCycle[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
   const [selectedCycle, setSelectedCycle] = useState<Cycle | null>(null);
@@ -52,10 +54,11 @@ export default function HrConsole() {
   const [filterForm] = Form.useForm();
 
   async function loadCycles() { const r = await api.get<Cycle[]>("/v1/cycles"); setCycles(r.data); }
+  async function loadObjectiveCycles() { const r = await api.get<ObjectiveCycle[]>("/v1/objective-cycles"); setObjectiveCycles(r.data); }
   async function loadUsers() { const r = await api.get<UserBrief[]>("/v1/users"); setUsers(r.data); }
   async function loadDepartments() { const r = await api.get<DeptBrief[]>("/v1/admin/departments"); setDepartments(r.data); }
   async function loadParticipants(cid: number) { const r = await api.get<{items: Participant[]; total: number}>(`/v1/cycles/${cid}/participants?page_size=9999`); setParticipants(r.data.items); }
-  useEffect(() => { loadCycles(); loadUsers(); loadDepartments(); }, []);
+  useEffect(() => { loadCycles(); loadObjectiveCycles(); loadUsers(); loadDepartments(); }, []);
   useEffect(() => { if (selectedCycle) loadParticipants(selectedCycle.id); }, [selectedCycle]);
   // 筛选弹窗打开时，用周期已保存的规则预填充表单
   useEffect(() => {
@@ -83,7 +86,15 @@ export default function HrConsole() {
 
   async function onCreate(values: any) {
     try {
-      await api.post("/v1/cycles", { name: values.name, start_date: values.range[0].format("YYYY-MM-DD"), end_date: values.range[1].format("YYYY-MM-DD") });
+      const payload: any = {
+        name: values.name,
+        start_date: values.range[0].format("YYYY-MM-DD"),
+        end_date: values.range[1].format("YYYY-MM-DD"),
+      };
+      if (values.objective_cycle_id) {
+        payload.objective_cycle_id = values.objective_cycle_id;
+      }
+      await api.post("/v1/cycles", payload);
       message.success("周期已创建"); setCreateOpen(false); form.resetFields(); loadCycles();
     } catch (e: any) { message.error(formatError(e, "创建失败")); }
   }
@@ -187,7 +198,17 @@ export default function HrConsole() {
             ].filter(Boolean) as any}>
               <List.Item.Meta
                 title={<Space>{c.name} <Tag color="blue">{STATUS_LABEL[c.status]}</Tag></Space>}
-                description={`${c.start_date} ~ ${c.end_date}`}
+                description={
+                  <Space direction="vertical" size={0}>
+                    <span>{c.start_date} ~ {c.end_date}</span>
+                    {c.objective_cycle_id && (
+                      <span>
+                        关联目标周期：
+                        {objectiveCycles.find((oc) => oc.id === c.objective_cycle_id)?.name ?? `ID ${c.objective_cycle_id}`}
+                      </span>
+                    )}
+                  </Space>
+                }
               />
             </List.Item>
           )}
@@ -286,6 +307,9 @@ export default function HrConsole() {
         <Form form={form} layout="vertical" onFinish={onCreate}>
           <Form.Item name="name" label="周期名" initialValue="2025 下半年度绩效考核" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="range" label="考核周期" initialValue={[dayjs("2025-07-01"), dayjs("2025-12-31")]} rules={[{ required: true }]}><DatePicker.RangePicker /></Form.Item>
+          <Form.Item name="objective_cycle_id" label="关联目标周期" extra="本评估周期将评估所选目标周期内的目标">
+            <Select placeholder="选择目标周期" allowClear options={objectiveCycles.map((oc) => ({ value: oc.id, label: `${oc.name}（${oc.start_date} ~ ${oc.end_date}）` }))} />
+          </Form.Item>
         </Form>
       </Modal>
 

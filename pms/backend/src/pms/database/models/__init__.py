@@ -21,6 +21,7 @@ from pms.database.models.evaluation import Evaluation
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
+from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.probation import ProbationObjective, ProbationPlan
@@ -36,6 +37,7 @@ __all__ = [
     "CycleParticipant",
     "PerformanceCycle",
     "ObjectiveCycle",
+    "ObjectiveCycleParticipant",
     "Evaluation",
     "Objective",
     "ObjectiveRevision",
