@@ -67,14 +67,14 @@ WECOM_CORPID=${WECOM_CORPID}
 WECOM_AGENTID=${WECOM_AGENTID}
 WECOM_SECRET=${WECOM_SECRET}
 WECOM_CONTACT_SECRET=${WECOM_CONTACT_SECRET}
-WECOM_REDIRECT_URI=https://${DOMAIN}/auth/callback
+WECOM_REDIRECT_URI=https://${DOMAIN}/api/v1/auth/callback
 
 FRONTEND_ORIGIN=https://${DOMAIN}
 EOF
     info "✅ .env.prod 已生成"
 else
     info "✅ .env.prod 已存在"
-    DOMAIN=$(grep WECOM_REDIRECT_URI "$ENV_PROD" | head -1 | sed 's|.*https://||; s|/auth/callback||')
+    DOMAIN=$(grep WECOM_REDIRECT_URI "$ENV_PROD" | head -1 | sed 's|.*https://||; s|/api/v1/auth/callback||')
 fi
 
 # ---------- 3. HTTPS 证书 ----------
