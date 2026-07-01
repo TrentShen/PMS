@@ -215,6 +215,10 @@ def _sync_users(session: Session) -> int:
     注意：部门/姓名/职位/上级均以企微通讯录为准，本地会被覆盖。
     """
     userlist = list_users_detail_by_dept(1, fetch_child=True)
+    if not userlist:
+        logger.warning("企微通讯录返回空用户列表，跳过本次同步，避免误标记全部用户为 inactive")
+        return 0
+
     count = 0
     for u in userlist:
         wecom_userid = u.get("userid")

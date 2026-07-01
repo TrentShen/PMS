@@ -13,6 +13,7 @@ from pms.database.session import redis_client
 
 WECOM_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
 TOKEN_KEY = "pms:wecom:access_token"
+CONTACT_TOKEN_KEY = "pms:wecom:contact_access_token"
 TOKEN_TTL = 7200  # 企微 token 2 小时有效
 REFRESH_AHEAD = 300  # 提前 5 分钟刷新
 
@@ -56,14 +57,20 @@ HR_PROBATION_MAP = {
 }
 
 
-def _ensure_access_token() -> str:
-    """获取有效 access_token：命中缓存直接返回，否则调企微接口获取"""
-    cached = redis_client.get(TOKEN_KEY)
+def _ensure_access_token(secret: str | None = None, key: str = TOKEN_KEY) -> str:
+    """获取有效 access_token：命中缓存直接返回，否则调企微接口获取
+
+    Args:
+        secret: 用于获取 token 的 secret；默认使用应用 secret。
+        key: Redis 缓存 key；不同 secret 应使用不同 key 避免冲突。
+    """
+    cached = redis_client.get(key)
     if cached:
         return cached
 
+    used_secret = secret or settings.wecom_secret
     url = f"{WECOM_API_BASE}/gettoken"
-    resp = httpx.get(url, params={"corpid": settings.wecom_corpid, "corpsecret": settings.wecom_secret}, timeout=10)
+    resp = httpx.get(url, params={"corpid": settings.wecom_corpid, "corpsecret": used_secret}, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     if data.get("errcode") != 0:
@@ -72,13 +79,24 @@ def _ensure_access_token() -> str:
     token = data["access_token"]
     expires_in = data.get("expires_in", TOKEN_TTL)
     redis_ttl = max(expires_in - REFRESH_AHEAD, 60)
-    redis_client.setex(TOKEN_KEY, redis_ttl, token)
-    logger.info("企微 access_token 已刷新, ttl={}s", redis_ttl)
+    redis_client.setex(key, redis_ttl, token)
+    logger.info("企微 access_token 已刷新, key={}, ttl={}s", key, redis_ttl)
     return token
 
 
-def _get(url: str, params: dict | None = None) -> dict:
-    token = _ensure_access_token()
+def _ensure_contact_token() -> str:
+    """获取通讯录同步专用 access_token"""
+    if not settings.wecom_contact_secret:
+        # 未配置通讯录 secret 时回退到应用 token（权限可能受限）
+        return _ensure_access_token()
+    return _ensure_access_token(
+        secret=settings.wecom_contact_secret,
+        key=CONTACT_TOKEN_KEY,
+    )
+
+
+def _get(url: str, params: dict | None = None, *, use_contact_token: bool = False) -> dict:
+    token = _ensure_contact_token() if use_contact_token else _ensure_access_token()
     p = params or {}
     p["access_token"] = token
     r = httpx.get(url, params=p, timeout=15)
@@ -89,8 +107,8 @@ def _get(url: str, params: dict | None = None) -> dict:
     return data
 
 
-def _post(url: str, json_body: dict, params: dict | None = None) -> dict:
-    token = _ensure_access_token()
+def _post(url: str, json_body: dict, params: dict | None = None, *, use_contact_token: bool = False) -> dict:
+    token = _ensure_contact_token() if use_contact_token else _ensure_access_token()
     p = params or {}
     p["access_token"] = token
     r = httpx.post(url, params=p, json=json_body, timeout=15)
@@ -115,7 +133,7 @@ def get_userinfo(code: str) -> str:
 # ---------- 通讯录同步 ----------
 
 def list_departments(parent_id: int | None = None) -> list[dict]:
-    """拉取部门列表，不传 parent_id 则拉根部门"""
+    """拉取部门列表，不传 parent_id 则拉根部门（使用应用 token）"""
     params = {}
     if parent_id is not None:
         params["id"] = parent_id
@@ -124,7 +142,7 @@ def list_departments(parent_id: int | None = None) -> list[dict]:
 
 
 def list_users_by_dept(dept_id: int, fetch_child: bool = True) -> list[dict]:
-    """拉取部门下的用户（含子部门），返回简化字段"""
+    """拉取部门下的用户（含子部门），返回简化字段（使用应用 token）"""
     data = _get(
         f"{WECOM_API_BASE}/user/list",
         params={"department_id": dept_id, "fetch_child": 1 if fetch_child else 0},
@@ -133,7 +151,7 @@ def list_users_by_dept(dept_id: int, fetch_child: bool = True) -> list[dict]:
 
 
 def list_users_detail_by_dept(dept_id: int, fetch_child: bool = True) -> list[dict]:
-    """拉取部门下的用户详情（含 direct_leader/position 等完整字段）"""
+    """拉取部门下的用户详情（含 direct_leader/position 等完整字段，使用应用 token）"""
     data = _get(
         f"{WECOM_API_BASE}/user/list",
         params={
