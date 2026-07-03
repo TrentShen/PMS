@@ -296,7 +296,9 @@ def start_scheduler():
     # 每天早上 9 点通用提醒
     scheduler.add_job(check_deadline_reminders, "cron", hour=9, id="deadline_remind")
     # 每日凌晨 2 点同步通讯录
-    scheduler.add_job(sync_contacts_daily, "cron", hour=2, id="contact_sync")
+    # 临时禁用：当前企微应用可见范围仅 HR 部门，同步会返回空列表并误标全员 inactive。
+    # 待管理员在企微后台扩大应用可见范围后再开启。
+    # scheduler.add_job(sync_contacts_daily, "cron", hour=2, id="contact_sync")
     # 每日凌晨 2:30 同步试用期计划并标记临转正员工
     scheduler.add_job(sync_probation_plans, "cron", hour=2, minute=30, id="probation_sync")
     # 每日早上 9 点提醒上级做试用期评估
