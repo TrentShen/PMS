@@ -258,16 +258,24 @@ cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 | 全局 | 后端单元测试覆盖（50 个测试全绿） | ✅ |
 | P2-1 | 试用期管理模块：自动创建计划、目标填写/审批、上级评估、转正建议 | ✅ |
 | P2-2 | 试用期即时消息通知 + 可复用企微消息推送服务 | ✅ |
+| 全局 | Claude Code Loop 使用规范写入 agents.md | ✅ |
+| 全局 | 前后端契约自动校验脚本 `scripts/check_contract.py` | ✅ |
+| 全局 | 修复 5 个前端 API 路径 mismatch | ✅ |
+| 全局 | 前端全量 `any` 清理 + 开启 `noImplicitAny` | ✅ |
+| 全局 | 提取共享 `formatError` 到 `services/api.ts` | ✅ |
 
 ### 11.2 剩余待办事项
 
 | 编号 | 事项 | 优先级 | 说明 |
 |------|------|:--:|------|
 | — | Git 用户信息配置 | 建议 | 当前 commit author 为自动生成，建议配置 `git config --global user.name/email` |
-| — | 生产环境执行新迁移 | P0 | 初始迁移已重写为单一完整迁移 `a088a1294289`，新环境执行 `alembic upgrade head` 即可从零建库 |
+| — | 生产环境执行新迁移 | P0 | 初始迁移已重写为单一完整迁移 `a088a1294289`，新环境执行 `alembic upgrade head` 即可从零建库；生产已升级至 `124515811db3` |
 | — | 人事助手权限验证 | P0 | 需确认自建应用有「人事助手」接口权限，且员工在应用可见范围内 |
 | — | 全量 utcnow 清理 | P1 | 已替换 src/ 下所有 `datetime.utcnow()` |
 | — | 完整 UAT | P0 | 本地 happy path 已跑通，发现并修复 4 个问题（含 Alembic 初始迁移） |
+| TODO-001 | 企微通讯录权限开通与部门树同步 | P0 | 当前 `contact_sync` 因权限 `60011`/`60020` 禁用；开通后需重新拉取完整 1-3 级部门树，并校正用户 `department_id` 到最细粒度部门 |
+| TODO-002 | 按 1-3 级部门筛选用户/参与人 | P1 | 待 TODO-001 完成后，在用户列表、按条件筛选参与人弹窗中支持按一级/二级/三级部门筛选 |
+| TODO-003 | 生产环境代码同步机制 | P1 | 服务器 `/opt/pms/pms` 不是 git 仓库，本次通过 tar 同步；后续建议改用 git pull 或 CI/CD，避免代码/迁移版本不一致 |
 
 ### 11.3 冲刺计划
 

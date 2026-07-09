@@ -11,6 +11,10 @@ dev:
 
 lint:
 	ruff check src
+	python3 scripts/check_contract.py
+
+contract:
+	python3 scripts/check_contract.py
 
 test:
 	pytest -v

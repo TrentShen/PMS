@@ -375,4 +375,79 @@ docker compose logs -f web
 
 ---
 
+## 11. Claude Code Loop 使用规范
+
+> Claude Code Loop 指让 AI 在可验证的完成标准下自动迭代（写代码 → 跑检查 → 发现问题 → 再改），直到达标或达到上限。本规范明确 PMS 项目中允许和禁止的使用方式。
+
+### 11.1 何时使用 Loop
+
+适合 Loop 的任务特征：
+- **可验证**：有客观的红/绿标准（`make test` 通过、`npx tsc --noEmit` 通过、构建成功）
+- **可拆分**：能拆成多次小迭代，每次只做一小块
+- **机械化高**：重复、规则明确、人工干预价值低的工作
+
+本项目推荐场景（按优先级）：
+1. **前后端契约自动校验脚本**：新增 `scripts/check_contract.py`，扫描字段名/类型/必填差异
+2. **前端 `any` 类型清理**：按页面逐步替换为具体类型，最终打开 `noImplicitAny`
+3. **流程开关 `enable_*` 前后端一致性改造**：后端返回开关，前端菜单/页面响应
+4. **CI/CD 轻量化闭环**：GitHub Actions 跑 pytest、tsc/build、ruff、契约校验
+5. **后端测试补全**：为导出、历史、通知等薄弱模块补单元测试
+6. **历史绩效结果导入**：后端 API + 前端页面 + Excel 模板
+7. **关键节点企微通知补全**：在状态变更点补充通知触发
+
+### 11.2 项目专用约束（重要）
+
+**绝对禁止自动合并**：
+- 本项目**不允许**使用 Continuous Claude 等工具的自动 PR 合并功能。
+- Loop 可以生成代码、跑检查、生成 PR/分支，但**最终合并必须由人类在 review 后执行**。
+- 任何 Loop 流程不得绕过代码 review 和人工确认。
+
+Loop 必须满足：
+- 每次 Loop 必须设定 `--max-iterations` 或时间/成本上限，防止无限循环
+- 必须定义清晰的完成标准，不能是"更好一点"这类模糊目标
+- 每次 Loop 开始前必须列出本次要修改的文件清单，禁止越界修改
+- 涉及数据库模型、环境变量、部署配置的修改，必须在执行前取得人类确认
+
+### 11.3 推荐命令模板
+
+#### 后端补测试 / 修 Bug
+```bash
+cd pms/backend
+/goal "为 feedback.py:list_feedback_status 添加 N+1 回归测试，并确保 make test 全绿"
+/loop every 3m until: make test passes
+```
+
+#### 前端类型清理（每次限定 1-2 个文件）
+```bash
+cd pms/web
+/ralph-loop "清理 web/src/pages/HrConsole.tsx 中的 any 类型，只改本文件，完成后 npx tsc --noEmit 必须通过" \
+  --completion-promise "DONE" \
+  --max-iterations 15
+```
+
+#### 契约校验脚本开发
+```bash
+cd pms/backend
+/goal "新增 scripts/check_contract.py，扫描后端 Pydantic Schema 与前端 API payload 的字段名/类型/必填差异，输出报告并接入 make lint"
+/loop every 5m until: make lint passes
+```
+
+### 11.4 Loop 专属红线
+
+- **禁止**让 Loop 自动执行 `git push`、`docker compose -f docker-compose.prod.yml up`、`alembic upgrade` 等生产相关命令
+- **禁止**让 Loop 修改 `.env`、密码、密钥、OAuth 配置
+- **禁止**让 Loop 在未经许可的情况下删除文件或表
+- **禁止**让 Loop 跳过 HARNESS.md 的 6 道质量门禁
+- **禁止**让 Loop 一次处理超过 3 个页面或模块（控制爆炸半径）
+
+### 11.5 Loop 结束时的必做检查
+
+每次 Loop 完成后，无论成功或失败，都必须：
+1. 运行项目本地验证命令（`make test`、`npx tsc --noEmit`、`npm run build` 等）
+2. 检查 `git diff`，确认没有意外修改
+3. 更新 `.workbuddy/memory/` 或相关文档，记录本次 Loop 的范围和结果
+4. 如果修改了接口，更新前后端契约对照表
+
+---
+
 *本文件与 HARNESS.md 配套使用。每次开始新任务时，Kimi 应确认已读取这两个文件。*

@@ -8,3 +8,6 @@ venv/
 dist/
 build/
 .env
+
+# 契约校验脚本生成的报告（运行 make contract 时产出）
+scripts/contract_summary.json
