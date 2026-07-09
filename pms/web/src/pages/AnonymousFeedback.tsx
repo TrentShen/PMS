@@ -12,8 +12,9 @@ import {
   Select,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+
 
 interface MockUser {
   id: number;
@@ -57,8 +58,8 @@ export default function AnonymousFeedback() {
       });
       message.success("已提交（匿名）");
       form.resetFields();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSaving(false);
     }

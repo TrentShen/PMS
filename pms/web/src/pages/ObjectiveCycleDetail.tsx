@@ -15,7 +15,9 @@ import {
   message,
 } from "antd";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+import type { Participant, UserBrief } from "@/services/api.types";
+
 
 interface ObjectiveCycle {
   id: number;
@@ -23,24 +25,6 @@ interface ObjectiveCycle {
   status: string;
   start_date: string;
   end_date: string;
-}
-
-interface Participant {
-  id: number;
-  objective_cycle_id: number;
-  user_id: number;
-  user_name: string;
-  user_position: string | null;
-  leader_userid_snapshot: string | null;
-  dept_name_snapshot: string | null;
-  status: string;
-}
-
-interface UserBrief {
-  id: number;
-  name: string;
-  position: string | null;
-  role: string;
 }
 
 interface Summary {
@@ -107,8 +91,8 @@ export default function ObjectiveCycleDetail() {
       setAddingIds([]);
       await loadParticipants();
       await loadSummary();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "添加失败");
+    } catch (e) {
+      message.error(formatError(e, "添加失败"));
     }
   }
 
@@ -118,8 +102,8 @@ export default function ObjectiveCycleDetail() {
       message.success("已移除");
       await loadParticipants();
       await loadSummary();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "移除失败");
+    } catch (e) {
+      message.error(formatError(e, "移除失败"));
     }
   }
 
@@ -133,12 +117,13 @@ export default function ObjectiveCycleDetail() {
       message.success(`导入成功：${r.data.imported_rows} 行，${r.data.affected_users} 位员工`);
       await loadParticipants();
       await loadSummary();
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      if (typeof detail === "object" && detail.errors) {
+    } catch (e) {
+      const err = e as { response?: { data?: { detail?: string | { errors?: string[] } } } };
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "object" && detail?.errors) {
         Modal.error({ title: "导入校验失败", content: detail.errors.join("\n"), width: 600 });
       } else {
-        message.error(detail ?? "导入失败");
+        message.error(typeof detail === "string" ? detail : "导入失败");
       }
     }
     return false;
@@ -152,8 +137,8 @@ export default function ObjectiveCycleDetail() {
       message.success(`已催办 ${r.data.sent} 人`);
       setUrgeOpen(false);
       setUrgeIds([]);
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "催办失败");
+    } catch (e) {
+      message.error(formatError(e, "催办失败"));
     }
   }
 

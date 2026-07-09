@@ -23,17 +23,35 @@ import {
 } from "antd";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { useMobile } from "@/hooks/useMobile";
+import type {
+  Cycle,
+  DeptBrief,
+  ExclusionRules,
+  ObjectiveCycle,
+  Paginated,
+  Participant,
+  UserBrief,
+} from "@/services/api.types";
 
-interface ObjectiveCycle { id: number; name: string; status: string; start_date: string; end_date: string }
-interface Cycle { id: number; name: string; status: string; start_date: string; end_date: string; published_at: string | null; objective_cycle_id: number | null; exclusion_rules?: Record<string, any> | null }
-interface UserBrief { id: number; name: string; role: string; position: string | null; level: string | null; department_id: number | null }
-interface DeptBrief { id: number; name: string }
-interface Participant { id: number; cycle_id: number; user_id: number; user_name: string; user_position: string | null; status: string; final_perf_level: string | null; final_perf_score: number | null; final_value_belief: string | null; final_value_team: string | null; final_value_growth: string | null }
+interface CycleCreateForm {
+  name: string;
+  range: [dayjs.Dayjs, dayjs.Dayjs];
+  objective_cycle_id?: number;
+}
+
+interface FilterFormValues {
+  exclude_roles?: string[];
+  exclude_user_ids?: number[];
+  exclude_dept_ids?: number[];
+  exclude_levels?: string[];
+  min_hired_before?: dayjs.Dayjs;
+}
 
 const STATUS_LABEL: Record<string, string> = { draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档" };
+
 
 export default function HrConsole() {
   const navigate = useNavigate();
@@ -57,7 +75,7 @@ export default function HrConsole() {
   async function loadObjectiveCycles() { const r = await api.get<ObjectiveCycle[]>("/v1/objective-cycles"); setObjectiveCycles(r.data); }
   async function loadUsers() { const r = await api.get<UserBrief[]>("/v1/users"); setUsers(r.data); }
   async function loadDepartments() { const r = await api.get<DeptBrief[]>("/v1/admin/departments"); setDepartments(r.data); }
-  async function loadParticipants(cid: number) { const r = await api.get<{items: Participant[]; total: number}>(`/v1/cycles/${cid}/participants?page_size=9999`); setParticipants(r.data.items); }
+  async function loadParticipants(cid: number) { const r = await api.get<Paginated<Participant>>(`/v1/cycles/${cid}/participants?page_size=9999`); setParticipants(r.data.items); }
   useEffect(() => { loadCycles(); loadObjectiveCycles(); loadUsers(); loadDepartments(); }, []);
   useEffect(() => { if (selectedCycle) loadParticipants(selectedCycle.id); }, [selectedCycle]);
   // 筛选弹窗打开时，用周期已保存的规则预填充表单
@@ -74,19 +92,9 @@ export default function HrConsole() {
     }
   }, [filterOpen]);
 
-  function formatError(e: any, fallback: string) {
-    const status = e?.response?.status;
-    const detail = e?.response?.data?.detail;
-    const statusText = status ? `（${status}）` : "";
-    if (typeof detail === "string" && detail.trim()) return `${detail}${statusText}`;
-    if (typeof detail === "object" && detail !== null) return `${JSON.stringify(detail)}${statusText}`;
-    if (e?.message) return `${e.message}${statusText}`;
-    return `${fallback}${statusText}`;
-  }
-
-  async function onCreate(values: any) {
+  async function onCreate(values: CycleCreateForm) {
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         name: values.name,
         start_date: values.range[0].format("YYYY-MM-DD"),
         end_date: values.range[1].format("YYYY-MM-DD"),
@@ -96,26 +104,42 @@ export default function HrConsole() {
       }
       await api.post("/v1/cycles", payload);
       message.success("周期已创建"); setCreateOpen(false); form.resetFields(); loadCycles();
-    } catch (e: any) { message.error(formatError(e, "创建失败")); }
+    } catch (e) { message.error(formatError(e, "创建失败")); }
   }
   async function onAddParticipants() {
     if (!selectedCycle || addingIds.length === 0) return;
     try {
       await api.post(`/v1/cycles/${selectedCycle.id}/participants`, { user_ids: addingIds });
       message.success(`已添加 ${addingIds.length} 位`); setAddingIds([]); await loadParticipants(selectedCycle.id);
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "添加失败"); }
+    } catch (e) { message.error(formatError(e, "添加失败")); }
+  }
+  async function onDeleteParticipant(participantId: number) {
+    if (!selectedCycle) return;
+    try {
+      await api.delete(`/v1/cycles/${selectedCycle.id}/participants/${participantId}`);
+      message.success("已删除");
+      await loadParticipants(selectedCycle.id);
+    } catch (e) { message.error(formatError(e, "删除失败")); }
   }
   async function onStart(c: Cycle) {
     try { await api.post(`/v1/cycles/${c.id}/start`); message.success("周期已启动"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
-    catch (e: any) { message.error(e?.response?.data?.detail ?? "启动失败"); }
+    catch (e) { message.error(formatError(e, "启动失败")); }
   }
   async function onPublish(c: Cycle) {
     try { await api.post(`/v1/cycles/${c.id}/publish`); message.success("已发布"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
-    catch (e: any) { message.error(formatError(e, "发布失败")); }
+    catch (e) { message.error(formatError(e, "发布失败")); }
   }
   async function onClose(c: Cycle) {
     try { await api.post(`/v1/cycles/${c.id}/close`); message.success("已归档"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
-    catch (e: any) { message.error(formatError(e, "归档失败")); }
+    catch (e) { message.error(formatError(e, "归档失败")); }
+  }
+  async function onDelete(c: Cycle) {
+    try {
+      await api.delete(`/v1/cycles/${c.id}`);
+      message.success("周期已删除");
+      loadCycles();
+      if (selectedCycle?.id === c.id) setSelectedCycle(null);
+    } catch (e) { message.error(formatError(e, "删除失败")); }
   }
 
   // === Excel 导入 ===
@@ -124,13 +148,18 @@ export default function HrConsole() {
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const r = await api.post(`/v1/excel/import/${selectedCycle.id}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      if (!selectedCycle.objective_cycle_id) {
+        message.error("当前评估周期未关联目标周期，无法导入目标");
+        return false;
+      }
+      const r = await api.post(`/v1/objective-cycles/${selectedCycle.objective_cycle_id}/excel/import`, fd, { headers: { "Content-Type": "multipart/form-data" } });
       message.success(`导入成功：${r.data.imported_rows} 行，${r.data.affected_users} 位员工`);
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      if (typeof detail === "object" && detail.errors) {
+    } catch (e) {
+      const err = e as { response?: { data?: { detail?: string | { errors?: string[] } } } };
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "object" && detail?.errors) {
         Modal.error({ title: "导入校验失败", content: detail.errors.join("\n"), width: 600 });
-      } else { message.error(detail ?? "导入失败"); }
+      } else { message.error(typeof detail === "string" ? detail : "导入失败"); }
     }
     return false; // 阻止 antd 默认上传
   }
@@ -143,7 +172,7 @@ export default function HrConsole() {
       const url = URL.createObjectURL(r.data);
       const a = document.createElement("a"); a.href = url; a.download = `${selectedCycle.name}_绩效结果.xlsx`; a.click();
       message.success("导出成功");
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "导出失败"); }
+    } catch (e) { message.error(formatError(e, "导出失败")); }
   }
 
   // === 催办 ===
@@ -152,13 +181,13 @@ export default function HrConsole() {
     try {
       const r = await api.post("/v1/notify/urge", { cycle_id: selectedCycle.id, user_ids: urgeIds });
       message.success(`已催办 ${r.data.sent} 人`); setUrgeOpen(false); setUrgeIds([]);
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "催办失败"); }
+    } catch (e) { message.error(formatError(e, "催办失败")); }
   }
 
   // === 考核对象过滤 ===
-  async function onFilter(values: any) {
+  async function onFilter(values: FilterFormValues) {
     if (!selectedCycle) return;
-    const rules: Record<string, any> = {};
+    const rules: ExclusionRules = {};
     if (values.exclude_roles?.length) rules.exclude_roles = values.exclude_roles;
     if (values.exclude_user_ids?.length) rules.exclude_user_ids = values.exclude_user_ids;
     if (values.exclude_dept_ids?.length) rules.exclude_dept_ids = values.exclude_dept_ids;
@@ -169,18 +198,18 @@ export default function HrConsole() {
       // 先保存排除规则到周期
       await api.put(`/v1/cycles/${selectedCycle.id}`, { exclusion_rules: rules });
       // 再调用 suggest（不传 body，自动使用 cycle 保存的规则）
-      const r = await api.post(`/v1/cycles/${selectedCycle.id}/suggest-participants`, {});
-      const ids = r.data.map((u: any) => u.id);
+      const r = await api.post<UserBrief[]>(`/v1/cycles/${selectedCycle.id}/suggest-participants`, {});
+      const ids = r.data.map((u) => u.id);
       if (ids.length === 0) { message.warning("按条件未筛选到人"); return; }
       await api.post(`/v1/cycles/${selectedCycle.id}/participants`, { user_ids: ids });
       message.success(`已按条件添加 ${ids.length} 人`);
       setFilterOpen(false); filterForm.resetFields();
       await loadParticipants(selectedCycle.id);
       await loadCycles(); // 刷新周期列表以更新 exclusion_rules
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "操作失败"); }
+    } catch (e) { message.error(formatError(e, "操作失败")); }
   }
 
-  const availableUsers = users.filter((u) => u.role !== "super_admin" && u.role !== "hrbp" && !participants.find((p) => p.user_id === u.id));
+  const availableUsers = users.filter((u) => u.employee_type === "full_time" && u.role !== "super_admin" && u.role !== "hrbp" && !participants.find((p) => p.user_id === u.id));
   const pendingParticipants = participants.filter((p) => p.status === "pending" || p.status === "self_done");
 
   return (
@@ -195,7 +224,8 @@ export default function HrConsole() {
               c.status === "draft" && <Popconfirm key="start" title="启动后不能再加人，确认？" onConfirm={() => onStart(c)}><a>启动</a></Popconfirm>,
               c.status === "in_progress" && <Popconfirm key="pub" title="需要先完成校准审批，确认发布？" onConfirm={() => onPublish(c)}><a style={{ color: "#f59e0b" }}>发布</a></Popconfirm>,
               c.status === "published" && <Popconfirm key="close" title="归档后周期将关闭，未完成员工会被标记为 excluded，确认？" onConfirm={() => onClose(c)}><a style={{ color: "#6b7280" }}>归档</a></Popconfirm>,
-            ].filter(Boolean) as any}>
+              c.status === "draft" && <Popconfirm key="delete" title="确定删除该周期？删除后无法恢复。" onConfirm={() => onDelete(c)}><a style={{ color: "#ef4444" }}>删除</a></Popconfirm>,
+            ].filter(Boolean) as React.ReactNode[]}>
               <List.Item.Meta
                 title={<Space>{c.name} <Tag color="blue">{STATUS_LABEL[c.status]}</Tag></Space>}
                 description={
@@ -223,7 +253,7 @@ export default function HrConsole() {
             <Space>
               <Tag color="blue">{STATUS_LABEL[selectedCycle.status]}</Tag>
               {/* Excel 操作 */}
-              <Button size="small" icon={<DownloadOutlined />} href="/api/v1/excel/template">下载导入模板</Button>
+              <Button size="small" icon={<DownloadOutlined />} href="/api/v1/objective-cycles/excel/template">下载导入模板</Button>
               <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadExcel(f)}>
                 <Button size="small" icon={<UploadOutlined />}>Excel 导入目标</Button>
               </Upload>
@@ -271,6 +301,11 @@ export default function HrConsole() {
                           {selectedCycle.status === "published" && (
                             <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>反馈</a>
                           )}
+                          {selectedCycle.status === "draft" && (
+                            <Popconfirm title="确定删除该参与人？" onConfirm={() => onDeleteParticipant(r.id)}>
+                              <a style={{ color: "#ef4444" }}>删除</a>
+                            </Popconfirm>
+                          )}
                         </Space>
                       ),
                     },
@@ -292,6 +327,11 @@ export default function HrConsole() {
                           <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>查看详情</Link>
                           {selectedCycle.status === "published" && (
                             <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>写反馈</a>
+                          )}
+                          {selectedCycle.status === "draft" && (
+                            <Popconfirm title="确定删除该参与人？" onConfirm={() => onDeleteParticipant(r.id)}>
+                              <a style={{ color: "#ef4444" }}>删除</a>
+                            </Popconfirm>
                           )}
                         </Space>
                       ),
@@ -366,9 +406,9 @@ function StageConfigPanel({ cycleId, cycleStatus }: { cycleId: number; cycleStat
     api.get(`/v1/notify/cycles/${cycleId}/stages`).then((r) => {
       if (r.data.stages) {
         // 把 "2025-01-06" 字符串转成 dayjs
-        const vals: any = {};
-        for (const [k, v] of Object.entries(r.data.stages)) {
-          vals[k] = v ? dayjs(v as string) : null;
+        const vals: Record<string, dayjs.Dayjs | null> = {};
+        for (const [k, v] of Object.entries(r.data.stages as Record<string, string>)) {
+          vals[k] = v ? dayjs(v) : null;
         }
         stageForm.setFieldsValue(vals);
       }
@@ -378,16 +418,16 @@ function StageConfigPanel({ cycleId, cycleStatus }: { cycleId: number; cycleStat
   async function onSave() {
     const vals = await stageForm.validateFields();
     // 把 dayjs 转成 "YYYY-MM-DD" 字符串
-    const payload: any = {};
+    const payload: Record<string, string> = {};
     for (const [k, v] of Object.entries(vals)) {
-      if (v) payload[k] = (v as any).format("YYYY-MM-DD");
+      if (v) payload[k] = (v as dayjs.Dayjs).format("YYYY-MM-DD");
     }
     setLoading(true);
     try {
       await api.put(`/v1/notify/cycles/${cycleId}/stages`, payload);
       message.success("时间线已保存");
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally { setLoading(false); }
   }
 

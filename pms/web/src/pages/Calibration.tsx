@@ -18,10 +18,11 @@ import {
   Typography,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import ValueGradeForm from "@/components/ValueGradeForm";
 import { useMobile } from "@/hooks/useMobile";
+
 
 interface Cycle { id: number; name: string; status: string }
 interface CalItem {
@@ -142,8 +143,8 @@ export default function Calibration() {
       setMatrix(r.data.matrix);
       setApprovalStatus(r.data.approval_status);
       setRejectReason(r.data.reject_reason);
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "加载失败");
+    } catch (e) {
+      message.error(formatError(e, "加载失败"));
     }
   }
   useEffect(() => { loadView(); }, [selectedCid]);
@@ -167,8 +168,8 @@ export default function Calibration() {
       setEditingItem(null);
       form.resetFields();
       await loadView();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "校准失败");
+    } catch (e) {
+      message.error(formatError(e, "校准失败"));
     } finally { setSaving(false); }
   }
 
@@ -177,7 +178,7 @@ export default function Calibration() {
       await api.post(`/v1/calibration/cycles/${selectedCid}/submit-calibration`);
       message.success("已提交校准，等待 HR 审批");
       await loadView();
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "提交失败"); }
+    } catch (e) { message.error(formatError(e, "提交失败")); }
   }
 
   async function onApproval(action: string) {
@@ -187,7 +188,7 @@ export default function Calibration() {
       await api.post(`/v1/calibration/cycles/${selectedCid}/approval`, { action, comment });
       message.success(action === "approve" ? "已批准" : "已驳回");
       await loadView();
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "操作失败"); }
+    } catch (e) { message.error(formatError(e, "操作失败")); }
   }
 
   const canCalibrate = ["calibrating", "rejected_by_hr", "rejected_by_ceo"].includes(approvalStatus);

@@ -15,7 +15,13 @@ import {
   message,
 } from "antd";
 import dayjs from "dayjs";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+
+
+interface ObjectiveCycleCreateForm {
+  name: string;
+  range: [dayjs.Dayjs, dayjs.Dayjs];
+}
 
 interface ObjectiveCycle {
   id: number;
@@ -46,7 +52,7 @@ export default function ObjectiveCycleList() {
 
   useEffect(() => { load(); }, []);
 
-  async function onCreate(values: any) {
+  async function onCreate(values: ObjectiveCycleCreateForm) {
     try {
       await api.post("/v1/objective-cycles", {
         name: values.name,
@@ -57,8 +63,8 @@ export default function ObjectiveCycleList() {
       setCreateOpen(false);
       form.resetFields();
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "创建失败");
+    } catch (e) {
+      message.error(formatError(e, "创建失败"));
     }
   }
 
@@ -67,8 +73,8 @@ export default function ObjectiveCycleList() {
       await api.post(`/v1/objective-cycles/${c.id}/start`);
       message.success("目标周期已启动");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "启动失败");
+    } catch (e) {
+      message.error(formatError(e, "启动失败"));
     }
   }
 
@@ -77,8 +83,8 @@ export default function ObjectiveCycleList() {
       await api.post(`/v1/objective-cycles/${c.id}/complete`);
       message.success("目标周期已标记完成");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     }
   }
 
@@ -87,8 +93,8 @@ export default function ObjectiveCycleList() {
       await api.delete(`/v1/objective-cycles/${c.id}`);
       message.success("目标周期已删除");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "删除失败");
+    } catch (e) {
+      message.error(formatError(e, "删除失败"));
     }
   }
 
@@ -117,7 +123,7 @@ export default function ObjectiveCycleList() {
                   <a style={{ color: "#ff4d4f" }}>删除</a>
                 </Popconfirm>
               ),
-            ].filter(Boolean) as any}>
+            ].filter(Boolean) as React.ReactNode[]}>
               <List.Item.Meta
                 title={
                   <Space>

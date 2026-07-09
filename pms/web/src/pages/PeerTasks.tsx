@@ -13,8 +13,9 @@ import {
   Tag,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import ValueGradeForm from "@/components/ValueGradeForm";
+
 
 interface PeerTask {
   id: number;
@@ -51,8 +52,8 @@ export default function PeerTasks() {
       setEditing(null);
       form.resetFields();
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSaving(false);
     }

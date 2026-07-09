@@ -16,8 +16,9 @@ import {
   Tag,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+
 
 interface FeedbackData {
   id: number;
@@ -78,8 +79,8 @@ export default function Feedback() {
       const r = await api.post(`/v1/feedback/cycles/${cycleId}/users/${targetId}`, v);
       message.success("面谈记录已保存");
       setFb(r.data);
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally { setSaving(false); }
   }
 
@@ -88,7 +89,7 @@ export default function Feedback() {
       await api.post(`/v1/feedback/cycles/${cycleId}/confirm`, { action: "confirmed" });
       message.success("已确认收到");
       await load();
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "操作失败"); }
+    } catch (e) { message.error(formatError(e, "操作失败")); }
   }
 
   async function onDispute() {
@@ -101,7 +102,7 @@ export default function Feedback() {
       message.success("异议已提交");
       setDisputing(false);
       await load();
-    } catch (e: any) { message.error(e?.response?.data?.detail ?? "操作失败"); }
+    } catch (e) { message.error(formatError(e, "操作失败")); }
   }
 
   if (fb === undefined) return null;

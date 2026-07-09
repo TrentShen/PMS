@@ -15,7 +15,8 @@ import {
   Typography,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+
 
 interface AdminUser {
   id: number;
@@ -45,6 +46,19 @@ const ROLE_OPTIONS = [
 const ROLE_LABEL: Record<string, string> = Object.fromEntries(
   ROLE_OPTIONS.map((o) => [o.value, o.label])
 );
+
+function buildDeptPath(deptId: number | null, depts: Dept[]): string {
+  if (!deptId) return "";
+  const map = new Map(depts.map((d) => [d.id, d]));
+  const parts: string[] = [];
+  let current = map.get(deptId);
+  while (current) {
+    parts.unshift(current.name);
+    current = current.parent_id ? map.get(current.parent_id) : undefined;
+  }
+  return parts.join(" / ");
+}
+
 const ROLE_COLOR: Record<string, string> = {
   super_admin: "purple",
   hrbp: "magenta",
@@ -91,7 +105,7 @@ export default function AdminUsers() {
     const values = await form.validateFields();
     setSaving(true);
     try {
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         role: values.role,
         leader_userid: values.leader_userid,
         department_id: values.department_id === 0 ? null : values.department_id,
@@ -112,8 +126,8 @@ export default function AdminUsers() {
       message.success("已保存");
       setEditing(null);
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally {
       setSaving(false);
     }
@@ -150,7 +164,11 @@ export default function AdminUsers() {
             title: "部门",
             dataIndex: "department_id",
             render: (id) =>
-              id ? depts.find((d) => d.id === id)?.name ?? id : <Typography.Text type="secondary">-</Typography.Text>,
+              id ? (
+                buildDeptPath(id, depts) || id
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              ),
           },
           {
             title: "直属上级",
@@ -160,7 +178,7 @@ export default function AdminUsers() {
           {
             title: "HR 管辖范围",
             dataIndex: "hrbp_scope_dept_ids",
-            render: (v, r) => {
+            render: (v: number[] | null | undefined, r: AdminUser) => {
               if (r.role !== "hrbp") return <Typography.Text type="secondary">-</Typography.Text>;
               if (v === null || v === undefined)
                 return <Tag color="gold">全局</Tag>;

@@ -18,11 +18,12 @@ import {
   Typography,
 } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import { useMobile } from "@/hooks/useMobile";
+
 
 interface ProbationObjective {
   id: number;
@@ -114,8 +115,8 @@ export default function ProbationDetail() {
         setEvalResult(r.data.evaluation.result);
         setEvalComment(r.data.evaluation.comment);
       }
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "加载失败");
+    } catch (e) {
+      message.error(formatError(e, "加载失败"));
     } finally {
       setLoading(false);
     }
@@ -201,8 +202,8 @@ export default function ProbationDetail() {
       message.success(submit ? "目标已提交" : "目标已保存");
       setObjectiveFormChanged(false);
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally {
       setSubmitting(false);
     }
@@ -214,8 +215,8 @@ export default function ProbationDetail() {
       await api.post(`/v1/probation/${userId}/objectives/approve`);
       message.success("已批准目标");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     }
   }
 
@@ -225,8 +226,8 @@ export default function ProbationDetail() {
       await api.post(`/v1/probation/${userId}/objectives/reject`, { reject_reason: reason });
       message.success("已驳回目标");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     }
   }
 
@@ -241,8 +242,8 @@ export default function ProbationDetail() {
       await api.post(`/v1/probation/${userId}/evaluate`, { result: evalResult, comment: evalComment });
       message.success("评估已提交");
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSubmitting(false);
     }
@@ -263,8 +264,8 @@ export default function ProbationDetail() {
       message.success("计划已更新");
       setHrModalOpen(false);
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "更新失败");
+    } catch (e) {
+      message.error(formatError(e, "更新失败"));
     }
   }
 

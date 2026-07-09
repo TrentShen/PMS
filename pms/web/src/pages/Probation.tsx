@@ -4,11 +4,12 @@ import { useNavigate } from "react-router-dom";
 import type { ColumnsType } from "antd/es/table";
 import { Button, Card, Input, message, Select, Space, Table, Tag, Typography } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import { useMobile } from "@/hooks/useMobile";
+
 
 interface ProbationListItem {
   id: number;
@@ -54,8 +55,8 @@ export default function Probation() {
       if (keyword) params.keyword = keyword;
       const r = await api.get<ProbationListItem[]>("/v1/probation", { params });
       setItems(r.data);
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "加载失败");
+    } catch (e) {
+      message.error(formatError(e, "加载失败"));
     } finally {
       setLoading(false);
     }
@@ -67,8 +68,8 @@ export default function Probation() {
       const r = await api.post<{ created: number }>("/v1/probation/sync-plans");
       message.success(`同步完成，新增 ${r.data.created} 个试用期计划`);
       load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "同步失败");
+    } catch (e) {
+      message.error(formatError(e, "同步失败"));
     } finally {
       setSyncing(false);
     }

@@ -16,10 +16,12 @@ import {
   Typography,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
 
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
   exceed_part: "部分超出预期",
@@ -45,7 +47,7 @@ const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
 };
 
 interface Detail {
-  cycle: { id: number; name: string; status: string };
+  cycle: { id: number; name: string; status: string; objective_cycle_id?: number | null };
   user: { id: number; name: string; position: string | null };
   participant_status: string;
   final_perf_score: number | null;
@@ -57,6 +59,7 @@ interface Detail {
   objectives: ObjView[];
   self_evaluation: EvalView | null;
   superior_evaluation: EvalView | null;
+  objective_cycle?: { id: number; name: string; status: string; start_date: string; end_date: string } | null;
 }
 
 interface EvalView {
@@ -99,9 +102,9 @@ const STATUS_LABEL: Record<string, { text: string; color: string }> = {
 };
 
 function ObjectivesSection({
-  cycleId, objectives, canEdit, onSaved
+  objectiveCycleId, objectives, canEdit, onSaved
 }: {
-  cycleId: number;
+  objectiveCycleId: number | null;
   objectives: ObjView[];
   canEdit: boolean;
   onSaved: () => void;
@@ -130,33 +133,35 @@ function ObjectivesSection({
   }
   function updateRow(idx: number, field: keyof ObjItem, value: string | number) {
     const next = [...items];
-    (next[idx] as any)[field] = value;
+    next[idx] = { ...next[idx], [field]: value };
     setItems(next);
   }
 
   async function onSave() {
+    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期，无法保存目标"); return; }
     const total = items.reduce((s, i) => s + (i.weight || 0), 0);
     if (total !== 100) { message.error(`权重总和必须为 100，当前为 ${total}`); return; }
     if (items.some((i) => !i.title.trim())) { message.error("目标标题不能为空"); return; }
     setSaving(true);
     try {
-      await api.put(`/v1/cycles/${cycleId}/objectives`, { items });
+      await api.put(`/v1/objective-cycles/${objectiveCycleId}/objectives`, { items });
       message.success("目标草稿已保存");
       setEditing(false);
       onSaved();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally { setSaving(false); }
   }
 
   async function onSubmitForReview() {
+    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期"); return; }
     setSubmitting(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/submit`);
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/submit`);
       message.success("目标已提交上级审批");
       onSaved();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally { setSubmitting(false); }
   }
 
@@ -170,15 +175,16 @@ function ObjectivesSection({
 
   const hasDraft = objectives.some((o) => o.status === "draft");
   const allApproved = objectives.length > 0 && objectives.every((o) => o.status === "approved" || o.status === "locked");
-  const [pendingAdj, setPendingAdj] = useState<any | null>(null);
+  const [pendingAdj, setPendingAdj] = useState<AdjustmentView | null>(null);
   async function loadPendingAdjustment() {
+    if (!objectiveCycleId) return;
     try {
-      const r = await api.get(`/v1/cycles/${cycleId}/objectives/adjustments`);
-      const pending = r.data.find((a: any) => a.status === "pending");
+      const r = await api.get<AdjustmentView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments`);
+      const pending = r.data.find((a) => a.status === "pending");
       setPendingAdj(pending || null);
     } catch { setPendingAdj(null); }
   }
-  useEffect(() => { loadPendingAdjustment(); }, [cycleId]);
+  useEffect(() => { loadPendingAdjustment(); }, [objectiveCycleId]);
   const rejected = objectives.find((o) => o.reject_reason);
 
   async function onRequestAdjustment() {
@@ -186,15 +192,16 @@ function ObjectivesSection({
     if (total !== 100) { message.error(`权重总和必须为 100，当前为 ${total}`); return; }
     if (items.some((i) => !i.title.trim())) { message.error("目标标题不能为空"); return; }
     if (!adjReason.trim()) { message.error("调整原因不能为空"); return; }
+    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期"); return; }
     setAdjSubmitting(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/objectives/request-adjustment`, { items, reason: adjReason });
+      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/request-adjustment`, { items, reason: adjReason });
       message.success("调整申请已提交，等待上级审批");
       setAdjusting(false);
       setAdjReason("");
       onSaved();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally { setAdjSubmitting(false); }
   }
 
@@ -326,11 +333,12 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
     // employee-proposed 的作为可编辑初值；leader-added 和 approved 都不展示在选择框里
     setSelected(r.data.filter((c) => c.proposed_by === "employee" && c.status !== "removed").map((c) => c.user_id));
     // 候选人：从周期参与人列表获取（排除自己、超管、HR）
-    const u = await api.get<{items: any[]; total: number}>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
+    const u = await api.get<Paginated<Participant>>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
+    // 注：/v1/cycles/:id/participants 返回的 ParticipantDetail 不含 role，
+    // 原 any 时代的 role 过滤实际上未生效（undefined !== "super_admin" 恒为 true），此处保留身份过滤语义需后端补充字段。
     setAllUsers(
       u.data.items
         .filter((x) => x.user_id !== me.id)
-        .filter((x) => x.role !== "super_admin" && x.role !== "hrbp")
         .map((x) => ({ id: x.user_id, name: x.user_name, position: x.user_position }))
     );
   }
@@ -347,8 +355,8 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
       await api.post(`/v1/cycles/${cycleId}/peer/invite`, { peer_user_ids: selected });
       message.success("已提交互评人名单，等待上级审核");
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSaving(false);
     }
@@ -443,15 +451,15 @@ export default function SelfEval() {
     return detail?.cycle.status !== "in_progress";
   }, [detail]);
 
-  async function onSubmit(values: any) {
+  async function onSubmit(values: EvalView) {
     // 价值观甲事例校验交给后端三维度校验
     setSubmitting(true);
     try {
       await api.post(`/v1/cycles/${cycleId}/self-evaluation`, values);
       message.success("自评已提交");
       await reload();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSubmitting(false);
     }
@@ -490,7 +498,7 @@ export default function SelfEval() {
       )}
 
       <ObjectivesSection
-        cycleId={Number(cycleId)}
+        objectiveCycleId={detail.objective_cycle?.id ?? null}
         objectives={detail.objectives}
         canEdit={false}
         onSaved={reload}

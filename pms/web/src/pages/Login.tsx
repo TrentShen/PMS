@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, List, Tag, Typography, message } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+
 
 interface MockUser {
   wecom_userid: string;
@@ -60,8 +61,8 @@ export default function Login() {
       setAuth(r.data.token, r.data.user);
       message.success(`已登录为 ${r.data.user.name}`);
       navigate("/");
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "登录失败");
+    } catch (e) {
+      message.error(formatError(e, "登录失败"));
     } finally {
       setLoadingUid(null);
     }

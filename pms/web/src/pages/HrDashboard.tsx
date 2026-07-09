@@ -1,7 +1,8 @@
 // HR 绩效看板：展示某个绩效周期各环节整体进度
 import { useEffect, useState } from "react";
 import { Card, Col, Progress, Row, Select, Space, Statistic, Typography, message } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+
 
 interface CycleBrief {
   id: number;
@@ -63,7 +64,7 @@ export default function HrDashboard() {
     if (!selectedCycleId) return;
     api.get<DashboardData>(`/v1/cycles/${selectedCycleId}/dashboard`)
       .then((r) => setData(r.data))
-      .catch((e: any) => message.error(e?.response?.data?.detail ?? "加载失败"));
+      .catch((e) => message.error(formatError(e, "加载失败")));
   }, [selectedCycleId]);
 
   return (

@@ -18,8 +18,63 @@ import {
   Typography,
   message,
 } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+
+
+interface ObjectiveView {
+  id: number;
+  title: string;
+  description: string;
+  measure_criteria: string;
+  weight: number;
+  status: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  reject_reason: string | null;
+}
+
+interface EvalView {
+  perf_score: number | null;
+  perf_level: string | null;
+  value_belief_grade: string | null;
+  value_belief_example: string | null;
+  value_team_grade: string | null;
+  value_team_example: string | null;
+  value_growth_grade: string | null;
+  value_growth_example: string | null;
+  key_results: string | null;
+  comment: string | null;
+  submitted_at: string | null;
+}
+
+interface HistoryPerf {
+  cycle_id: number;
+  cycle_name: string;
+  final_perf_score: number | null;
+  final_perf_level: string | null;
+  final_value_belief: string | null;
+  final_value_team: string | null;
+  final_value_growth: string | null;
+}
+
+interface Detail {
+  cycle: { id: number; name: string; status: string };
+  user: { id: number; name: string; position: string | null };
+  participant_status: string;
+  final_perf_score: number | null;
+  final_perf_level: string | null;
+  final_value_belief: string | null;
+  final_value_team: string | null;
+  final_value_growth: string | null;
+  result_pending_feedback: boolean | null;
+  objectives: ObjectiveView[];
+  self_evaluation: EvalView | null;
+  superior_evaluation: EvalView | null;
+  history_perf?: HistoryPerf[];
+  objective_cycle?: { id: number; name: string; start_date: string; end_date: string; status: string } | null;
+}
 
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 const PERF_LEVEL_LABEL: Record<string, string> = {
@@ -64,10 +119,10 @@ function PeerReviewSection({
   async function load() {
     const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/users/${userId}/peer/pending`);
     setCands(r.data);
-    const u = await api.get<{items: any[]; total: number}>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
+    const u = await api.get<Paginated<Participant>>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
+    // 注：ParticipantDetail 不含 role，原 any 过滤未生效，此处语义保留需后端补充字段
     setAllUsers(
       u.data.items
-        .filter((x) => x.role !== "super_admin" && x.role !== "hrbp")
         .filter((x) => x.user_id !== userId)
         .map((x) => ({ id: x.user_id, name: x.user_name, position: x.user_position }))
     );
@@ -96,8 +151,8 @@ function PeerReviewSection({
       setAddIds([]);
       setRemoveIds([]);
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     } finally {
       setSaving(false);
     }
@@ -324,13 +379,13 @@ function ObjectivesReviewSection({
 }: {
   objectiveCycleId: number | null;
   userId: number;
-  objectives: any[];
+  objectives: ObjectiveView[];
   cycleStatus: string;
   onChanged: () => void;
 }) {
   const [rejectReason, setRejectReason] = useState("");
   const [processing, setProcessing] = useState(false);
-  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<AdjustmentView[]>([]);
   const [adjRejectReason, setAdjRejectReason] = useState("");
   const [adjProcessing, setAdjProcessing] = useState(false);
 
@@ -340,7 +395,7 @@ function ObjectivesReviewSection({
   async function loadAdjustments() {
     if (!objectiveCycleId) return;
     try {
-      const r = await api.get(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments?user_id=${userId}`);
+      const r = await api.get<AdjustmentView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments?user_id=${userId}`);
       setAdjustments(r.data);
     } catch { setAdjustments([]); }
   }
@@ -353,8 +408,8 @@ function ObjectivesReviewSection({
       await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/users/${userId}/approve`);
       message.success("目标已批准");
       onChanged();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     } finally {
       setProcessing(false);
     }
@@ -374,8 +429,8 @@ function ObjectivesReviewSection({
       message.success("目标已驳回，员工可修改后重新提交");
       setRejectReason("");
       onChanged();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     } finally {
       setProcessing(false);
     }
@@ -391,8 +446,8 @@ function ObjectivesReviewSection({
       message.success("调整申请已批准");
       await loadAdjustments();
       onChanged();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     } finally { setAdjProcessing(false); }
   }
 
@@ -405,8 +460,8 @@ function ObjectivesReviewSection({
       message.success("调整申请已驳回");
       setAdjRejectReason("");
       await loadAdjustments();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "操作失败");
+    } catch (e) {
+      message.error(formatError(e, "操作失败"));
     } finally { setAdjProcessing(false); }
   }
 
@@ -508,12 +563,12 @@ function ObjectivesReviewSection({
 
 export default function LeaderEvalDetail() {
   const { cycleId, userId } = useParams();
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<Detail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   async function reload() {
-    const r = await api.get(`/v1/cycles/${cycleId}/users/${userId}/detail`);
+    const r = await api.get<Detail>(`/v1/cycles/${cycleId}/users/${userId}/detail`);
     setDetail(r.data);
     if (r.data.superior_evaluation) form.setFieldsValue(r.data.superior_evaluation);
   }
@@ -523,7 +578,7 @@ export default function LeaderEvalDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId, userId]);
 
-  async function onSubmit(values: any) {
+  async function onSubmit(values: EvalView) {
     // 价值观甲事例校验由后端 validate_value_grades 处理
 
     setSubmitting(true);
@@ -534,8 +589,8 @@ export default function LeaderEvalDetail() {
       );
       message.success("上级评估已提交");
       await reload();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setSubmitting(false);
     }
@@ -574,11 +629,11 @@ export default function LeaderEvalDetail() {
               { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
               {
                 title: "价值观",
-                render: (_: any, r: any) => (
+                render: (_: unknown, r: HistoryPerf) => (
                   <Space>
-                    <span>信念 {VALUE_LABEL[r.final_value_belief] ?? "-"}</span>
-                    <span>团队 {VALUE_LABEL[r.final_value_team] ?? "-"}</span>
-                    <span>成长 {VALUE_LABEL[r.final_value_growth] ?? "-"}</span>
+                    <span>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</span>
+                    <span>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</span>
+                    <span>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</span>
                   </Space>
                 ),
               },
@@ -612,7 +667,7 @@ export default function LeaderEvalDetail() {
         {selfEva ? (
           <Descriptions column={2} size="small">
             <Descriptions.Item label="业绩分">
-              {selfEva.perf_score?.toFixed(2)} ({PERF_LEVEL_LABEL[selfEva.perf_level]})
+              {selfEva.perf_score?.toFixed(2)} ({PERF_LEVEL_LABEL[selfEva.perf_level ?? ""] ?? "-"})
             </Descriptions.Item>
             <Descriptions.Item label="价值观">
               <ValueGradeDisplay data={selfEva} prefix="value" />

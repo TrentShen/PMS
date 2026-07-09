@@ -2,20 +2,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, Input, InputNumber, Space, Table, Tag, Typography, message } from "antd";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import type { ObjectiveView } from "@/services/api.types";
 
-interface ObjectiveView {
-  id: number;
-  title: string;
-  description: string;
-  measure_criteria: string;
-  weight: number;
-  status: string;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  reject_reason: string | null;
-}
 
 interface ObjItem {
   title: string;
@@ -71,7 +61,7 @@ export default function MyObjectives() {
   }
   function updateRow(idx: number, field: keyof ObjItem, value: string | number) {
     const next = [...items];
-    (next[idx] as any)[field] = value;
+    next[idx] = { ...next[idx], [field]: value };
     setItems(next);
   }
 
@@ -91,8 +81,8 @@ export default function MyObjectives() {
       message.success("目标草稿已保存");
       setEditing(false);
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "保存失败");
+    } catch (e) {
+      message.error(formatError(e, "保存失败"));
     } finally {
       setLoading(false);
     }
@@ -104,8 +94,8 @@ export default function MyObjectives() {
       await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/submit`);
       message.success("目标已提交上级审批");
       await load();
-    } catch (e: any) {
-      message.error(e?.response?.data?.detail ?? "提交失败");
+    } catch (e) {
+      message.error(formatError(e, "提交失败"));
     } finally {
       setLoading(false);
     }

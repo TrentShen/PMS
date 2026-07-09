@@ -54,18 +54,20 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
 }
 
 // 只读展示版本（用于结果页）
-export function ValueGradeDisplay({ data, prefix = "final_value" }: { data: any; prefix?: string }) {
-  if (!data) return null;
+export function ValueGradeDisplay({ data, prefix = "final_value" }: { data: unknown; prefix?: string }) {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
   const LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
   return (
     <div>
       {DIMS.map((dim) => {
-        const grade = data[`${prefix}_${dim.key}`] || data[`${prefix}_${dim.key}_grade`];
+        const grade = record[`${prefix}_${dim.key}`] || record[`${prefix}_${dim.key}_grade`];
         if (!grade) return null;
+        const gradeStr = String(grade);
         return (
           <div key={dim.key} style={{ marginBottom: 4 }}>
             <Typography.Text strong>{dim.label}：</Typography.Text>
-            <Typography.Text>{LABEL[grade] ?? grade}</Typography.Text>
+            <Typography.Text>{LABEL[gradeStr] ?? gradeStr}</Typography.Text>
           </div>
         );
       })}
