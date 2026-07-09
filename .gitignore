@@ -7,3 +7,7 @@
 # IDE
 .idea/
 .vscode/
+
+# Docker 镜像备份（体积大，不进入版本控制）
+pms_app_images.tar
+pms_images.tar
