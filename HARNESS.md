@@ -263,6 +263,10 @@ cd pms/deploy && docker compose -f docker-compose.prod.yml up -d --build
 | 全局 | 修复 5 个前端 API 路径 mismatch | ✅ |
 | 全局 | 前端全量 `any` 清理 + 开启 `noImplicitAny` | ✅ |
 | 全局 | 提取共享 `formatError` 到 `services/api.ts` | ✅ |
+| 全局 | 周期管理：严格 FTE 过滤（仅 full_time 可参与） | ✅ |
+| 全局 | 周期/参与人删除保护（有绩效数据时禁止删除） | ✅ |
+| 全局 | 后端测试覆盖删除与 FTE 过滤场景 | ✅ |
+| 全局 | 部署安全：登记硬编码密码事件并新增 SSH 密钥管理指南 | ✅ |
 
 ### 11.2 剩余待办事项
 
