@@ -62,6 +62,7 @@ def seed() -> None:
                     department_id=dept_id,
                     position=pos,
                     hired_at=date(2024, 1, 1),
+                    employee_type="full_time",
                     status="active",
                     synced_at=datetime.now(timezone.utc),
                 )

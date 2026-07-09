@@ -10,13 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from pms.database.models.calibration import CalibrationRecord, CycleApproval
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.enums import ParticipantStatus
 from pms.database.models.evaluation import Evaluation
-from pms.database.models.objective import Objective
+from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
-from pms.database.models.peer import PeerEvaluation, PeerInvitation
+from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, is_fte, require_fte, require_role
@@ -331,6 +332,60 @@ def close_cycle(
     return CycleBrief.model_validate(cycle, from_attributes=True)
 
 
+@router.delete("/{cycle_id}")
+def delete_cycle(
+    cycle_id: int,
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+) -> dict:
+    """删除草稿周期。
+    只有草稿状态可删除；若周期内已存在绩效数据（评估、校准、反馈、互评等），
+    禁止删除以保护历史数据。空周期仅删除参与人记录和周期本身。"""
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    if cycle.status != "draft":
+        raise HTTPException(status_code=400, detail="只能删除草稿状态的周期")
+
+    # 绩效数据保护：若周期内已产生任何绩效相关记录，禁止删除，确保数据可找回
+    perf_models = [
+        ("评估", Evaluation),
+        ("校准记录", CalibrationRecord),
+        ("审批记录", CycleApproval),
+        ("反馈", FeedbackRecord),
+        ("互评邀请", PeerInvitation),
+        ("互评", PeerEvaluation),
+        ("匿名反馈", AnonymousFeedback),
+    ]
+    counts: list[str] = []
+    for label, model in perf_models:
+        cnt = session.exec(select(model).where(model.cycle_id == cycle_id)).all()
+        if cnt:
+            counts.append(f"{label} {len(cnt)} 条")
+    if counts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"周期内已存在绩效数据（{', '.join(counts)}），无法删除，避免历史数据丢失",
+        )
+
+    # 仅删除空的参与人记录（CycleParticipant 本身不是绩效数据）
+    for cp in session.exec(select(CycleParticipant).where(CycleParticipant.cycle_id == cycle_id)).all():
+        session.delete(cp)
+
+    session.delete(cycle)
+    write_audit(
+        session,
+        operator_userid=hr.wecom_userid,
+        operator_name=hr.name,
+        action="delete_cycle",
+        resource_type="performance_cycle",
+        resource_id=str(cycle_id),
+        before={"name": cycle.name, "status": cycle.status},
+    )
+    session.commit()
+    return {"status": "ok"}
+
+
 # ============ HR：考核对象自动过滤（PRD 3.2.2）============
 
 @router.put("/{cycle_id}", response_model=CycleBrief)
@@ -404,7 +459,8 @@ def suggest_participants(
     exclude_levels = _pick("exclude_levels")
     min_hired_before = _pick("min_hired_before")
 
-    q = select(User).where(User.status == "active")
+    # 绩效周期仅面向正式员工；未同步 employee_type 时视为非 full_time，不纳入
+    q = select(User).where(User.status == "active", User.employee_type == "full_time")
 
     if exclude_roles:
         q = q.where(User.role.notin_(exclude_roles))
@@ -520,8 +576,8 @@ def add_participants(
         user = session.get(User, uid)
         if not user:
             continue
-        # 仅全职员工可参与绩效周期
-        if not is_fte(user):
+        # 仅正式员工（full_time）可参与绩效周期；未同步 employee_type 的不放行
+        if user.employee_type != "full_time":
             continue
         dept = session.get(Department, user.department_id) if user.department_id else None
         cp = CycleParticipant(
@@ -567,6 +623,63 @@ def add_participants(
         )
         if u
     ]
+
+
+@router.delete("/{cycle_id}/participants/{participant_id}")
+def delete_participant(
+    cycle_id: int,
+    participant_id: int,
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+) -> dict:
+    """草稿状态下删除参与人；启动后不能删除。"""
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="周期不存在")
+    if cycle.status != "draft":
+        raise HTTPException(status_code=400, detail="只能在草稿状态删除参与人")
+
+    participant = session.get(CycleParticipant, participant_id)
+    if not participant or participant.cycle_id != cycle_id:
+        raise HTTPException(status_code=404, detail="参与人不存在")
+
+    user_id = participant.user_id
+    has_perf_data = any(
+        session.exec(
+            select(model).where(
+                model.cycle_id == cycle_id,
+                getattr(model, field) == user_id,
+            )
+        ).first()
+        for model, field in (
+            (Evaluation, "user_id"),
+            (CalibrationRecord, "user_id"),
+            (FeedbackRecord, "user_id"),
+            (PeerInvitation, "invitee_user_id"),
+            (PeerEvaluation, "target_user_id"),
+            (PeerEvaluation, "evaluator_user_id"),
+            (AnonymousFeedback, "target_user_id"),
+            (AnonymousFeedback, "author_user_id"),
+        )
+    )
+    if has_perf_data:
+        raise HTTPException(
+            status_code=400,
+            detail="该参与人已产生绩效数据，无法删除；如需移除请联系管理员归档",
+        )
+
+    session.delete(participant)
+    write_audit(
+        session,
+        operator_userid=hr.wecom_userid,
+        operator_name=hr.name,
+        action="delete_participant",
+        resource_type="performance_cycle",
+        resource_id=str(cycle_id),
+        before={"participant_id": participant.id, "user_id": participant.user_id},
+    )
+    session.commit()
+    return {"status": "ok"}
 
 
 # ============ 员工 / Leader：我的周期 / 我的待办 ============
