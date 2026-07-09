@@ -1,12 +1,13 @@
 // 主布局：PC 端顶部导航，移动端抽屉侧边栏
 import { useState } from "react";
-import { Button, Drawer, Dropdown, Layout as AntLayout, Menu, Space, Tag, Typography, message } from "antd";
+import { Button, Drawer, Layout as AntLayout, Menu, Modal, Space, Tag, Typography, message } from "antd";
 import { MenuOutlined, SwapOutlined } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE } from "@/App";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
+
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "超级管理员",
@@ -83,35 +84,52 @@ export default function AppLayout() {
               <span className="pms-user-name">{user.name}</span>
               <Tag color="blue">{ROLE_LABEL[user.role] ?? user.role}</Tag>
               {user.switchable_roles && user.switchable_roles.length > 0 && (
-                <Dropdown
-                  menu={{
-                    items: user.switchable_roles.map((r) => ({
-                      key: r,
-                      label: ROLE_LABEL[r] ?? r,
-                      disabled: r === user.role,
-                    })),
-                    onClick: async ({ key }) => {
-                      if (key === user.role) return;
-                      setSwitching(true);
-                      try {
-                        const res = await api.post("/v1/auth/switch-role", { role: key });
-                        const { token, user: newUser } = res.data;
-                        setToken(token);
-                        setUser(newUser);
-                        message.success(`已切换为 ${ROLE_LABEL[key] ?? key}`);
-                        navigate(0);
-                      } catch (e: any) {
-                        message.error(e?.response?.data?.detail || "切换失败");
-                      } finally {
-                        setSwitching(false);
-                      }
-                    },
+                <Button
+                  size="small"
+                  icon={<SwapOutlined />}
+                  loading={switching}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: "切换角色",
+                      content: (
+                        <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+                          {user.switchable_roles!.map((r) => (
+                            <Button
+                              key={r}
+                              type={r === user.role ? "primary" : "default"}
+                              block
+                              disabled={r === user.role}
+                              onClick={async () => {
+                                if (r === user.role) return;
+                                setSwitching(true);
+                                try {
+                                  const res = await api.post("/v1/auth/switch-role", { role: r });
+                                  const { token, user: newUser } = res.data;
+                                  setToken(token);
+                                  setUser(newUser);
+                                  message.success(`已切换为 ${ROLE_LABEL[r] ?? r}`);
+                                  Modal.destroyAll();
+                                } catch (e) {
+                                  message.error(formatError(e, "切换失败"));
+                                } finally {
+                                  setSwitching(false);
+                                }
+                              }}
+                            >
+                              {ROLE_LABEL[r] ?? r}
+                              {r === user.role ? "（当前）" : ""}
+                            </Button>
+                          ))}
+                        </Space>
+                      ),
+                      icon: null,
+                      okButtonProps: { style: { display: "none" } },
+                      cancelText: "取消",
+                    });
                   }}
                 >
-                  <Button size="small" icon={<SwapOutlined />} loading={switching}>
-                    切换角色
-                  </Button>
-                </Dropdown>
+                  切换角色
+                </Button>
               )}
             </>
           )}

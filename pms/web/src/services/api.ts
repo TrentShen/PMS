@@ -29,3 +29,14 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+/** 统一格式化 axios/API 错误，优先取后端返回的 detail。 */
+export function formatError(e: unknown, fallback: string): string {
+  const err = e as { response?: { data?: { detail?: string | { errors?: string[]; [key: string]: unknown } } }; message?: string };
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (typeof detail === "object" && detail !== null && "errors" in detail && Array.isArray(detail.errors)) {
+    return detail.errors.join("\n");
+  }
+  return err.message ?? fallback;
+}
