@@ -17,6 +17,10 @@ export interface Cycle {
   end_date: string;
   published_at: string | null;
   objective_cycle_id: number | null;
+  enable_self_eval: boolean;
+  enable_peer_eval: boolean;
+  enable_calibration: boolean;
+  enable_feedback: boolean;
   exclusion_rules?: ExclusionRules | null;
 }
 

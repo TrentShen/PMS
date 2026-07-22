@@ -29,12 +29,14 @@ class NotificationChannel(StrEnum):
     WECOM_TEXT = "wecom_text"
     WECOM_TEXTCARD = "wecom_textcard"
     WECOM_MARKDOWN = "wecom_markdown"
+    EMAIL = "email"
 
 
 _NOTIFICATION_CHANNEL_LABELS: dict[str, str] = {
     NotificationChannel.WECOM_TEXT: "企微文本消息",
     NotificationChannel.WECOM_TEXTCARD: "企微文本卡片",
     NotificationChannel.WECOM_MARKDOWN: "企微 Markdown",
+    NotificationChannel.EMAIL: "邮件",
 }
 
 
@@ -143,6 +145,17 @@ def send_notification(
                     )
                 elif channel == NotificationChannel.WECOM_MARKDOWN:
                     wecom.send_markdown(user_ids=[log.target_userid], content=content)
+                elif channel == NotificationChannel.EMAIL:
+                    from pms.services.email import send_email
+                    user = session.exec(select(User).where(User.wecom_userid == log.target_userid)).first()
+                    if user and user.email:
+                        send_email(
+                            to_emails=[user.email],
+                            subject=title,
+                            content=content,
+                        )
+                    else:
+                        raise ValueError("用户无邮箱")
 
                 log.status = "sent"
                 log.sent_at = datetime.now(timezone.utc)
@@ -210,6 +223,65 @@ def send_text_notification(
         channel=NotificationChannel.WECOM_TEXT,
         payload=payload,
     )
+
+
+def send_email_notification(
+    target_userids: list[str] | list[User],
+    title: str,
+    content: str,
+    payload: dict[str, Any] | None = None,
+) -> list[NotificationLog]:
+    """发送邮件通知（降级通道）。"""
+    return send_notification(
+        target_userids=target_userids,
+        title=title,
+        content=content,
+        channel=NotificationChannel.EMAIL,
+        payload=payload,
+    )
+
+
+def retry_failed_notifications_via_email(session: Session, max_retry: int = 3) -> int:
+    """将失败的企微通知通过邮件降级重发。
+
+    查找 status=failed 且 retry_count < max_retry 的企微通知，
+    如果用户有邮箱则尝试通过邮件发送。
+    """
+    failed_logs = session.exec(
+        select(NotificationLog).where(
+            NotificationLog.status == "failed",
+            NotificationLog.retry_count < max_retry,
+            NotificationLog.channel.in_([  # type: ignore[union-attr]
+                NotificationChannel.WECOM_TEXT,
+                NotificationChannel.WECOM_TEXTCARD,
+                NotificationChannel.WECOM_MARKDOWN,
+            ]),
+        )
+    ).all()
+
+    retried = 0
+    for log in failed_logs:
+        log.retry_count += 1
+        user = session.exec(select(User).where(User.wecom_userid == log.target_userid)).first()
+        if not user or not user.email:
+            continue
+
+        from pms.services.email import send_email
+        success = send_email(
+            to_emails=[user.email],
+            subject=log.title,
+            content=log.content,
+        )
+        if success:
+            log.status = "sent"
+            log.channel = NotificationChannel.EMAIL
+            log.error_msg = None
+            log.sent_at = datetime.now(timezone.utc)
+            retried += 1
+        else:
+            log.error_msg = "邮件降级发送失败"
+    session.commit()
+    return retried
 
 
 def get_hrbp_userids(session: Session, target: User | None = None) -> list[str]:

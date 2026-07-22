@@ -65,7 +65,11 @@ class PeerSubmit(BaseModel):
 class AnonymousFeedbackSubmit(BaseModel):
     target_user_id: int
     perf_score: float | None = None
+    # 兼容旧单维度 value_grade；新三维度字段优先
     value_grade: str | None = None
+    value_belief_grade: str | None = None
+    value_team_grade: str | None = None
+    value_growth_grade: str | None = None
     comment: str
 
 
@@ -565,6 +569,9 @@ def get_peer_summary(
             {
                 "perf_score": a.perf_score,
                 "value_grade": a.value_grade,
+                "value_belief_grade": a.value_belief_grade,
+                "value_team_grade": a.value_team_grade,
+                "value_growth_grade": a.value_growth_grade,
                 "comment": a.comment,
                 "created_at": a.created_at.isoformat(),
             }
@@ -610,6 +617,9 @@ def submit_anonymous_feedback(
         author_user_id=current.id,
         perf_score=payload.perf_score,
         value_grade=payload.value_grade,
+        value_belief_grade=payload.value_belief_grade,
+        value_team_grade=payload.value_team_grade,
+        value_growth_grade=payload.value_growth_grade,
         comment=payload.comment,
     )
     session.add(fb)

@@ -24,6 +24,7 @@ import Calibration from "@/pages/Calibration";
 import Notifications from "@/pages/Notifications";
 import Feedback from "@/pages/Feedback";
 import History from "@/pages/History";
+import Trend from "@/pages/Trend";
 import Probation from "@/pages/Probation";
 import ProbationDetail from "@/pages/ProbationDetail";
 
@@ -49,6 +50,8 @@ export default function App() {
           <Route path="/peer" element={<PeerTasks />} />
           <Route path="/anonymous" element={<AnonymousFeedbackPage />} />
           <Route path="/history" element={<History />} />
+          <Route path="/trend" element={<Trend />} />
+          <Route path="/trend/:userId" element={<Trend />} />
           {/* 反馈：员工看自己 /feedback/:cycleId；上级写别人 /feedback/:cycleId/:userId */}
           <Route path="/feedback/:cycleId" element={<Feedback />} />
           <Route path="/feedback/:cycleId/:userId" element={<Feedback />} />

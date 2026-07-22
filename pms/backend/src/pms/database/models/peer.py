@@ -82,6 +82,10 @@ class AnonymousFeedback(SQLModel, table=True):
     author_user_id: int = Field(foreign_key="user.id", index=True)
     # 评分可选；匿名评价允许只留文字
     perf_score: float | None = None
-    value_grade: str | None = Field(default=None, max_length=8)
+    # 价值观三维度（兼容旧单维度 value_grade）
+    value_grade: str | None = Field(default=None, max_length=8)  # 旧字段，兼容历史数据
+    value_belief_grade: str | None = Field(default=None, max_length=8)
+    value_team_grade: str | None = Field(default=None, max_length=8)
+    value_growth_grade: str | None = Field(default=None, max_length=8)
     comment: str | None = None
     created_at: datetime = Field(default_factory=_now)

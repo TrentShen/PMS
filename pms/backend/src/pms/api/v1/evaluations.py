@@ -197,6 +197,10 @@ def get_evaluation_detail(
             "start_date": cycle.start_date.isoformat(),
             "end_date": cycle.end_date.isoformat(),
             "objective_cycle_id": cycle.objective_cycle_id,
+            "enable_self_eval": cycle.enable_self_eval,
+            "enable_peer_eval": cycle.enable_peer_eval,
+            "enable_calibration": cycle.enable_calibration,
+            "enable_feedback": cycle.enable_feedback,
         },
         "objective_cycle": objective_cycle_info,
         "user": UserProfile(

@@ -53,7 +53,9 @@ export default function AnonymousFeedback() {
       await api.post(`/v1/cycles/${v.cycle_id}/anonymous-feedback`, {
         target_user_id: v.target_user_id,
         perf_score: v.perf_score || null,
-        value_grade: v.value_grade || null,
+        value_belief_grade: v.value_belief_grade || null,
+        value_team_grade: v.value_team_grade || null,
+        value_growth_grade: v.value_growth_grade || null,
         comment: v.comment,
       });
       message.success("已提交（匿名）");
@@ -97,7 +99,21 @@ export default function AnonymousFeedback() {
         <Form.Item name="perf_score" label="业绩评分（可选，1-5，0.25 分段）">
           <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
         </Form.Item>
-        <Form.Item name="value_grade" label="价值观（可选）">
+        <Form.Item name="value_belief_grade" label="价值观-信念（可选）">
+          <Radio.Group>
+            <Radio value="jia">甲</Radio>
+            <Radio value="yi">乙</Radio>
+            <Radio value="bing">丙</Radio>
+          </Radio.Group>
+        </Form.Item>
+        <Form.Item name="value_team_grade" label="价值观-团队（可选）">
+          <Radio.Group>
+            <Radio value="jia">甲</Radio>
+            <Radio value="yi">乙</Radio>
+            <Radio value="bing">丙</Radio>
+          </Radio.Group>
+        </Form.Item>
+        <Form.Item name="value_growth_grade" label="价值观-成长（可选）">
           <Radio.Group>
             <Radio value="jia">甲</Radio>
             <Radio value="yi">乙</Radio>

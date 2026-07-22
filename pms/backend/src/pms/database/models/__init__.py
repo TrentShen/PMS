@@ -26,6 +26,7 @@ from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import Department, User
+from pms.database.models.historical_performance import HistoricalPerformanceResult
 
 __all__ = [
     "AuditLog",
@@ -38,6 +39,7 @@ __all__ = [
     "PerformanceCycle",
     "ObjectiveCycle",
     "ObjectiveCycleParticipant",
+    "HistoricalPerformanceResult",
     "Evaluation",
     "Objective",
     "ObjectiveRevision",

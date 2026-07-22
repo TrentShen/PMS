@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     wecom_contact_secret: str = Field(default="", description="通讯录同步 secret")
     wecom_redirect_uri: str = Field(default="http://localhost:5173/auth/callback")
 
+    # SMTP 邮件（企微消息降级通道）
+    smtp_host: str = Field(default="", description="SMTP 服务器地址")
+    smtp_port: int = Field(default=465, description="SMTP 端口")
+    smtp_user: str = Field(default="", description="SMTP 用户名")
+    smtp_password: str = Field(default="", description="SMTP 密码")
+    smtp_from_email: str = Field(default="", description="发件人邮箱")
+    smtp_use_tls: bool = Field(default=True, description="是否使用 TLS")
+
     # 前端地址（CORS）
     frontend_origin: str = "http://localhost:5173"
 

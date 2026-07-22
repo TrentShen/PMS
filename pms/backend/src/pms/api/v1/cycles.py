@@ -80,6 +80,10 @@ class CycleBrief(BaseModel):
     created_by: str
     created_at: datetime
     published_at: datetime | None
+    enable_self_eval: bool
+    enable_peer_eval: bool
+    enable_calibration: bool
+    enable_feedback: bool
 
 
 class ParticipantDetail(BaseModel):
