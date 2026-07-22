@@ -375,11 +375,12 @@ export default function ProbationDetail() {
                 dataSource={plan.objectives}
                 size="small"
                 pagination={false}
+                tableLayout="fixed"
                 columns={[
-                  { title: "目标项", dataIndex: "title", key: "title" },
-                  { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
-                  { title: "衡量标准", dataIndex: "measure_criteria", key: "measure_criteria", ellipsis: true },
-                  { title: "状态", dataIndex: "status", key: "status", render: (v: string) => <Tag>{v}</Tag> },
+                  { title: "目标项", dataIndex: "title", key: "title", width: "22%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                  { title: "描述", dataIndex: "description", key: "description", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                  { title: "衡量标准", dataIndex: "measure_criteria", key: "measure_criteria", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                  { title: "状态", dataIndex: "status", key: "status", width: "8%", render: (v: string) => <Tag>{v}</Tag> },
                 ]}
               />
             )}

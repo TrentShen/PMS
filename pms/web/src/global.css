@@ -165,6 +165,8 @@ textarea:focus-visible,
   color: var(--color-text-primary);
   text-align: right;
   min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .table-card-actions {
   display: flex;

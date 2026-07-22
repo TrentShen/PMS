@@ -186,12 +186,13 @@ export default function MyObjectives() {
               rowKey="id"
               size="small"
               pagination={false}
+              tableLayout="fixed"
               dataSource={objectives}
               columns={[
-                { title: "目标", dataIndex: "title" },
-                { title: "描述", dataIndex: "description", ellipsis: true },
-                { title: "衡量标准", dataIndex: "measure_criteria", ellipsis: true },
-                { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
+                { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
                 { title: "状态", dataIndex: "status", render: (v) => <Tag color={STATUS_LABEL[v]?.color}>{STATUS_LABEL[v]?.text}</Tag> },
               ]}
             />
