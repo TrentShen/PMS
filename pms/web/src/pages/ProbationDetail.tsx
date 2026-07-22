@@ -325,7 +325,7 @@ export default function ProbationDetail() {
 
           <Card loading={loading} title="试用期目标" style={{ marginTop: 16 }}>
             {editingObjectives.map((o, idx) => (
-              <div key={idx} style={{ marginBottom: 16, padding: 12, border: "1px solid #f0f0f0", borderRadius: 8 }}>
+              <div key={idx} style={{ marginBottom: 16, padding: 12, border: "1px solid var(--color-border)", borderRadius: 8 }}>
                 <Space direction="vertical" style={{ width: "100%" }} size="small">
                   <Input
                     placeholder="目标项"

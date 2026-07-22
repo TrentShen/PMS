@@ -12,7 +12,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Typography,
   message,
 } from "antd";
@@ -21,6 +20,9 @@ import { useAuth } from "@/stores/auth";
 import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
 
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+import BottomActions from "@/components/ui/BottomActions";
+import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
+import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
 
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
@@ -47,7 +49,16 @@ const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
 };
 
 interface Detail {
-  cycle: { id: number; name: string; status: string; objective_cycle_id?: number | null };
+  cycle: {
+    id: number;
+    name: string;
+    status: string;
+    objective_cycle_id?: number | null;
+    enable_self_eval: boolean;
+    enable_peer_eval: boolean;
+    enable_calibration: boolean;
+    enable_feedback: boolean;
+  };
   user: { id: number; name: string; position: string | null };
   participant_status: string;
   final_perf_score: number | null;
@@ -93,13 +104,32 @@ interface UserBrief {
 // ========== 绩效目标区块（可编辑 / 只读 / 审批状态）==========
 interface ObjItem { title: string; description: string; measure_criteria: string; weight: number }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "草稿", color: "default" },
-  pending_review: { text: "待上级审批", color: "orange" },
-  approved: { text: "已确认", color: "green" },
-  locked: { text: "已锁定", color: "blue" },
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "草稿", type: "default" },
+  pending_review: { text: "待上级审批", type: "warning" },
+  approved: { text: "已确认", type: "success" },
+  locked: { text: "已锁定", type: "info" },
   // pending_adjustment 状态目前不直接体现在 objective 表上，而是通过 adjustments API 查询
 };
+
+function statusLabel(status: string): { text: string; type: StatusType } {
+  return STATUS_LABEL[status] ?? { text: status, type: "default" };
+}
+
+// 移动端目标卡片列：与桌面 Table 并存，≤767px 由 CSS 自动切换
+const OBJECTIVE_CARD_COLUMNS: CardColumn<ObjView>[] = [
+  { title: "目标", render: (o) => o.title },
+  { title: "描述", render: (o) => o.description || "-" },
+  { title: "衡量标准", render: (o) => o.measure_criteria || "-" },
+  { title: "权重", render: (o) => `${o.weight}%` },
+  {
+    title: "状态",
+    render: (o) => {
+      const s = statusLabel(o.status);
+      return <StatusTag type={s.type}>{s.text}</StatusTag>;
+    },
+  },
+];
 
 function ObjectivesSection({
   objectiveCycleId, objectives, canEdit, onSaved
@@ -209,7 +239,7 @@ function ObjectivesSection({
   if (!editing && !adjusting) {
     return (
       <Card
-        title={<Space>绩效目标<Tag color={STATUS_LABEL[overallStatus]?.color}>{STATUS_LABEL[overallStatus]?.text}</Tag></Space>}
+        title={<Space>绩效目标<StatusTag type={statusLabel(overallStatus).type}>{statusLabel(overallStatus).text}</StatusTag></Space>}
         extra={canEdit && (
           <Space>
             {hasDraft && (
@@ -242,21 +272,28 @@ function ObjectivesSection({
                 message={`上级驳回原因：${rejected.reject_reason}`}
               />
             )}
-            <Table rowKey="id" size="small" pagination={false} dataSource={objectives}
-              columns={[
-                { title: "目标", dataIndex: "title" },
-                { title: "描述", dataIndex: "description", ellipsis: true },
-                { title: "衡量标准", dataIndex: "measure_criteria", ellipsis: true },
-                { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
-                {
-                  title: "状态",
-                  dataIndex: "status",
-                  render: (v) => {
-                    const s = STATUS_LABEL[v] ?? { text: v, color: "default" };
-                    return <Tag color={s.color}>{s.text}</Tag>;
+            <div className="pms-responsive-table">
+              <Table rowKey="id" size="small" pagination={false} dataSource={objectives}
+                columns={[
+                  { title: "目标", dataIndex: "title" },
+                  { title: "描述", dataIndex: "description", ellipsis: true },
+                  { title: "衡量标准", dataIndex: "measure_criteria", ellipsis: true },
+                  { title: "权重", dataIndex: "weight", render: (v) => `${v}%` },
+                  {
+                    title: "状态",
+                    dataIndex: "status",
+                    render: (v) => {
+                      const s = statusLabel(v);
+                      return <StatusTag type={s.type}>{s.text}</StatusTag>;
+                    },
                   },
-                },
-              ]}
+                ]}
+              />
+            </div>
+            <TableCardList<ObjView>
+              columns={OBJECTIVE_CARD_COLUMNS}
+              dataSource={objectives}
+              rowKey={(o) => o.id}
             />
           </>
         )}
@@ -269,7 +306,7 @@ function ObjectivesSection({
     const totalWeight = items.reduce((s, i) => s + (i.weight || 0), 0);
     return (
       <Card title="申请调整绩效目标" extra={<Space>
-        <Tag color={totalWeight === 100 ? "green" : "red"}>权重合计 {totalWeight}%</Tag>
+        <StatusTag type={totalWeight === 100 ? "success" : "danger"}>权重合计 {totalWeight}%</StatusTag>
         <Button onClick={() => setAdjusting(false)}>取消</Button>
         <Button type="primary" onClick={onRequestAdjustment} loading={adjSubmitting}>提交调整申请</Button>
       </Space>}>
@@ -297,7 +334,7 @@ function ObjectivesSection({
   const totalWeight = items.reduce((s, i) => s + (i.weight || 0), 0);
   return (
     <Card title="录入/修改绩效目标" extra={<Space>
-      <Tag color={totalWeight === 100 ? "green" : "red"}>权重合计 {totalWeight}%</Tag>
+      <StatusTag type={totalWeight === 100 ? "success" : "danger"}>权重合计 {totalWeight}%</StatusTag>
       <Button onClick={() => setEditing(false)}>取消</Button>
       <Button type="primary" onClick={onSave} loading={saving}>保存草稿</Button>
     </Space>}>
@@ -410,13 +447,13 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
               {
                 title: "来源",
                 dataIndex: "proposed_by",
-                render: (v) => (v === "leader" ? <Tag color="blue">上级加</Tag> : <Tag>我选的</Tag>),
+                render: (v) => (v === "leader" ? <StatusTag type="primary">上级加</StatusTag> : <StatusTag>我选的</StatusTag>),
               },
               {
                 title: "状态",
                 dataIndex: "status",
                 render: (v) =>
-                  v === "approved" ? <Tag color="green">已确认</Tag> : v === "removed" ? <Tag>被移除</Tag> : <Tag color="orange">待审核</Tag>,
+                  v === "approved" ? <StatusTag type="success">已确认</StatusTag> : v === "removed" ? <StatusTag>被移除</StatusTag> : <StatusTag type="warning">待审核</StatusTag>,
               },
             ]}
           />
@@ -467,11 +504,14 @@ export default function SelfEval() {
 
   if (!detail) return null;
 
+  // 底部固定操作栏仅在自评可编辑时展示，容器同步加 .has-bottom-actions 腾出空间
+  const showBottomActions = detail.cycle.enable_self_eval && !readonly;
+
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <Space direction="vertical" size="large" style={{ width: "100%" }} className={showBottomActions ? "has-bottom-actions" : undefined}>
       <Card
         title={detail.cycle.name}
-        extra={<Tag color="blue">{detail.cycle.status}</Tag>}
+        extra={<StatusTag type="primary">{detail.cycle.status}</StatusTag>}
       >
         <Descriptions column={2} size="small">
           <Descriptions.Item label="被考核人">{detail.user.name}</Descriptions.Item>
@@ -487,10 +527,10 @@ export default function SelfEval() {
           message="你的最终绩效"
           description={
             <Space direction="vertical">
-              <Tag color="gold">
+              <StatusTag type="warning">
                 业绩 {PERF_LEVEL_LABEL[detail.final_perf_level]}（
                 {detail.final_perf_score?.toFixed(2)} 分）
-              </Tag>
+              </StatusTag>
               <ValueGradeDisplay data={detail} prefix="final_value" />
             </Space>
           }
@@ -504,43 +544,51 @@ export default function SelfEval() {
         onSaved={reload}
       />
 
-      <Card title={readonly ? "我的自评（只读）" : "填写自评"}>
-        <Form
-          form={form}
-          layout="vertical"
-          disabled={readonly}
-          onFinish={onSubmit}
-        >
-          <Form.Item
-            name="perf_score"
-            label="业绩评分（1-5 分，0.25 分段）"
-            rules={[{ required: true, message: "请打分" }]}
-            extra="有效分数示例：3.00 / 3.25 / 3.50 / 4.00 / 4.75"
+      {detail.cycle.enable_self_eval ? (
+        <Card title={readonly ? "我的自评（只读）" : "填写自评"}>
+          <Form
+            form={form}
+            layout="vertical"
+            disabled={readonly}
+            onFinish={onSubmit}
           >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
-          </Form.Item>
-          <ValueGradeForm disabled={readonly} />
-          <Form.Item
-            name="key_results"
-            label="关键成果（做成了什么）"
-            rules={[{ required: true, message: "必填" }]}
-          >
-            <Input.TextArea rows={4} placeholder="与目标强关联的产出" />
-          </Form.Item>
-          <Form.Item name="comment" label="综合评语（做得好 / 待改进）">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          {!readonly && (
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={submitting}>
-                {detail.self_evaluation ? "重新提交" : "提交自评"}
-              </Button>
+            <Form.Item
+              name="perf_score"
+              label="业绩评分（1-5 分，0.25 分段）"
+              rules={[{ required: true, message: "请打分" }]}
+              extra="有效分数示例：3.00 / 3.25 / 3.50 / 4.00 / 4.75"
+            >
+              <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
             </Form.Item>
-          )}
-        </Form>
-      </Card>
+            <ValueGradeForm disabled={readonly} />
+            <Form.Item
+              name="key_results"
+              label="关键成果（做成了什么）"
+              rules={[{ required: true, message: "必填" }]}
+            >
+              <Input.TextArea autoSize={{ minRows: 4 }} placeholder="与目标强关联的产出" />
+            </Form.Item>
+            <Form.Item name="comment" label="综合评语（做得好 / 待改进）">
+              <Input.TextArea autoSize={{ minRows: 4 }} />
+            </Form.Item>
+            {!readonly && (
+              <Form.Item style={{ marginBottom: 0 }}>
+                <BottomActions>
+                  <Button type="primary" htmlType="submit" loading={submitting}>
+                    {detail.self_evaluation ? "重新提交" : "提交自评"}
+                  </Button>
+                </BottomActions>
+              </Form.Item>
+            )}
+          </Form>
+        </Card>
+      ) : (
+        <Alert type="info" showIcon message="本周期未开启自评环节" />
+      )}
 
-      <PeerInviteSection cycleId={Number(cycleId)} disabled={readonly} />
+      {detail.cycle.enable_peer_eval && (
+        <PeerInviteSection cycleId={Number(cycleId)} disabled={readonly} />
+      )}
 
       {detail.superior_evaluation && (
         <Card title="上级评估">

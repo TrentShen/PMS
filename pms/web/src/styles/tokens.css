@@ -1,0 +1,118 @@
+/* PMS 设计令牌（对齐 design-prototype/KIMI-EXEC-PLAN.md §8，v2.2）
+ * 全站唯一色彩/字号/间距/圆角/阴影来源，禁止在组件中硬编码主色与背景色。
+ */
+:root {
+  /* Primary */
+  --color-primary: #3370FF;
+  --color-primary-hover: #2B62E0;
+  --color-primary-active: #2456C4;
+  --color-primary-subtle: #E8F0FF;
+  --color-primary-text-on: #FFFFFF;
+
+  /* Neutral */
+  --color-bg: #F5F6F7;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FAFAFB;
+  --color-border: #DEE0E3;
+  --color-border-strong: #BBBFC4;
+  --color-text-primary: #1F2329;
+  --color-text-secondary: #646A73;
+  --color-text-tertiary: #6B7280;
+  --color-text-disabled: #BBBFC4;
+
+  /* Semantic */
+  --color-success: #00B42A;
+  --color-success-bg: #E8FFEA;
+  --color-warning: #FF7D00;
+  --color-warning-bg: #FFF3E8;
+  --color-warning-bg-hover: #FFF0E0;
+  --color-danger: #F53F3F;
+  --color-danger-bg: #FFECE8;
+  --color-info: #3370FF;
+  --color-info-bg: #E8F0FF;
+
+  /* Chart */
+  --color-chart-1: #3370FF;
+  --color-chart-2: #14C9C9;
+  --color-chart-3: #F7BA1E;
+  --color-chart-4: #F53F3F;
+  --color-chart-5: #86909C;
+  --color-chart-6: #00B42A;
+  --color-chart-grid: #E8E9EB;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-family-mono: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "PingFang SC", "Microsoft YaHei", monospace;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 72px;
+  --header-height: 56px;
+  --content-max-width: 1440px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Shadows */
+  --shadow-raised: 0 1px 2px rgba(31, 35, 41, 0.04);
+  --shadow-floating: 0 4px 12px rgba(31, 35, 41, 0.08);
+  --shadow-overlay: 0 8px 24px rgba(31, 35, 41, 0.12);
+  --shadow-backdrop: 0 0 0 9999px rgba(31, 35, 41, 0.45);
+
+  /* Z-index */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-modal: 300;
+  --z-modal-backdrop: 299;
+  --z-toast: 400;
+  --z-popover: 500;
+
+  /* Responsive */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --font-size-display-mobile: 28px;
+  --font-size-h1-mobile: 22px;
+  --font-size-h2-mobile: 18px;
+  --font-size-h3-mobile: 16px;
+  --font-size-h4-mobile: 14px;
+  --font-size-body-large-mobile: 15px;
+  --font-size-small-mobile: 12px;
+  --font-size-micro-mobile: 11px;
+  --font-size-statistic-mobile: 24px;
+  --touch-target-min: 44px;
+  --touch-target-comfortable: 48px;
+  --bottom-action-height: 56px;
+  --bottom-action-padding: 12px;
+  --bottom-action-z: 110;
+  --sidebar-drawer-width: 280px;
+  --space-mobile-page: 16px;
+  --space-mobile-section: 24px;
+  --space-mobile-card-gap: 12px;
+  --space-mobile-inline: 12px;
+  --content-padding-tablet: 24px;
+  --content-padding-mobile: 16px;
+  --page-header-gap-mobile: 16px;
+  --form-input-height-mobile: 44px;
+}

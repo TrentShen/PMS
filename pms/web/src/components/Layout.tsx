@@ -1,6 +1,7 @@
-// 主布局：PC 端顶部导航，移动端抽屉侧边栏
+// 主布局：桌面端左侧边栏 + 顶部栏（Linear 结构），移动端抽屉侧边栏
+// 断点：≤1023px 侧边栏隐藏，汉堡按钮 + Drawer 替代（样式见 global.css）
 import { useState } from "react";
-import { Button, Drawer, Layout as AntLayout, Menu, Modal, Space, Tag, Typography, message } from "antd";
+import { Button, Drawer, Layout as AntLayout, Menu, Modal, Space, Tag, message } from "antd";
 import { MenuOutlined, SwapOutlined } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE } from "@/App";
@@ -47,100 +48,116 @@ export default function AppLayout() {
 
   const activeKey =
     menuItems.find((m) => m.key !== "/" && location.pathname.startsWith(m.key))?.key ?? "/";
+  const pageTitle = menuItems.find((m) => m.key === activeKey)?.label ?? "绩效管理";
 
   function onMenuClick(key: string) {
     navigate(key);
     setDrawerOpen(false);
   }
 
-  return (
-    <AntLayout style={{ minHeight: "100vh" }}>
-      {/* PC 端顶部导航 */}
-      <AntLayout.Header className="pms-header">
-        <Space size="large" className="pms-header-left">
-          {/* 移动端汉堡按钮 */}
-          <Button
-            className="pms-menu-trigger"
-            type="text"
-            icon={<MenuOutlined />}
-            onClick={() => setDrawerOpen(true)}
-          />
-          <Typography.Title level={4} style={{ margin: 0, whiteSpace: "nowrap" }}>
-            绩效管理
-          </Typography.Title>
-          {/* PC 端横向菜单 */}
-          <Menu
-            className="pms-desktop-menu"
-            mode="horizontal"
-            selectedKeys={[activeKey]}
-            items={menuItems}
-            onClick={(e) => navigate(e.key)}
-            style={{ borderBottom: "none", minWidth: 360 }}
-          />
-        </Space>
-        <Space className="pms-header-right">
-          {user && (
-            <>
-              <span className="pms-user-name">{user.name}</span>
-              <Tag color="blue">{ROLE_LABEL[user.role] ?? user.role}</Tag>
-              {user.switchable_roles && user.switchable_roles.length > 0 && (
+  function logout() {
+    clear();
+    navigate("/login");
+  }
+
+  const roleSwitchButton = user?.switchable_roles && user.switchable_roles.length > 0 && (
+    <Button
+      size="small"
+      icon={<SwapOutlined />}
+      loading={switching}
+      onClick={() => {
+        Modal.confirm({
+          title: "切换角色",
+          content: (
+            <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
+              {user.switchable_roles!.map((r) => (
                 <Button
-                  size="small"
-                  icon={<SwapOutlined />}
-                  loading={switching}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: "切换角色",
-                      content: (
-                        <Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
-                          {user.switchable_roles!.map((r) => (
-                            <Button
-                              key={r}
-                              type={r === user.role ? "primary" : "default"}
-                              block
-                              disabled={r === user.role}
-                              onClick={async () => {
-                                if (r === user.role) return;
-                                setSwitching(true);
-                                try {
-                                  const res = await api.post("/v1/auth/switch-role", { role: r });
-                                  const { token, user: newUser } = res.data;
-                                  setToken(token);
-                                  setUser(newUser);
-                                  message.success(`已切换为 ${ROLE_LABEL[r] ?? r}`);
-                                  Modal.destroyAll();
-                                } catch (e) {
-                                  message.error(formatError(e, "切换失败"));
-                                } finally {
-                                  setSwitching(false);
-                                }
-                              }}
-                            >
-                              {ROLE_LABEL[r] ?? r}
-                              {r === user.role ? "（当前）" : ""}
-                            </Button>
-                          ))}
-                        </Space>
-                      ),
-                      icon: null,
-                      okButtonProps: { style: { display: "none" } },
-                      cancelText: "取消",
-                    });
+                  key={r}
+                  type={r === user.role ? "primary" : "default"}
+                  block
+                  disabled={r === user.role}
+                  onClick={async () => {
+                    if (r === user.role) return;
+                    setSwitching(true);
+                    try {
+                      const res = await api.post("/v1/auth/switch-role", { role: r });
+                      const { token, user: newUser } = res.data;
+                      setToken(token);
+                      setUser(newUser);
+                      message.success(`已切换为 ${ROLE_LABEL[r] ?? r}`);
+                      Modal.destroyAll();
+                    } catch (e) {
+                      message.error(formatError(e, "切换失败"));
+                    } finally {
+                      setSwitching(false);
+                    }
                   }}
                 >
-                  切换角色
+                  {ROLE_LABEL[r] ?? r}
+                  {r === user.role ? "（当前）" : ""}
                 </Button>
-              )}
-            </>
-          )}
-          <Button
-            size="small"
-            onClick={() => { clear(); navigate("/login"); }}
-          >
-            退出登录
-          </Button>
-        </Space>
-      </AntLayout.Header>
+              ))}
+            </Space>
+          ),
+          icon: null,
+          okButtonProps: { style: { display: "none" } },
+          cancelText: "取消",
+        });
+      }}
+    >
+      切换角色
+    </Button>
+  );
+
+  return (
+    <AntLayout style={{ minHeight: "100vh" }}>
+      {/* 桌面端左侧边栏（≤1023px 由 CSS 隐藏，改用抽屉） */}
+      <AntLayout.Sider className="pms-sider" width={240} breakpoint="lg" collapsedWidth={0} trigger={null}>
+        <div className="pms-sider-logo">
+          <h4>绩效管理</h4>
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[activeKey]}
+          items={menuItems}
+          onClick={(e) => navigate(e.key)}
+        />
+      </AntLayout.Sider>
+
+      <AntLayout>
+        {/* 顶部全局栏 */}
+        <AntLayout.Header className="pms-topbar">
+          <div className="pms-topbar-left">
+            {/* 移动端/平板汉堡按钮 */}
+            <Button
+              className="pms-menu-trigger"
+              type="text"
+              aria-label="打开菜单"
+              icon={<MenuOutlined />}
+              onClick={() => setDrawerOpen(true)}
+            />
+            <span className="pms-page-title">{pageTitle}</span>
+          </div>
+          <Space className="pms-topbar-right">
+            {user && (
+              <>
+                <span className="pms-user-name">{user.name}</span>
+                <Tag color="blue">{ROLE_LABEL[user.role] ?? user.role}</Tag>
+                {roleSwitchButton}
+              </>
+            )}
+            <Button size="small" onClick={logout}>
+              退出登录
+            </Button>
+          </Space>
+        </AntLayout.Header>
+
+        <AntLayout.Content>
+          <div className="pms-content">
+            <Outlet />
+          </div>
+        </AntLayout.Content>
+      </AntLayout>
 
       {/* 移动端侧边抽屉 */}
       <Drawer
@@ -149,16 +166,16 @@ export default function AppLayout() {
             <span>{user?.name}</span>
             <Tag color="blue">{ROLE_LABEL[user?.role ?? ""] ?? ""}</Tag>
             {user?.switchable_roles && user.switchable_roles.length > 0 && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
                 可切换角色
-              </Typography.Text>
+              </span>
             )}
           </Space>
         }
         placement="left"
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
-        width={260}
+        width={280}
         styles={{ body: { padding: 0 } }}
       >
         <Menu
@@ -168,19 +185,12 @@ export default function AppLayout() {
           onClick={(e) => onMenuClick(e.key)}
           style={{ borderRight: "none" }}
         />
-        <div style={{ padding: "16px 24px", borderTop: "1px solid #f0f0f0" }}>
-          <Button
-            block
-            onClick={() => { clear(); navigate("/login"); setDrawerOpen(false); }}
-          >
+        <div style={{ padding: "16px 24px", borderTop: "1px solid var(--color-border)" }}>
+          <Button block onClick={() => { logout(); setDrawerOpen(false); }}>
             退出登录
           </Button>
         </div>
       </Drawer>
-
-      <AntLayout.Content style={{ padding: 24, maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-        <Outlet />
-      </AntLayout.Content>
     </AntLayout>
   );
 }

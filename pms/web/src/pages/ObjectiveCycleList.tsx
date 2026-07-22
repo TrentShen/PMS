@@ -115,12 +115,12 @@ export default function ObjectiveCycleList() {
               ),
               c.status === "active" && (
                 <Popconfirm key="complete" title="完成后员工不能再调整目标，确认？" onConfirm={() => onComplete(c)}>
-                  <a style={{ color: "#52c41a" }}>完成</a>
+                  <a style={{ color: "var(--color-success)" }}>完成</a>
                 </Popconfirm>
               ),
               c.status === "draft" && (
                 <Popconfirm key="del" title="删除后不可恢复，确认？" onConfirm={() => onDelete(c)}>
-                  <a style={{ color: "#ff4d4f" }}>删除</a>
+                  <a style={{ color: "var(--color-danger)" }}>删除</a>
                 </Popconfirm>
               ),
             ].filter(Boolean) as React.ReactNode[]}>

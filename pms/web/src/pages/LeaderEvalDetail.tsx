@@ -3,24 +3,30 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Alert,
+  Avatar,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Empty,
   Form,
+  Grid,
   Input,
   InputNumber,
+  Popconfirm,
   Select,
   Space,
   Statistic,
   Table,
-  Tag,
   Typography,
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
 import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+import BottomActions from "@/components/ui/BottomActions";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
 
 
 interface ObjectiveView {
@@ -87,8 +93,14 @@ const PERF_LEVEL_LABEL: Record<string, string> = {
 const CYCLE_STATUS_LABEL: Record<string, string> = {
   draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已关闭",
 };
+const CYCLE_STATUS_TYPE: Record<string, StatusType> = {
+  draft: "default", in_progress: "primary", published: "success", closed: "default",
+};
 const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
   pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
+};
+const PARTICIPANT_STATUS_TYPE: Record<string, StatusType> = {
+  pending: "default", self_done: "warning", leader_done: "primary", published: "success", excluded: "default",
 };
 
 // ========== 互评名单审核 ==========
@@ -185,18 +197,18 @@ function PeerReviewSection({
             {
               title: "来源",
               dataIndex: "proposed_by",
-              render: (v) => (v === "leader" ? <Tag color="blue">上级加</Tag> : <Tag>员工选</Tag>),
+              render: (v) => (v === "leader" ? <StatusTag type="primary">上级加</StatusTag> : <StatusTag>员工选</StatusTag>),
             },
             {
               title: "状态",
               dataIndex: "status",
               render: (v) =>
                 v === "approved" ? (
-                  <Tag color="green">已发起互评</Tag>
+                  <StatusTag type="success">已发起互评</StatusTag>
                 ) : v === "removed" ? (
-                  <Tag>已移除</Tag>
+                  <StatusTag>已移除</StatusTag>
                 ) : (
-                  <Tag color="orange">待审核</Tag>
+                  <StatusTag type="warning">待审核</StatusTag>
                 ),
             },
             {
@@ -283,7 +295,7 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
         <Statistic
           title="平均业绩分"
           value={sum.avg_perf_score ?? "-"}
-          valueStyle={{ color: "#1677ff" }}
+          valueStyle={{ color: "var(--color-primary)" }}
           suffix={sum.avg_perf_score ? `(${PERF_LEVEL_LABEL[perfLevel(sum.avg_perf_score)]})` : ""}
         />
         {Object.entries(sum.value_grade_dist).map(([g, n]) => {
@@ -298,12 +310,12 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
         <Card type="inner" size="small" title="手松手紧提示" style={{ marginBottom: 12 }}>
           <Space wrap>
             {sum.rater_bias.map((r) => (
-              <Tag
+              <StatusTag
                 key={r.label}
-                color={r.bias === "偏松" ? "red" : r.bias === "偏紧" ? "orange" : "default"}
+                type={r.bias === "偏松" ? "danger" : r.bias === "偏紧" ? "warning" : "default"}
               >
                 {r.label}：均分 {r.avg}（{r.bias}，共评 {r.count} 人）
-              </Tag>
+              </StatusTag>
             ))}
           </Space>
         </Card>
@@ -324,7 +336,18 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
                 <span>成长 {VALUE_LABEL[r.value_growth_grade ?? ""] ?? "-"}</span>
               </Space>
             ) },
-            { title: "评语", dataIndex: "comment" },
+            {
+              title: "评语",
+              dataIndex: "comment",
+              render: (v: string) => (
+                <Typography.Paragraph
+                  style={{ marginBottom: 0 }}
+                  ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+                >
+                  {v}
+                </Typography.Paragraph>
+              ),
+            },
           ]}
         />
       ) : (
@@ -345,7 +368,18 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
             columns={[
               { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) ?? "-" },
               { title: "价值观", dataIndex: "value_grade", render: (v) => (v ? VALUE_LABEL[v] : "-") },
-              { title: "评语", dataIndex: "comment" },
+              {
+                title: "评语",
+                dataIndex: "comment",
+                render: (v: string) => (
+                  <Typography.Paragraph
+                    style={{ marginBottom: 0 }}
+                    ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+                  >
+                    {v}
+                  </Typography.Paragraph>
+                ),
+              },
             ]}
           />
         </Card>
@@ -363,11 +397,11 @@ function perfLevel(s: number): string {
 }
 
 // ========== 目标审批 ==========
-const OBJ_STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "草稿", color: "default" },
-  pending_review: { text: "待审批", color: "orange" },
-  approved: { text: "已确认", color: "green" },
-  locked: { text: "已锁定", color: "blue" },
+const OBJ_STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "草稿", type: "default" },
+  pending_review: { text: "待审批", type: "warning" },
+  approved: { text: "已确认", type: "success" },
+  locked: { text: "已锁定", type: "primary" },
 };
 
 function ObjectivesReviewSection({
@@ -470,7 +504,7 @@ function ObjectivesReviewSection({
       title={
         <Space>
           员工目标
-          {pendingCount > 0 && <Tag color="red">{pendingCount} 条待审批</Tag>}
+          {pendingCount > 0 && <StatusTag type="danger">{pendingCount} 条待审批</StatusTag>}
         </Space>
       }
       extra={
@@ -502,8 +536,9 @@ function ObjectivesReviewSection({
                 dataIndex: "status",
                 render: (v) => {
                   if (!v) return "-";
-                  const s = OBJ_STATUS_LABEL[v] ?? { text: v, color: "default" };
-                  return <Tag color={s.color}>{s.text}</Tag>;
+                  const s: { text: string; type: StatusType } =
+                    OBJ_STATUS_LABEL[v] ?? { text: v, type: "default" };
+                  return <StatusTag type={s.type}>{s.text}</StatusTag>;
                 },
               },
             ]}
@@ -566,6 +601,9 @@ export default function LeaderEvalDetail() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  // antd md 断点为 768px，与 global.css 的 767px 移动端断点一致
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
 
   async function reload() {
     const r = await api.get<Detail>(`/v1/cycles/${cycleId}/users/${userId}/detail`);
@@ -601,131 +639,220 @@ export default function LeaderEvalDetail() {
   const selfEva = detail.self_evaluation;
   const readonly = detail.cycle.status !== "in_progress";
   const selfDone = detail.participant_status !== "pending";
+  const showActions = !readonly && selfDone;
 
-  return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Card title={`${detail.user.name} · ${detail.cycle.name}`}>
-        <Descriptions column={3} size="small">
-          <Descriptions.Item label="职位">{detail.user.position ?? "-"}</Descriptions.Item>
-          <Descriptions.Item label="状态">
-            <Tag>{PARTICIPANT_STATUS_LABEL[detail.participant_status] ?? detail.participant_status}</Tag>
+  const infoCard = (
+    <Card
+      title={
+        <Space>
+          <Avatar style={{ background: "var(--color-primary)" }}>
+            {detail.user.name.charAt(0)}
+          </Avatar>
+          <span>
+            {detail.user.name} · {detail.cycle.name}
+          </span>
+        </Space>
+      }
+    >
+      <Descriptions column={isMobile ? 1 : 3} size="small">
+        <Descriptions.Item label="职位">{detail.user.position ?? "-"}</Descriptions.Item>
+        <Descriptions.Item label="状态">
+          <StatusTag type={PARTICIPANT_STATUS_TYPE[detail.participant_status] ?? "default"}>
+            {PARTICIPANT_STATUS_LABEL[detail.participant_status] ?? detail.participant_status}
+          </StatusTag>
+        </Descriptions.Item>
+        <Descriptions.Item label="周期">
+          <StatusTag type={CYCLE_STATUS_TYPE[detail.cycle.status] ?? "default"}>
+            {CYCLE_STATUS_LABEL[detail.cycle.status] ?? detail.cycle.status}
+          </StatusTag>
+        </Descriptions.Item>
+      </Descriptions>
+    </Card>
+  );
+
+  const historyCard =
+    detail.history_perf && detail.history_perf.length > 0 ? (
+      <Card title="历史绩效" size="small">
+        <Table
+          rowKey="cycle_id"
+          size="small"
+          pagination={false}
+          dataSource={detail.history_perf}
+          columns={[
+            { title: "周期", dataIndex: "cycle_name" },
+            { title: "业绩分", dataIndex: "final_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+            { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
+            {
+              title: "价值观",
+              render: (_: unknown, r: HistoryPerf) => (
+                <Space>
+                  <span>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</span>
+                  <span>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</span>
+                  <span>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</span>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </Card>
+    ) : null;
+
+  const objectiveCycleCard = detail.objective_cycle ? (
+    <Card size="small" type="inner" title={`关联目标周期：${detail.objective_cycle.name}`}>
+      <span>
+        {detail.objective_cycle.start_date} ~ {detail.objective_cycle.end_date}，状态：
+        <StatusTag>{detail.objective_cycle.status}</StatusTag>
+      </span>
+    </Card>
+  ) : null;
+
+  const objectivesSection = (
+    <ObjectivesReviewSection
+      objectiveCycleId={detail.objective_cycle?.id ?? null}
+      userId={Number(userId)}
+      objectives={detail.objectives}
+      cycleStatus={detail.cycle.status}
+      onChanged={reload}
+    />
+  );
+
+  const peerReviewSection = (
+    <PeerReviewSection cycleId={Number(cycleId)} userId={Number(userId)} cycleStatus={detail.cycle.status} />
+  );
+
+  const peerSummarySection = <PeerSummarySection cycleId={Number(cycleId)} userId={Number(userId)} />;
+
+  const selfEvalCard = (
+    <Card title="员工自评">
+      {selfEva ? (
+        <Descriptions column={isMobile ? 1 : 2} size="small">
+          <Descriptions.Item label="业绩分">
+            {selfEva.perf_score?.toFixed(2)} ({PERF_LEVEL_LABEL[selfEva.perf_level ?? ""] ?? "-"})
           </Descriptions.Item>
-          <Descriptions.Item label="周期">
-            <Tag>{CYCLE_STATUS_LABEL[detail.cycle.status] ?? detail.cycle.status}</Tag>
+          <Descriptions.Item label="价值观">
+            <ValueGradeDisplay data={selfEva} prefix="value" />
+          </Descriptions.Item>
+          <Descriptions.Item label="关键成果" span={isMobile ? 1 : 2}>
+            <Typography.Paragraph
+              ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+            >
+              {selfEva.key_results}
+            </Typography.Paragraph>
+          </Descriptions.Item>
+          <Descriptions.Item label="综合评语" span={isMobile ? 1 : 2}>
+            <Typography.Paragraph
+              ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+            >
+              {selfEva.comment}
+            </Typography.Paragraph>
           </Descriptions.Item>
         </Descriptions>
-      </Card>
-
-      {detail.history_perf && detail.history_perf.length > 0 && (
-        <Card title="历史绩效" size="small">
-          <Table
-            rowKey="cycle_id"
-            size="small"
-            pagination={false}
-            dataSource={detail.history_perf}
-            columns={[
-              { title: "周期", dataIndex: "cycle_name" },
-              { title: "业绩分", dataIndex: "final_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
-              { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
-              {
-                title: "价值观",
-                render: (_: unknown, r: HistoryPerf) => (
-                  <Space>
-                    <span>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</span>
-                    <span>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</span>
-                    <span>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</span>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        </Card>
+      ) : (
+        <Alert type="warning" message="员工尚未提交自评" />
       )}
+    </Card>
+  );
 
-      {detail.objective_cycle && (
-        <Card size="small" type="inner" title={`关联目标周期：${detail.objective_cycle.name}`}>
-          <span>
-            {detail.objective_cycle.start_date} ~ {detail.objective_cycle.end_date}，状态：
-            <Tag>{detail.objective_cycle.status}</Tag>
-          </span>
-        </Card>
+  const superiorEvalCard = (
+    <Card title={readonly ? "上级评估（只读）" : "填写上级评估"}>
+      {!selfDone && !readonly && (
+        <Alert
+          type="info"
+          showIcon
+          message="员工尚未提交自评，暂无法进行上级评估"
+          style={{ marginBottom: 16 }}
+        />
       )}
-
-      <ObjectivesReviewSection
-        objectiveCycleId={detail.objective_cycle?.id ?? null}
-        userId={Number(userId)}
-        objectives={detail.objectives}
-        cycleStatus={detail.cycle.status}
-        onChanged={reload}
-      />
-
-      <PeerReviewSection cycleId={Number(cycleId)} userId={Number(userId)} cycleStatus={detail.cycle.status} />
-
-      <PeerSummarySection cycleId={Number(cycleId)} userId={Number(userId)} />
-
-      <Card title="员工自评">
-        {selfEva ? (
-          <Descriptions column={2} size="small">
-            <Descriptions.Item label="业绩分">
-              {selfEva.perf_score?.toFixed(2)} ({PERF_LEVEL_LABEL[selfEva.perf_level ?? ""] ?? "-"})
-            </Descriptions.Item>
-            <Descriptions.Item label="价值观">
-              <ValueGradeDisplay data={selfEva} prefix="value" />
-            </Descriptions.Item>
-            <Descriptions.Item label="关键成果" span={2}>
-              <Typography.Paragraph>{selfEva.key_results}</Typography.Paragraph>
-            </Descriptions.Item>
-            <Descriptions.Item label="综合评语" span={2}>
-              <Typography.Paragraph>{selfEva.comment}</Typography.Paragraph>
-            </Descriptions.Item>
-          </Descriptions>
-        ) : (
-          <Alert type="warning" message="员工尚未提交自评" />
-        )}
-      </Card>
-
-      <Card title={readonly ? "上级评估（只读）" : "填写上级评估"}>
-        {!selfDone && !readonly && (
-          <Alert
-            type="info"
-            showIcon
-            message="员工尚未提交自评，暂无法进行上级评估"
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        <Form
-          form={form}
-          layout="vertical"
-          disabled={readonly || !selfDone}
-          onFinish={onSubmit}
+      <Form
+        form={form}
+        layout="vertical"
+        disabled={readonly || !selfDone}
+        onFinish={onSubmit}
+      >
+        <Form.Item
+          name="perf_score"
+          label="业绩评分（1-5，0.25 分段）"
+          rules={[{ required: true }]}
         >
-          <Form.Item
-            name="perf_score"
-            label="业绩评分（1-5，0.25 分段）"
-            rules={[{ required: true }]}
+          <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+        </Form.Item>
+        <ValueGradeForm disabled={readonly || !selfDone} />
+        <Form.Item
+          name="key_results"
+          label="关键成果"
+          rules={[{ required: true, message: "必填" }]}
+        >
+          <Input.TextArea rows={4} />
+        </Form.Item>
+        <Form.Item name="comment" label="综合评语">
+          <Input.TextArea rows={3} />
+        </Form.Item>
+      </Form>
+    </Card>
+  );
+
+  return (
+    <div className={showActions ? "has-bottom-actions" : undefined}>
+      {isMobile ? (
+        // 移动端：Collapse 分块，每屏只展开一个区块
+        <Collapse
+          accordion
+          defaultActiveKey="superior"
+          items={[
+            {
+              key: "info",
+              label: "员工信息",
+              children: (
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  {infoCard}
+                  {historyCard}
+                  {objectiveCycleCard}
+                </Space>
+              ),
+            },
+            { key: "objectives", label: "目标", children: objectivesSection },
+            { key: "self", label: "自评", children: selfEvalCard },
+            {
+              key: "peer",
+              label: "互评",
+              children: (
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  {peerReviewSection}
+                  {peerSummarySection}
+                </Space>
+              ),
+            },
+            { key: "superior", label: "上级评估", children: superiorEvalCard },
+          ]}
+        />
+      ) : (
+        // 桌面端：保持原有纵向布局
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          {infoCard}
+          {historyCard}
+          {objectiveCycleCard}
+          {objectivesSection}
+          {peerReviewSection}
+          {peerSummarySection}
+          {selfEvalCard}
+          {superiorEvalCard}
+        </Space>
+      )}
+      {showActions && (
+        <BottomActions>
+          <Popconfirm
+            title="确认提交评估？"
+            description="提交后将记录本次上级评估结果"
+            okText="确认提交"
+            cancelText="取消"
+            onConfirm={() => form.submit()}
           >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
-          </Form.Item>
-          <ValueGradeForm disabled={readonly || !selfDone} />
-          <Form.Item
-            name="key_results"
-            label="关键成果"
-            rules={[{ required: true, message: "必填" }]}
-          >
-            <Input.TextArea rows={4} />
-          </Form.Item>
-          <Form.Item name="comment" label="综合评语">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          {!readonly && selfDone && (
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={submitting}>
-                {detail.superior_evaluation ? "重新提交" : "提交评估"}
-              </Button>
-            </Form.Item>
-          )}
-        </Form>
-      </Card>
-    </Space>
+            <Button type="primary" loading={submitting}>
+              {detail.superior_evaluation ? "重新提交" : "提交评估"}
+            </Button>
+          </Popconfirm>
+        </BottomActions>
+      )}
+    </div>
   );
 }

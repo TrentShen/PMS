@@ -1,9 +1,14 @@
 // Leader 端：选周期 -> 列下属 -> 进入单人评估页
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, List, Select, Space, Tag } from "antd";
+import { Card, Empty, List, Select, Space, Typography } from "antd";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
+import TableCardList from "@/components/ui/TableCardList";
+import type { CardColumn } from "@/components/ui/TableCardList";
+import ResponsiveShow from "@/components/ui/ResponsiveShow";
 
 interface Cycle {
   id: number;
@@ -27,13 +32,19 @@ const PSTATUS_LABEL: Record<string, string> = {
   published: "已公布",
   excluded: "已排除",
 };
-const PSTATUS_COLOR: Record<string, string> = {
+const PSTATUS_TYPE: Record<string, StatusType> = {
   pending: "default",
-  self_done: "orange",
-  leader_done: "blue",
-  published: "green",
-  excluded: "gray",
+  self_done: "warning",
+  leader_done: "primary",
+  published: "success",
+  excluded: "default",
 };
+
+function actionText(status: string): string {
+  if (status === "pending") return "等待自评";
+  if (status === "self_done") return "去评估";
+  return "查看";
+}
 
 export default function LeaderEval() {
   const [cycles, setCycles] = useState<Cycle[]>([]);
@@ -61,6 +72,26 @@ export default function LeaderEval() {
       .then((r) => setParticipants(r.data.items));
   }, [selectedCycle]);
 
+  const visible = participants.filter((p) => p.user_id !== me.id);
+
+  const goDetail = (p: Participant): void => {
+    navigate(`/leader/${p.cycle_id}/users/${p.user_id}`);
+  };
+
+  const cardColumns: CardColumn<Participant>[] = [
+    { title: "姓名", dataIndex: "user_name" },
+    { title: "职位", render: (p) => p.user_position ?? "-" },
+    {
+      title: "状态",
+      render: (p) => (
+        <StatusTag type={PSTATUS_TYPE[p.status] ?? "default"}>
+          {PSTATUS_LABEL[p.status] ?? p.status}
+        </StatusTag>
+      ),
+    },
+    { title: "操作", render: (p) => <Typography.Link>{actionText(p.status)}</Typography.Link> },
+  ];
+
   return (
     <Card
       title="下属评估"
@@ -77,38 +108,55 @@ export default function LeaderEval() {
         />
       }
     >
-      {participants.filter((p) => p.user_id !== me.id).length === 0 ? (
-        <Empty description="没有可评估的下属" />
-      ) : (
-        <List
-          dataSource={participants.filter((p) => p.user_id !== me.id)}
-          renderItem={(p) => (
-            <List.Item
-              actions={[
-                <a
-                  key="eval"
-                  onClick={() =>
-                    navigate(`/leader/${p.cycle_id}/users/${p.user_id}`)
-                  }
-                >
-                  {p.status === "pending" ? "等待自评" : p.status === "self_done" ? "去评估" : "查看"}
-                </a>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space>
-                    {p.user_name}
-                    <Tag color={PSTATUS_COLOR[p.status]}>
-                      {PSTATUS_LABEL[p.status]}
-                    </Tag>
-                  </Space>
-                }
-                description={p.user_position}
-              />
-            </List.Item>
-          )}
+      {visible.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={
+            <Space direction="vertical" size={4}>
+              <Typography.Text strong>没有可评估的下属</Typography.Text>
+              <Typography.Text type="secondary">
+                当前周期暂无分配给你的直属下属
+              </Typography.Text>
+            </Space>
+          }
         />
+      ) : (
+        <>
+          {/* 桌面端：列表 */}
+          <ResponsiveShow on="desktop">
+            <List
+              dataSource={visible}
+              renderItem={(p) => (
+                <List.Item
+                  actions={[
+                    <a key="eval" onClick={() => goDetail(p)}>
+                      {actionText(p.status)}
+                    </a>,
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space>
+                        {p.user_name}
+                        <StatusTag type={PSTATUS_TYPE[p.status] ?? "default"}>
+                          {PSTATUS_LABEL[p.status] ?? p.status}
+                        </StatusTag>
+                      </Space>
+                    }
+                    description={p.user_position}
+                  />
+                </List.Item>
+              )}
+            />
+          </ResponsiveShow>
+          {/* 移动端：卡片列表（.table-card-list 由 CSS 在 ≤767px 自动显示） */}
+          <TableCardList<Participant>
+            columns={cardColumns}
+            dataSource={visible}
+            rowKey={(p) => p.id}
+            onCardClick={goDetail}
+          />
+        </>
       )}
     </Card>
   );

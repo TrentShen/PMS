@@ -1,92 +1,283 @@
-/* 全局样式 + 移动端适配（PRD 3.7.2）*/
+/* 全局样式 + 移动端适配（PRD 3.7.2）
+ * 设计令牌见 styles/tokens.css；断点统一为 1024 / 768 / 640。
+ */
+@import "./styles/tokens.css";
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
 }
 
-/* ========== Header 布局 ========== */
-.pms-header {
-  background: #fff !important;
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+/* ========== 焦点态（全局可访问性） ========== */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="radio"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(51, 112, 255, 0.15);
+}
+
+/* ========== 滚动条 ========== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* ========== AppShell：侧边栏 + 顶部栏 ========== */
+.pms-sider {
+  background: var(--color-surface) !important;
+  border-right: 1px solid var(--color-border);
+  position: sticky !important;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+}
+.pms-sider-logo {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+.pms-sider-logo h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+.pms-sider .ant-menu {
+  border-inline-end: none !important;
+  padding: var(--space-2);
+}
+.pms-sider .ant-menu-item {
+  border-radius: var(--radius-md);
+  position: relative;
+}
+.pms-sider .ant-menu-item-selected {
+  background: var(--color-primary-subtle) !important;
+  color: var(--color-primary) !important;
+  font-weight: var(--font-weight-medium);
+}
+.pms-sider .ant-menu-item-selected::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-primary);
+}
+
+.pms-topbar {
+  background: var(--color-surface) !important;
   display: flex !important;
   justify-content: space-between;
   align-items: center;
-  padding: 0 24px !important;
-  border-bottom: 1px solid #f0f0f0;
-  height: 56px !important;
-  line-height: 56px !important;
+  padding: 0 var(--space-6) !important;
+  border-bottom: 1px solid var(--color-border);
+  height: var(--header-height) !important;
+  line-height: var(--header-height) !important;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
 }
-.pms-header-left {
+.pms-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.pms-topbar-right {
   display: flex;
   align-items: center;
 }
-.pms-header-right {
-  display: flex;
-  align-items: center;
+.pms-page-title {
+  font-size: 15px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  white-space: nowrap;
 }
 
-/* PC 端：显示横向菜单，隐藏汉堡按钮 */
 .pms-menu-trigger {
   display: none !important;
 }
-.pms-desktop-menu {
-  display: flex !important;
+
+.pms-content {
+  padding: var(--space-6);
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
 }
 
-/* ========== 移动端（≤768px）========== */
-@media (max-width: 768px) {
-  /* 隐藏 PC 横向菜单，显示汉堡按钮 */
-  .pms-desktop-menu {
+/* ========== 响应式显隐工具类 ========== */
+.pms-mobile-only {
+  display: none !important;
+}
+
+/* ========== 移动端表格卡片列表 ========== */
+.table-card-list {
+  display: none;
+}
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-raised);
+}
+.table-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: 13px;
+}
+.table-card-row + .table-card-row {
+  border-top: 1px dashed var(--color-border);
+}
+.table-card-label {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+.table-card-value {
+  color: var(--color-text-primary);
+  text-align: right;
+  min-width: 0;
+}
+.table-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* ========== 移动端 KPI 横向滑动 ========== */
+.kpi-grid-scroll {
+  display: flex;
+  overflow-x: auto;
+  gap: var(--space-mobile-card-gap);
+  scroll-snap-type: x mandatory;
+  padding-bottom: var(--space-2);
+  -webkit-overflow-scrolling: touch;
+}
+.kpi-grid-scroll > * {
+  flex: 0 0 auto;
+  min-width: 160px;
+  scroll-snap-align: start;
+}
+
+/* ========== 底部固定操作栏（长表单） ========== */
+.form-bottom-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  min-height: var(--bottom-action-height);
+  z-index: var(--bottom-action-z);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--bottom-action-padding) var(--space-6);
+  padding-bottom: calc(var(--bottom-action-padding) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -2px 8px rgba(31, 35, 41, 0.06);
+}
+/* 桌面端侧边栏存在时，操作栏避开侧边栏 */
+@media (min-width: 1024px) {
+  .form-bottom-actions {
+    left: var(--sidebar-width);
+  }
+}
+/* 为底部固定栏腾出空间，避免遮挡内容 */
+.has-bottom-actions {
+  padding-bottom: calc(var(--bottom-action-height) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ========== 平板（≤1023px）：侧边栏抽屉化 ========== */
+@media (max-width: 1023px) {
+  .pms-sider {
     display: none !important;
   }
   .pms-menu-trigger {
     display: inline-flex !important;
-    font-size: 20px;
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    align-items: center;
+    justify-content: center;
   }
+  .pms-content {
+    padding: var(--content-padding-tablet);
+  }
+}
 
-  /* Header 紧凑 */
-  .pms-header {
-    padding: 0 12px !important;
-    height: 48px !important;
-    line-height: 48px !important;
-  }
-  .pms-header h4 {
-    font-size: 16px !important;
+/* ========== 手机（≤767px） ========== */
+@media (max-width: 767px) {
+  .pms-topbar {
+    padding: 0 var(--space-4) !important;
   }
   .pms-user-name {
     display: none;
   }
+  .pms-content {
+    padding: var(--content-padding-mobile);
+  }
+  .pms-mobile-only {
+    display: block !important;
+  }
+  .pms-desktop-only {
+    display: none !important;
+  }
 
-  /* Content 减小 padding */
-  .ant-layout-content {
-    padding: 12px !important;
+  /* 桌面表格隐藏，卡片列表显示 */
+  .pms-responsive-table {
+    display: none !important;
+  }
+  .table-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-mobile-card-gap);
   }
 
   /* Card 紧凑 */
   .ant-card {
-    margin-bottom: 12px;
+    margin-bottom: var(--space-mobile-card-gap);
   }
   .ant-card-head-title {
     font-size: 15px;
-  }
-
-  /* Table 横向滚动 */
-  .ant-table-wrapper {
-    overflow-x: auto;
-  }
-  .ant-table {
-    min-width: 500px;
   }
 
   /* Form 单列 */
   .ant-form-inline {
     display: flex !important;
     flex-direction: column !important;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
-  /* Select/Input 全宽 */
+  /* Select/Input 全宽且 ≥44px，字号 16px 防 iOS 缩放 */
   .ant-select {
     width: 100% !important;
     min-width: unset !important;
@@ -94,8 +285,19 @@ body {
   .ant-input-number {
     width: 100% !important;
   }
+  .ant-input,
+  .ant-input-affix-wrapper,
+  .ant-select .ant-select-selector,
+  .ant-input-number,
+  .ant-picker {
+    min-height: var(--form-input-height-mobile);
+    font-size: 16px !important;
+  }
+  textarea.ant-input {
+    font-size: 16px !important;
+  }
 
-  /* Modal 全屏 */
+  /* Modal 收窄 */
   .ant-modal {
     max-width: calc(100vw - 32px) !important;
     margin: 16px auto !important;
@@ -112,9 +314,9 @@ body {
   }
 }
 
-/* ========== 超小屏（≤480px）========== */
-@media (max-width: 480px) {
-  .pms-header .ant-tag {
+/* ========== 超小屏（≤639px） ========== */
+@media (max-width: 639px) {
+  .pms-topbar .ant-tag {
     display: none;
   }
   .ant-card-extra {
@@ -123,4 +325,51 @@ body {
   .ant-card-extra .ant-btn {
     margin-bottom: 4px;
   }
+}
+
+/* ========== 卡片 hover 阴影反馈 ========== */
+.pms-card-hover {
+  transition: box-shadow 0.2s ease;
+}
+.pms-card-hover:hover {
+  box-shadow: var(--shadow-floating);
+}
+
+/* ========== 校准页：分数变化语义色 + 调整行高亮 ========== */
+/* 分数上调 = 绿色（success），下调 = 红色（danger），对齐设计稿 .score-change 语义 */
+.pms-score-change-up {
+  color: var(--color-success);
+  font-weight: var(--font-weight-medium);
+}
+.pms-score-change-down {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+/* 校准分数被调整过的行高亮（对齐设计稿 .abnormal-row，使用 warning 底色令牌，禁止硬编码 #FFF0E0） */
+.pms-calibration-adjusted-row > td {
+  background: var(--color-warning-bg) !important;
+}
+.pms-calibration-adjusted-row:hover > td {
+  background: var(--color-warning-bg-hover) !important;
+}
+
+/* ========== HrConsole：周期表选中行 + 移动端操作区（追加，勿改上方既有规则） ========== */
+/* 周期表格选中行背景：主色淡底 */
+.hr-cycle-row-selected > td {
+  background: var(--color-primary-subtle) !important;
+}
+
+/* 导入导出等操作区：移动端按钮 100% 宽上下堆叠，触控目标 ≥ 44px */
+.hr-console-mobile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hr-console-mobile-actions .ant-upload-wrapper,
+.hr-console-mobile-actions .ant-upload-wrapper .ant-upload,
+.hr-console-mobile-actions .ant-btn {
+  width: 100%;
+}
+.hr-console-mobile-actions .ant-btn {
+  min-height: var(--touch-target-min);
 }

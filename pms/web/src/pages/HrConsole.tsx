@@ -9,23 +9,25 @@ import {
   DatePicker,
   Form,
   Input,
-  List,
   Modal,
   Popconfirm,
   Row,
   Select,
   Space,
+  Switch,
   Table,
-  Tag,
   Typography,
   Upload,
   message,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
-import { useMobile } from "@/hooks/useMobile";
+import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
+import TableCardList from "@/components/ui/TableCardList";
+import ResponsiveShow from "@/components/ui/ResponsiveShow";
 import type {
   Cycle,
   DeptBrief,
@@ -40,6 +42,10 @@ interface CycleCreateForm {
   name: string;
   range: [dayjs.Dayjs, dayjs.Dayjs];
   objective_cycle_id?: number;
+  enable_self_eval?: boolean;
+  enable_peer_eval?: boolean;
+  enable_calibration?: boolean;
+  enable_feedback?: boolean;
 }
 
 interface FilterFormValues {
@@ -52,11 +58,37 @@ interface FilterFormValues {
 
 const STATUS_LABEL: Record<string, string> = { draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档" };
 
+// 周期状态语义：进行中→primary、已公布/已归档→success、草稿→warning、其他→default
+function cycleStatusType(status: string): StatusType {
+  switch (status) {
+    case "in_progress":
+      return "primary";
+    case "published":
+    case "closed":
+      return "success";
+    case "draft":
+      return "warning";
+    default:
+      return "default";
+  }
+}
+
+// 参与人进度语义：pending→warning、excluded→danger、completed→success、各阶段 done→info
+function participantStatusType(status: string): StatusType {
+  if (status === "excluded") return "danger";
+  if (status === "pending") return "warning";
+  if (status === "completed") return "success";
+  if (status.endsWith("_done")) return "info";
+  return "default";
+}
+
+/** 操作列图标统一 16px */
+const ACTION_ICON_STYLE: React.CSSProperties = { fontSize: 16 };
+
 
 export default function HrConsole() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
-  const isMobile = useMobile();
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [objectiveCycles, setObjectiveCycles] = useState<ObjectiveCycle[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -102,6 +134,10 @@ export default function HrConsole() {
       if (values.objective_cycle_id) {
         payload.objective_cycle_id = values.objective_cycle_id;
       }
+      if (values.enable_self_eval !== undefined) payload.enable_self_eval = values.enable_self_eval;
+      if (values.enable_peer_eval !== undefined) payload.enable_peer_eval = values.enable_peer_eval;
+      if (values.enable_calibration !== undefined) payload.enable_calibration = values.enable_calibration;
+      if (values.enable_feedback !== undefined) payload.enable_feedback = values.enable_feedback;
       await api.post("/v1/cycles", payload);
       message.success("周期已创建"); setCreateOpen(false); form.resetFields(); loadCycles();
     } catch (e) { message.error(formatError(e, "创建失败")); }
@@ -164,6 +200,32 @@ export default function HrConsole() {
     return false; // 阻止 antd 默认上传
   }
 
+  // === 历史绩效导入 ===
+  async function onUploadHistorical(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post("/v1/import/historical-performance", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const { success, failed, errors } = r.data;
+      if (failed > 0) {
+        Modal.warning({
+          title: `导入完成：成功 ${success} 条，失败 ${failed} 条`,
+          content: errors.length > 0 ? errors.join("\n") : "",
+          width: 600,
+        });
+      } else {
+        message.success(`历史绩效导入成功：${success} 条`);
+      }
+    } catch (e) {
+      const err = e as { response?: { data?: { detail?: string | { errors?: string[] } } } };
+      const detail = err.response?.data?.detail;
+      if (typeof detail === "object" && detail?.errors) {
+        Modal.error({ title: "导入校验失败", content: detail.errors.join("\n"), width: 600 });
+      } else { message.error(typeof detail === "string" ? detail : "导入失败"); }
+    }
+    return false;
+  }
+
   // === Excel 导出 ===
   async function onExport() {
     if (!selectedCycle) return;
@@ -212,61 +274,187 @@ export default function HrConsole() {
   const availableUsers = users.filter((u) => u.employee_type === "full_time" && u.role !== "super_admin" && u.role !== "hrbp" && !participants.find((p) => p.user_id === u.id));
   const pendingParticipants = participants.filter((p) => p.status === "pending" || p.status === "self_done");
 
+  // 周期关联信息（桌面表格与移动端卡片共用）
+  function objectiveCycleName(c: Cycle): string | null {
+    if (!c.objective_cycle_id) return null;
+    return objectiveCycles.find((oc) => oc.id === c.objective_cycle_id)?.name ?? `ID ${c.objective_cycle_id}`;
+  }
+  function cycleStageText(c: Cycle): string {
+    return [
+      c.enable_self_eval && "自评",
+      c.enable_peer_eval && "互评",
+      c.enable_calibration && "校准",
+      c.enable_feedback && "反馈",
+    ].filter(Boolean).join(" ");
+  }
+
+  // 周期操作（桌面操作列与移动端卡片底部共用，图标按钮间距 8px）
+  function renderCycleActions(c: Cycle): React.ReactNode {
+    return (
+      <Space size={8} wrap>
+        <a onClick={() => setSelectedCycle(c)}>详情</a>
+        {c.status === "draft" && (
+          <Popconfirm title="启动后不能再加人，确认？" onConfirm={() => onStart(c)}><a>启动</a></Popconfirm>
+        )}
+        {c.status === "in_progress" && (
+          <Popconfirm title="需要先完成校准审批，确认发布？" onConfirm={() => onPublish(c)}><a style={{ color: "var(--color-warning)" }}>发布</a></Popconfirm>
+        )}
+        {c.status === "published" && (
+          <Popconfirm title="归档后周期将关闭，未完成员工会被标记为 excluded，确认？" onConfirm={() => onClose(c)}><a style={{ color: "var(--color-text-secondary)" }}>归档</a></Popconfirm>
+        )}
+        {c.status === "draft" && (
+          <Popconfirm title="确定删除该周期？删除后无法恢复。" onConfirm={() => onDelete(c)}><a style={{ color: "var(--color-danger)" }}>删除</a></Popconfirm>
+        )}
+      </Space>
+    );
+  }
+
+  const cycleColumns: ColumnsType<Cycle> = [
+    { title: "周期名", dataIndex: "name" },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 96,
+      render: (s: string) => <StatusTag type={cycleStatusType(s)}>{STATUS_LABEL[s] ?? s}</StatusTag>,
+    },
+    { title: "考核时间", width: 210, render: (_, c) => `${c.start_date} ~ ${c.end_date}` },
+    { title: "关联目标周期", render: (_, c) => objectiveCycleName(c) ?? "-" },
+    { title: "环节", width: 160, render: (_, c) => cycleStageText(c) },
+    { title: "操作", width: 220, render: (_, c) => renderCycleActions(c) },
+  ];
+
+  // 参与人操作（桌面操作列与移动端卡片底部共用）
+  function renderParticipantActions(p: Participant): React.ReactNode {
+    if (!selectedCycle) return null;
+    return (
+      <Space size={8} wrap>
+        <Link to={`/leader/${selectedCycle.id}/users/${p.user_id}`}>详情</Link>
+        {selectedCycle.status === "published" && (
+          <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${p.user_id}`)}>反馈</a>
+        )}
+        {selectedCycle.status === "draft" && (
+          <Popconfirm title="确定删除该参与人？" onConfirm={() => onDeleteParticipant(p.id)}>
+            <a style={{ color: "var(--color-danger)" }}>删除</a>
+          </Popconfirm>
+        )}
+      </Space>
+    );
+  }
+
+  const participantColumns: ColumnsType<Participant> = [
+    { title: "姓名", dataIndex: "user_name" },
+    { title: "职位", dataIndex: "user_position" },
+    {
+      title: "进度",
+      dataIndex: "status",
+      render: (s: string) => <StatusTag type={participantStatusType(s)}>{s}</StatusTag>,
+    },
+    { title: "业绩", render: (_, p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
+    {
+      title: "价值观",
+      render: (_, p) => (
+        <span>
+          信念 {p.final_value_belief ?? "-"} / 团队 {p.final_value_team ?? "-"} / 成长 {p.final_value_growth ?? "-"}
+        </span>
+      ),
+    },
+    { title: "操作", render: (_, p) => renderParticipantActions(p) },
+  ];
+
+  // 当前周期的导入/导出/催办按钮（桌面横排在卡片 extra，移动端 100% 宽上下堆叠）
+  function renderCycleTools(): React.ReactNode {
+    if (!selectedCycle) return null;
+    return (
+      <>
+        <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/objective-cycles/excel/template">下载导入模板</Button>
+        <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadExcel(f)}>
+          <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>Excel 导入目标</Button>
+        </Upload>
+        {selectedCycle.status === "published" && (
+          <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} onClick={onExport}>导出结果</Button>
+        )}
+        {selectedCycle.status === "in_progress" && (
+          <Button size="small" onClick={() => { setUrgeIds(pendingParticipants.map((p) => p.user_id)); setUrgeOpen(true); }}>催办</Button>
+        )}
+      </>
+    );
+  }
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       {/* 周期列表 */}
       <Card title="周期管理" extra={<Button type="primary" onClick={() => setCreateOpen(true)}>新建周期</Button>}>
-        <List
+        {/* 桌面：表格，选中行高亮 --color-primary-subtle */}
+        <div className="pms-responsive-table">
+          <Table<Cycle>
+            rowKey="id"
+            dataSource={cycles}
+            columns={cycleColumns}
+            pagination={false}
+            rowClassName={(c) => (c.id === selectedCycle?.id ? "hr-cycle-row-selected" : "")}
+          />
+        </div>
+        {/* 移动端：卡片列表（参与人数字段契约中不存在，仅在已选中周期时展示已加载数量） */}
+        <TableCardList<Cycle>
           dataSource={cycles}
-          renderItem={(c) => (
-            <List.Item actions={[
-              <a key="sel" onClick={() => setSelectedCycle(c)}>详情</a>,
-              c.status === "draft" && <Popconfirm key="start" title="启动后不能再加人，确认？" onConfirm={() => onStart(c)}><a>启动</a></Popconfirm>,
-              c.status === "in_progress" && <Popconfirm key="pub" title="需要先完成校准审批，确认发布？" onConfirm={() => onPublish(c)}><a style={{ color: "#f59e0b" }}>发布</a></Popconfirm>,
-              c.status === "published" && <Popconfirm key="close" title="归档后周期将关闭，未完成员工会被标记为 excluded，确认？" onConfirm={() => onClose(c)}><a style={{ color: "#6b7280" }}>归档</a></Popconfirm>,
-              c.status === "draft" && <Popconfirm key="delete" title="确定删除该周期？删除后无法恢复。" onConfirm={() => onDelete(c)}><a style={{ color: "#ef4444" }}>删除</a></Popconfirm>,
-            ].filter(Boolean) as React.ReactNode[]}>
-              <List.Item.Meta
-                title={<Space>{c.name} <Tag color="blue">{STATUS_LABEL[c.status]}</Tag></Space>}
-                description={
-                  <Space direction="vertical" size={0}>
-                    <span>{c.start_date} ~ {c.end_date}</span>
-                    {c.objective_cycle_id && (
-                      <span>
-                        关联目标周期：
-                        {objectiveCycles.find((oc) => oc.id === c.objective_cycle_id)?.name ?? `ID ${c.objective_cycle_id}`}
-                      </span>
-                    )}
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
+          rowKey={(c) => c.id}
+          onCardClick={(c) => setSelectedCycle(c)}
+          columns={[
+            { title: "周期名", dataIndex: "name" },
+            {
+              title: "状态",
+              render: (c) => <StatusTag type={cycleStatusType(c.status)}>{STATUS_LABEL[c.status] ?? c.status}</StatusTag>,
+            },
+            { title: "考核时间", render: (c) => `${c.start_date} ~ ${c.end_date}` },
+            { title: "参与人数", render: (c) => (c.id === selectedCycle?.id ? String(participants.length) : "-") },
+          ]}
+          renderActions={(c) => renderCycleActions(c)}
         />
+      </Card>
+
+      {/* 历史绩效导入 */}
+      <Card title="历史绩效导入" size="small">
+        <ResponsiveShow on="desktop">
+          <Space size={8}>
+            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-performance/template">下载历史绩效模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
+              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
+            </Upload>
+            <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
+          </Space>
+        </ResponsiveShow>
+        <ResponsiveShow on="mobile">
+          <div className="hr-console-mobile-actions">
+            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-performance/template">下载历史绩效模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
+              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
+            </Upload>
+            <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
+          </div>
+        </ResponsiveShow>
       </Card>
 
       {/* 参与人详情 */}
       {selectedCycle && (
         <Card
-          title={`参与人（${selectedCycle.name}）`}
-          extra={
-            <Space>
-              <Tag color="blue">{STATUS_LABEL[selectedCycle.status]}</Tag>
-              {/* Excel 操作 */}
-              <Button size="small" icon={<DownloadOutlined />} href="/api/v1/objective-cycles/excel/template">下载导入模板</Button>
-              <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadExcel(f)}>
-                <Button size="small" icon={<UploadOutlined />}>Excel 导入目标</Button>
-              </Upload>
-              {selectedCycle.status === "published" && (
-                <Button size="small" icon={<DownloadOutlined />} onClick={onExport}>导出结果</Button>
-              )}
-              {/* 催办 */}
-              {selectedCycle.status === "in_progress" && (
-                <Button size="small" onClick={() => { setUrgeIds(pendingParticipants.map((p) => p.user_id)); setUrgeOpen(true); }}>催办</Button>
-              )}
+          title={
+            <Space size={8}>
+              {`参与人（${selectedCycle.name}）`}
+              <StatusTag type={cycleStatusType(selectedCycle.status)}>{STATUS_LABEL[selectedCycle.status] ?? selectedCycle.status}</StatusTag>
             </Space>
           }
+          extra={
+            <ResponsiveShow on="desktop">
+              <Space size={8}>{renderCycleTools()}</Space>
+            </ResponsiveShow>
+          }
         >
+          {/* 移动端：导入/导出/催办按钮 100% 宽上下堆叠 */}
+          <ResponsiveShow on="mobile">
+            <div className="hr-console-mobile-actions" style={{ marginBottom: 12 }}>
+              {renderCycleTools()}
+            </div>
+          </ResponsiveShow>
           {/* 草稿：加参与人 */}
           {selectedCycle.status === "draft" && (
             <Space style={{ marginBottom: 16 }} wrap>
@@ -279,65 +467,34 @@ export default function HrConsole() {
           {selectedCycle.status === "draft" && participants.length === 0 && (
             <Alert type="info" message="尚未添加参与人" />
           )}
-          <Table
-            rowKey="id"
-            size="small"
+          {/* 桌面：参与人表格 */}
+          <div className="pms-responsive-table">
+            <Table<Participant>
+              rowKey="id"
+              size="small"
+              dataSource={participants}
+              pagination={false}
+              columns={participantColumns}
+            />
+          </div>
+          {/* 移动端：参与人卡片列表 */}
+          <TableCardList<Participant>
             dataSource={participants}
-            pagination={false}
-            scroll={{ x: isMobile ? 360 : undefined }}
-            columns={
-              isMobile
-                ? [
-                    { title: "姓名", dataIndex: "user_name", fixed: "left", width: 80 },
-                    { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag>, width: 90 },
-                    { title: "业绩", render: (_, r) => (r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-"), width: 80 },
-                    {
-                      title: "操作",
-                      fixed: "right",
-                      width: 90,
-                      render: (_, r) => (
-                        <Space direction="vertical" size="small">
-                          <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>详情</Link>
-                          {selectedCycle.status === "published" && (
-                            <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>反馈</a>
-                          )}
-                          {selectedCycle.status === "draft" && (
-                            <Popconfirm title="确定删除该参与人？" onConfirm={() => onDeleteParticipant(r.id)}>
-                              <a style={{ color: "#ef4444" }}>删除</a>
-                            </Popconfirm>
-                          )}
-                        </Space>
-                      ),
-                    },
-                  ]
-                : [
-                    { title: "姓名", dataIndex: "user_name" },
-                    { title: "职位", dataIndex: "user_position" },
-                    { title: "进度", dataIndex: "status", render: (s) => <Tag>{s}</Tag> },
-                    { title: "业绩", render: (_, r) => (r.final_perf_score != null ? `${r.final_perf_score.toFixed(2)}` : "-") },
-                    { title: "价值观", render: (_, r) => (
-                      <span>
-                        信念 {r.final_value_belief ?? "-"} / 团队 {r.final_value_team ?? "-"} / 成长 {r.final_value_growth ?? "-"}
-                      </span>
-                    ) },
-                    {
-                      title: "操作",
-                      render: (_, r) => (
-                        <Space>
-                          <Link to={`/leader/${selectedCycle.id}/users/${r.user_id}`}>查看详情</Link>
-                          {selectedCycle.status === "published" && (
-                            <a onClick={() => navigate(`/feedback/${selectedCycle.id}/${r.user_id}`)}>写反馈</a>
-                          )}
-                          {selectedCycle.status === "draft" && (
-                            <Popconfirm title="确定删除该参与人？" onConfirm={() => onDeleteParticipant(r.id)}>
-                              <a style={{ color: "#ef4444" }}>删除</a>
-                            </Popconfirm>
-                          )}
-                        </Space>
-                      ),
-                    },
-                  ]
-            }
+            rowKey={(p) => p.id}
+            columns={[
+              { title: "姓名", dataIndex: "user_name" },
+              { title: "职位", render: (p) => p.user_position ?? "-" },
+              {
+                title: "进度",
+                render: (p) => <StatusTag type={participantStatusType(p.status)}>{p.status}</StatusTag>,
+              },
+              { title: "业绩", render: (p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
+              {
+                title: "价值观",
+                render: (p) => `信念 ${p.final_value_belief ?? "-"} / 团队 ${p.final_value_team ?? "-"} / 成长 ${p.final_value_growth ?? "-"}`,
+              },
+            ]}
+            renderActions={(p) => renderParticipantActions(p)}
           />
         </Card>
       )}
@@ -349,6 +506,20 @@ export default function HrConsole() {
           <Form.Item name="range" label="考核周期" initialValue={[dayjs("2025-07-01"), dayjs("2025-12-31")]} rules={[{ required: true }]}><DatePicker.RangePicker /></Form.Item>
           <Form.Item name="objective_cycle_id" label="关联目标周期" extra="本评估周期将评估所选目标周期内的目标">
             <Select placeholder="选择目标周期" allowClear options={objectiveCycles.map((oc) => ({ value: oc.id, label: `${oc.name}（${oc.start_date} ~ ${oc.end_date}）` }))} />
+          </Form.Item>
+          <Form.Item label="考核环节（关闭后员工端将隐藏对应入口）">
+            <Form.Item name="enable_self_eval" noStyle initialValue={true} valuePropName="checked">
+              <Switch /> 自评
+            </Form.Item>
+            <Form.Item name="enable_peer_eval" noStyle initialValue={true} valuePropName="checked">
+              <Switch /> 互评
+            </Form.Item>
+            <Form.Item name="enable_calibration" noStyle initialValue={true} valuePropName="checked">
+              <Switch /> 校准
+            </Form.Item>
+            <Form.Item name="enable_feedback" noStyle initialValue={true} valuePropName="checked">
+              <Switch /> 反馈
+            </Form.Item>
           </Form.Item>
         </Form>
       </Modal>
