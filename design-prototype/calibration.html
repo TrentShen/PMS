@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>绩效校准 - 绩效管理 | PMS</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Page specific: calibration */
+    .calibration-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-4) var(--space-5);
+      margin-bottom: var(--space-5);
+      flex-wrap: wrap;
+    }
+
+    .calibration-status {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      flex-wrap: wrap;
+    }
+
+    .calibration-status-label {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+
+    .calibration-status-value {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .calibration-actions {
+      display: flex;
+      gap: var(--space-3);
+    }
+
+    .kpi-row-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-4);
+      margin-bottom: var(--space-5);
+    }
+
+    .distribution-chart-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5);
+      box-shadow: var(--shadow-raised);
+    }
+
+    .distribution-chart-title {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      margin-bottom: var(--space-5);
+    }
+
+    .distribution-comparison {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .distribution-comparison-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .comparison-label {
+      width: 80px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      flex-shrink: 0;
+    }
+
+    .comparison-bars {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .comparison-bar-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      font-size: 12px;
+    }
+
+    .comparison-bar-track {
+      flex: 1;
+      height: 8px;
+      background: var(--color-border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .comparison-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .comparison-value {
+      min-width: 36px;
+      text-align: right;
+      color: var(--color-text-primary);
+      font-weight: var(--font-weight-medium);
+    }
+
+    .comparison-legend {
+      display: flex;
+      gap: var(--space-4);
+      margin-top: var(--space-4);
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    .comparison-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .comparison-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .matrix-table th,
+    .matrix-table td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border);
+      font-size: 14px;
+      vertical-align: middle;
+    }
+
+    .matrix-table th {
+      background: var(--color-surface-raised);
+      color: var(--color-text-primary);
+      font-weight: var(--font-weight-medium);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .matrix-table tbody tr:hover {
+      background: var(--color-bg);
+    }
+
+    .score-change {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: var(--font-weight-medium);
+    }
+
+    .score-change.up {
+      color: var(--color-success);
+    }
+
+    .score-change.down {
+      color: var(--color-danger);
+    }
+
+    .score-input {
+      width: 80px;
+      height: 32px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      text-align: center;
+      font-weight: var(--font-weight-medium);
+    }
+
+    .score-input:focus {
+      border-color: var(--color-primary);
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(51, 112, 255, 0.15);
+    }
+
+    .matrix-chart-col {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .matrix-mini-bar {
+      width: 60px;
+      height: 6px;
+      background: var(--color-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .matrix-mini-fill {
+      height: 100%;
+      background: var(--color-primary);
+      border-radius: 3px;
+    }
+
+    .abnormal-row {
+      background: var(--color-warning-bg) !important;
+    }
+
+    .abnormal-row:hover {
+      background: var(--color-warning-bg-hover) !important;
+    }
+
+    .split-layout {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: var(--space-5);
+      margin-bottom: var(--space-5);
+    }
+
+    /* Mobile simplified distribution */
+    .mobile-distribution-cards {
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+    }
+
+    .mobile-distribution-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-4);
+      box-shadow: var(--shadow-raised);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .mobile-distribution-card-name {
+      font-size: var(--font-size-small-mobile);
+      color: var(--color-text-secondary);
+    }
+
+    .mobile-distribution-card-value {
+      font-size: var(--font-size-h2-mobile);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .mobile-distribution-card-target {
+      font-size: var(--font-size-micro-mobile);
+      color: var(--color-text-tertiary);
+    }
+
+    @media (max-width: 1200px) {
+      .split-layout {
+        grid-template-columns: 1fr;
+      }
+      .kpi-row-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 767px) {
+      .kpi-row-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .calibration-status-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: var(--space-4);
+      }
+
+      .calibration-status {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-2);
+      }
+
+      .calibration-status-value {
+        font-size: var(--font-size-h3-mobile);
+      }
+
+      .calibration-actions {
+        width: 100%;
+      }
+
+      .calibration-actions .btn {
+        flex: 1;
+      }
+
+      .split-layout {
+        display: none;
+      }
+
+      .matrix-table {
+        display: none;
+      }
+
+      .mobile-distribution-cards {
+        display: grid;
+      }
+
+      .distribution-chart-card {
+        padding: var(--space-4);
+      }
+
+      .comparison-label {
+        width: 60px;
+        font-size: var(--font-size-small-mobile);
+      }
+
+      .comparison-bar-row {
+        font-size: var(--font-size-micro-mobile);
+      }
+
+      .score-input {
+        width: 64px;
+        height: var(--form-input-height-mobile);
+      }
+
+      .matrix-mini-bar {
+        display: none;
+      }
+
+      .card-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .form-bottom-actions.mobile-only {
+        display: flex !important;
+      }
+    }
+
+    @media (max-width: 639px) {
+      .kpi-row-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .mobile-distribution-cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .calibration-status-bar {
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        margin: 0 calc(-1 * var(--space-3));
+        width: calc(100% + 2 * var(--space-3));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">P</div>
+        <span class="logo-text">绩效管理</span>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-title">我的</div>
+          <a href="./home.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </span>
+            首页
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </span>
+            历史绩效
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            </span>
+            通知
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            互评任务
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </span>
+            匿名评价
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">评估</div>
+          <a href="./leader-eval.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+            </span>
+            下属评估
+          </a>
+          <a href="./calibration.html" class="nav-item active">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </span>
+            校准
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">管理</div>
+          <a href="./hr-console.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            </span>
+            HR 管理台
+          </a>
+          <a href="./dashboard.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </span>
+            绩效看板
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </span>
+            目标周期
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
+            试用期管理
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            用户与权限
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" id="menuToggle" aria-label="打开菜单">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <span class="page-title">绩效校准</span>
+        </div>
+        <div class="topbar-right">
+          <div class="search-box">
+            <span class="search-icon">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <input type="text" placeholder="搜索姓名、部门…">
+          </div>
+          <button class="icon-btn" aria-label="通知">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          </button>
+          <button class="role-switch">
+            <span>当前角色：部门 Leader</span>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="user-avatar" aria-label="当前用户：赵总">赵</div>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <div class="page-header">
+          <div class="page-header-left">
+            <div class="page-header-title">绩效校准</div>
+            <div class="page-header-subtitle">校准部门评分分布，确保绩效结果公平一致</div>
+          </div>
+          <div class="page-header-actions">
+            <select class="form-control select-control" style="width: 180px;">
+              <option>2024 下半年绩效周期</option>
+              <option>2024 上半年绩效周期</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Calibration Status -->
+        <div class="calibration-status-bar">
+          <div class="calibration-status">
+            <span class="calibration-status-label">校准状态</span>
+            <span class="calibration-status-value">
+              <span class="tag tag-warning">校准中</span>
+            </span>
+            <span class="calibration-status-label">审批节点：</span>
+            <span class="calibration-status-value">部门 Leader → HRBP → CEO</span>
+          </div>
+          <div class="calibration-actions hide-on-mobile">
+            <button class="btn btn-secondary">暂存</button>
+            <button class="btn btn-primary">提交 HR 审批</button>
+          </div>
+        </div>
+
+        <!-- KPI Row -->
+        <div class="kpi-row-4">
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">48</div>
+              <div class="statistic-label">校准人数</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">6</div>
+              <div class="statistic-label">异常人数</div>
+              <div class="statistic-trend down mt-1">需调整</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">82%</div>
+              <div class="statistic-label">分布目标达成率</div>
+              <div class="statistic-trend up mt-1">+5% 较上期</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">12</div>
+              <div class="statistic-label">已调整评分</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile Distribution Cards -->
+        <div class="mobile-distribution-cards">
+          <div class="mobile-distribution-card">
+            <span class="mobile-distribution-card-name">优秀</span>
+            <span class="mobile-distribution-card-value">17</span>
+            <span class="mobile-distribution-card-target">目标 15</span>
+          </div>
+          <div class="mobile-distribution-card">
+            <span class="mobile-distribution-card-name">部分超出</span>
+            <span class="mobile-distribution-card-value">10</span>
+            <span class="mobile-distribution-card-target">目标 12</span>
+          </div>
+          <div class="mobile-distribution-card">
+            <span class="mobile-distribution-card-name">符合</span>
+            <span class="mobile-distribution-card-value">13</span>
+            <span class="mobile-distribution-card-target">目标 15</span>
+          </div>
+          <div class="mobile-distribution-card">
+            <span class="mobile-distribution-card-name">部分不符</span>
+            <span class="mobile-distribution-card-value">6</span>
+            <span class="mobile-distribution-card-target">目标 5</span>
+          </div>
+          <div class="mobile-distribution-card">
+            <span class="mobile-distribution-card-name">不符合</span>
+            <span class="mobile-distribution-card-value">2</span>
+            <span class="mobile-distribution-card-target">目标 2</span>
+          </div>
+        </div>
+
+        <!-- Split Layout: Distribution Chart + Matrix -->
+        <div class="split-layout">
+          <div class="distribution-chart-card">
+            <div class="distribution-chart-title">评分分布：实际 vs 目标</div>
+            <div class="distribution-comparison">
+              <div class="distribution-comparison-item">
+                <div class="comparison-label">优秀</div>
+                <div class="comparison-bars">
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">实际</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 35%; background: var(--color-chart-1);"></div>
+                    </div>
+                    <span class="comparison-value">17</span>
+                  </div>
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">目标</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 30%; background: var(--color-chart-grid);"></div>
+                    </div>
+                    <span class="comparison-value">15</span>
+                  </div>
+                </div>
+              </div>
+              <div class="distribution-comparison-item">
+                <div class="comparison-label">部分超出</div>
+                <div class="comparison-bars">
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">实际</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 21%; background: var(--color-chart-2);"></div>
+                    </div>
+                    <span class="comparison-value">10</span>
+                  </div>
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">目标</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 25%; background: var(--color-chart-grid);"></div>
+                    </div>
+                    <span class="comparison-value">12</span>
+                  </div>
+                </div>
+              </div>
+              <div class="distribution-comparison-item">
+                <div class="comparison-label">符合</div>
+                <div class="comparison-bars">
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">实际</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 27%; background: var(--color-chart-3);"></div>
+                    </div>
+                    <span class="comparison-value">13</span>
+                  </div>
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">目标</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 30%; background: var(--color-chart-grid);"></div>
+                    </div>
+                    <span class="comparison-value">15</span>
+                  </div>
+                </div>
+              </div>
+              <div class="distribution-comparison-item">
+                <div class="comparison-label">部分不符</div>
+                <div class="comparison-bars">
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">实际</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 13%; background: var(--color-chart-5);"></div>
+                    </div>
+                    <span class="comparison-value">6</span>
+                  </div>
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">目标</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 10%; background: var(--color-chart-grid);"></div>
+                    </div>
+                    <span class="comparison-value">5</span>
+                  </div>
+                </div>
+              </div>
+              <div class="distribution-comparison-item">
+                <div class="comparison-label">不符合</div>
+                <div class="comparison-bars">
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">实际</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 4%; background: var(--color-chart-4);"></div>
+                    </div>
+                    <span class="comparison-value">2</span>
+                  </div>
+                  <div class="comparison-bar-row">
+                    <span style="width: 40px; color: var(--color-text-tertiary);">目标</span>
+                    <div class="comparison-bar-track">
+                      <div class="comparison-bar-fill" style="width: 5%; background: var(--color-chart-grid);"></div>
+                    </div>
+                    <span class="comparison-value">2</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="comparison-legend">
+              <div class="comparison-legend-item">
+                <span class="comparison-legend-dot" style="background: var(--color-primary);"></span>
+                <span>实际分布</span>
+              </div>
+              <div class="comparison-legend-item">
+                <span class="comparison-legend-dot" style="background: var(--color-chart-grid);"></span>
+                <span>目标分布</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="distribution-chart-card">
+            <div class="distribution-chart-title">校准进度</div>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot completed"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">部门 Leader 校准</div>
+                  <div class="timeline-desc">已完成 · 2024-12-18</div>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">HRBP 审批</div>
+                  <div class="timeline-desc">待提交</div>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot pending"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">CEO 审批</div>
+                  <div class="timeline-desc">等待中</div>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot pending"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">结果公布</div>
+                  <div class="timeline-desc">预计 2024-12-25</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Matrix Table -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">人员校准矩阵</div>
+              <div class="card-subtitle">调整初始评分，使其符合目标分布</div>
+            </div>
+            <div class="toolbar">
+              <button class="btn btn-secondary btn-sm">导出</button>
+              <button class="btn btn-primary btn-sm">批量调整</button>
+            </div>
+          </div>
+          <div class="card-body card-body-clean">
+            <div class="table-wrapper table-wrapper-clean">
+              <table class="matrix-table">
+                <thead>
+                  <tr>
+                    <th>姓名</th>
+                    <th>部门</th>
+                    <th>初始评分</th>
+                    <th>校准后评分</th>
+                    <th>价值观</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <div class="user-cell">
+                        <div class="avatar" aria-label="张宇">张</div>
+                        <div class="user-info">
+                          <div class="user-name">张宇</div>
+                          <div class="user-meta">前端工程师</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="cell-secondary">产品研发部</td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.5</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 90%;"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="text" class="score-input" value="4.5">
+                    </td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.3</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 86%; background: var(--color-chart-2);"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="tag tag-success">已校准</span></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm">调整</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="user-cell">
+                        <div class="avatar" aria-label="李敏" style="background: var(--color-success-bg); color: var(--color-success);">李</div>
+                        <div class="user-info">
+                          <div class="user-name">李敏</div>
+                          <div class="user-meta">产品经理</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="cell-secondary">产品研发部</td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.8</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 96%;"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="text" class="score-input" value="4.5">
+                      <span class="score-change down">-0.3</span>
+                    </td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.5</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 90%; background: var(--color-chart-2);"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="tag tag-warning">已调整</span></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm">调整</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="user-cell">
+                        <div class="avatar" aria-label="陈晨" style="background: var(--color-warning-bg); color: var(--color-warning);">陈</div>
+                        <div class="user-info">
+                          <div class="user-name">陈晨</div>
+                          <div class="user-meta">UI 设计师</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="cell-secondary">设计中心</td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>3.6</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 72%;"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="text" class="score-input" value="3.8">
+                      <span class="score-change up">+0.2</span>
+                    </td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.1</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 82%; background: var(--color-chart-2);"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="tag tag-warning">已调整</span></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm">调整</button>
+                    </td>
+                  </tr>
+                  <tr class="abnormal-row">
+                    <td>
+                      <div class="user-cell">
+                        <div class="avatar" aria-label="赵阳" style="background: var(--color-info-bg); color: var(--color-info);">赵</div>
+                        <div class="user-info">
+                          <div class="user-name">赵阳</div>
+                          <div class="user-meta">后端工程师</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="cell-secondary">产品研发部</td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>4.9</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 98%;"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="text" class="score-input" value="4.2">
+                      <span class="score-change down">-0.7</span>
+                    </td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>3.5</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 70%; background: var(--color-chart-2);"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="tag tag-danger">异常</span></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm">调整</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="user-cell">
+                        <div class="avatar" aria-label="刘佳" style="background: var(--color-danger-bg); color: var(--color-danger);">刘</div>
+                        <div class="user-info">
+                          <div class="user-name">刘佳</div>
+                          <div class="user-meta">测试工程师</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="cell-secondary">产品研发部</td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>3.2</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 64%;"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="text" class="score-input" value="3.2">
+                    </td>
+                    <td>
+                      <div class="matrix-chart-col">
+                        <span>3.8</span>
+                        <div class="matrix-mini-bar">
+                          <div class="matrix-mini-fill" style="width: 76%; background: var(--color-chart-2);"></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span class="tag tag-success">已校准</span></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm">调整</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <!-- Mobile Matrix Card List -->
+              <div class="table-card-list">
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <div class="user-cell">
+                      <div class="avatar" aria-label="张宇">张</div>
+                      <div class="user-info">
+                        <div class="user-name">张宇</div>
+                        <div class="user-meta">前端工程师</div>
+                      </div>
+                    </div>
+                    <span class="tag tag-success">已校准</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">部门</span>
+                      <span class="table-card-value">产品研发部</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">初始评分</span>
+                      <span class="table-card-value">4.5</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">校准后评分</span>
+                      <span class="table-card-value">4.5</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">价值观</span>
+                      <span class="table-card-value">4.3</span>
+                    </div>
+                  </div>
+                  <div class="table-card-footer">
+                    <button class="btn btn-ghost btn-sm">调整</button>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <div class="user-cell">
+                      <div class="avatar" aria-label="李敏" style="background: var(--color-success-bg); color: var(--color-success);">李</div>
+                      <div class="user-info">
+                        <div class="user-name">李敏</div>
+                        <div class="user-meta">产品经理</div>
+                      </div>
+                    </div>
+                    <span class="tag tag-warning">已调整</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">部门</span>
+                      <span class="table-card-value">产品研发部</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">初始评分</span>
+                      <span class="table-card-value">4.8</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">校准后评分</span>
+                      <span class="table-card-value">4.5</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">价值观</span>
+                      <span class="table-card-value">4.5</span>
+                    </div>
+                  </div>
+                  <div class="table-card-footer">
+                    <button class="btn btn-ghost btn-sm">调整</button>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <div class="user-cell">
+                      <div class="avatar" aria-label="陈晨" style="background: var(--color-warning-bg); color: var(--color-warning);">陈</div>
+                      <div class="user-info">
+                        <div class="user-name">陈晨</div>
+                        <div class="user-meta">UI 设计师</div>
+                      </div>
+                    </div>
+                    <span class="tag tag-warning">已调整</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">部门</span>
+                      <span class="table-card-value">设计中心</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">初始评分</span>
+                      <span class="table-card-value">3.6</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">校准后评分</span>
+                      <span class="table-card-value">3.8</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">价值观</span>
+                      <span class="table-card-value">4.1</span>
+                    </div>
+                  </div>
+                  <div class="table-card-footer">
+                    <button class="btn btn-ghost btn-sm">调整</button>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <div class="user-cell">
+                      <div class="avatar" aria-label="赵阳" style="background: var(--color-info-bg); color: var(--color-info);">赵</div>
+                      <div class="user-info">
+                        <div class="user-name">赵阳</div>
+                        <div class="user-meta">后端工程师</div>
+                      </div>
+                    </div>
+                    <span class="tag tag-danger">异常</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">部门</span>
+                      <span class="table-card-value">产品研发部</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">初始评分</span>
+                      <span class="table-card-value">4.9</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">校准后评分</span>
+                      <span class="table-card-value">4.2</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">价值观</span>
+                      <span class="table-card-value">3.5</span>
+                    </div>
+                  </div>
+                  <div class="table-card-footer">
+                    <button class="btn btn-ghost btn-sm">调整</button>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <div class="user-cell">
+                      <div class="avatar" aria-label="刘佳" style="background: var(--color-danger-bg); color: var(--color-danger);">刘</div>
+                      <div class="user-info">
+                        <div class="user-name">刘佳</div>
+                        <div class="user-meta">测试工程师</div>
+                      </div>
+                    </div>
+                    <span class="tag tag-success">已校准</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">部门</span>
+                      <span class="table-card-value">产品研发部</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">初始评分</span>
+                      <span class="table-card-value">3.2</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">校准后评分</span>
+                      <span class="table-card-value">3.2</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">价值观</span>
+                      <span class="table-card-value">3.8</span>
+                    </div>
+                  </div>
+                  <div class="table-card-footer">
+                    <button class="btn btn-ghost btn-sm">调整</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="pagination">
+              <span class="text-secondary" style="font-size: 13px; margin-right: auto;">显示 1-5 条，共 48 条</span>
+              <button class="page-btn">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <button class="page-btn active">1</button>
+              <button class="page-btn">2</button>
+              <button class="page-btn">3</button>
+              <button class="page-btn">10</button>
+              <button class="page-btn">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Approval Actions -->
+        <div class="card mt-6 hide-on-mobile">
+          <div class="card-body" style="display: flex; justify-content: flex-end; gap: var(--space-3);">
+            <button class="btn btn-secondary">驳回并说明</button>
+            <button class="btn btn-primary">通过并提交</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Mobile Bottom Actions -->
+  <div class="form-bottom-actions mobile-only" id="mobileBottomActions">
+    <button class="btn btn-secondary">驳回</button>
+    <button class="btn btn-primary">通过并提交</button>
+  </div>
+
+  <script>
+    document.getElementById('menuToggle').addEventListener('click', function() {
+      document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    document.addEventListener('click', function(e) {
+      var sidebar = document.getElementById('sidebar');
+      var menuToggle = document.getElementById('menuToggle');
+      if (window.innerWidth < 1024 && sidebar.classList.contains('open') &&
+          !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>

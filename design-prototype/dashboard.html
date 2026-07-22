@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HR 绩效看板 - 绩效管理 | PMS</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Page specific: dashboard */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-4);
+      margin-bottom: var(--space-5);
+    }
+
+    .chart-section {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-5);
+      margin-bottom: var(--space-5);
+    }
+
+    .chart-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5);
+      box-shadow: var(--shadow-raised);
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-5);
+    }
+
+    .chart-title {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .line-chart {
+      position: relative;
+      height: 180px;
+      padding: 10px 0 10px 40px;
+    }
+
+    .line-chart-grid {
+      position: absolute;
+      inset: 10px 0 10px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .grid-line {
+      height: 1px;
+      background: var(--color-chart-grid);
+      position: relative;
+    }
+
+    .grid-label {
+      position: absolute;
+      left: -36px;
+      top: -7px;
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      width: 30px;
+      text-align: right;
+    }
+
+    .line-chart-area {
+      position: absolute;
+      inset: 10px 0 10px 40px;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .line-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* Mobile simplified trend chart */
+    .trend-summary {
+      display: none;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-3);
+    }
+
+    .trend-summary-item {
+      background: var(--color-surface-raised);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .trend-summary-label {
+      font-size: var(--font-size-small-mobile);
+      color: var(--color-text-secondary);
+    }
+
+    .trend-summary-value {
+      font-size: var(--font-size-h2-mobile);
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .trend-sparkline {
+      display: none;
+      height: 80px;
+      padding: var(--space-3) 0;
+    }
+
+    .dept-progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .dept-progress-item {
+      display: grid;
+      grid-template-columns: 120px 1fr 80px;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    .dept-name {
+      font-size: 14px;
+      color: var(--color-text-primary);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dept-value {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      text-align: right;
+      font-weight: var(--font-weight-medium);
+    }
+
+    .distribution-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .distribution-row:last-child {
+      border-bottom: none;
+    }
+
+    .distribution-info {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    .distribution-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .distribution-label {
+      font-size: 14px;
+      color: var(--color-text-primary);
+    }
+
+    .distribution-value {
+      font-size: 14px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .distribution-target {
+      font-size: 12px;
+      color: var(--color-text-tertiary);
+      margin-left: var(--space-2);
+    }
+
+    .chart-donut-wrapper {
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+      padding: var(--space-3) 0;
+    }
+
+    /* Mobile horizontal distribution bars */
+    .mobile-distribution {
+      display: none;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .mobile-distribution-item {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .mobile-distribution-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--font-size-body-large-mobile);
+    }
+
+    .mobile-distribution-bar {
+      height: 8px;
+      background: var(--color-border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .mobile-distribution-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+
+    .mobile-distribution-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--font-size-small-mobile);
+      color: var(--color-text-secondary);
+    }
+
+    @media (max-width: 1200px) {
+      .chart-section {
+        grid-template-columns: 1fr;
+      }
+      .kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 767px) {
+      .kpi-row {
+        display: none;
+      }
+
+      .line-chart {
+        display: none;
+      }
+
+      .trend-summary {
+        display: grid;
+      }
+
+      .trend-sparkline {
+        display: block;
+      }
+
+      .kpi-grid-scroll.mobile-only {
+        display: flex !important;
+      }
+
+      .trend-sparkline.mobile-only {
+        display: block !important;
+      }
+
+      .chart-donut-wrapper {
+        display: none;
+      }
+
+      .mobile-distribution {
+        display: flex;
+      }
+
+      .chart-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-3);
+      }
+
+      .chart-title {
+        font-size: var(--font-size-h3-mobile);
+      }
+
+      .chart-card {
+        padding: var(--space-4);
+      }
+    }
+
+    @media (max-width: 639px) {
+      .kpi-row {
+        grid-template-columns: 1fr;
+      }
+      .dept-progress-item {
+        grid-template-columns: 80px 1fr 60px;
+      }
+      .trend-summary {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">P</div>
+        <span class="logo-text">绩效管理</span>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-title">我的</div>
+          <a href="./home.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </span>
+            首页
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </span>
+            历史绩效
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            </span>
+            通知
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            互评任务
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </span>
+            匿名评价
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">评估</div>
+          <a href="./leader-eval.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+            </span>
+            下属评估
+          </a>
+          <a href="./calibration.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </span>
+            校准
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">管理</div>
+          <a href="./hr-console.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            </span>
+            HR 管理台
+          </a>
+          <a href="./dashboard.html" class="nav-item active">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </span>
+            绩效看板
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </span>
+            目标周期
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
+            试用期管理
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            用户与权限
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" id="menuToggle" aria-label="打开菜单">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <span class="page-title">HR 绩效看板</span>
+        </div>
+        <div class="topbar-right">
+          <div class="search-box">
+            <span class="search-icon">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <input type="text" placeholder="搜索部门、员工、周期…">
+          </div>
+          <button class="icon-btn" aria-label="通知">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          </button>
+          <button class="role-switch">
+            <span>当前角色：HRBP</span>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="user-avatar" aria-label="当前用户：李敏">李</div>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <div class="page-header">
+          <div class="page-header-left">
+            <div class="page-header-title">绩效看板</div>
+            <div class="page-header-subtitle">实时追踪周期进展与团队绩效分布</div>
+          </div>
+          <div class="page-header-actions">
+            <select class="form-control select-control hide-on-mobile" style="width: 180px;">
+              <option>2024 下半年绩效周期</option>
+              <option>2024 上半年绩效周期</option>
+              <option>2023 下半年绩效周期</option>
+            </select>
+            <button class="btn btn-secondary hide-on-mobile">导出报告</button>
+            <button class="btn btn-secondary mobile-only" id="filterToggle">筛选</button>
+          </div>
+        </div>
+
+        <!-- KPI Row (Desktop/Tablet) -->
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">128</div>
+              <div class="statistic-label">参与目标设定人数</div>
+              <div class="statistic-trend up mt-1">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>
+                +5 较上期
+              </div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">96</div>
+              <div class="statistic-label">参与评估人数</div>
+              <div class="statistic-trend up mt-1">75% 覆盖率</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">72%</div>
+              <div class="statistic-label">自评完成率</div>
+              <div class="statistic-trend up mt-1">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>
+                +12% 较上周
+              </div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">48</div>
+              <div class="statistic-label">互评名单已确认</div>
+              <div class="statistic-trend mt-1" style="color: var(--color-text-secondary);">50% 完成</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">32%</div>
+              <div class="statistic-label">互评完成率</div>
+              <div class="statistic-trend down mt-1">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>
+                -3% 较上周
+              </div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">18%</div>
+              <div class="statistic-label">上级评估完成</div>
+              <div class="statistic-trend mt-1" style="color: var(--color-text-secondary);">待加速</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI Scroll (Mobile) -->
+        <div class="kpi-grid-scroll mobile-only">
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">128</div>
+              <div class="statistic-label">参与目标设定</div>
+              <div class="statistic-trend up mt-1">+5</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">96</div>
+              <div class="statistic-label">参与评估</div>
+              <div class="statistic-trend up mt-1">75%</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">72%</div>
+              <div class="statistic-label">自评完成率</div>
+              <div class="statistic-trend up mt-1">+12%</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">48</div>
+              <div class="statistic-label">互评确认</div>
+              <div class="statistic-trend mt-1" style="color: var(--color-text-secondary);">50%</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">32%</div>
+              <div class="statistic-label">互评完成率</div>
+              <div class="statistic-trend down mt-1">-3%</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="statistic">
+              <div class="statistic-value">18%</div>
+              <div class="statistic-label">上级评估</div>
+              <div class="statistic-trend mt-1" style="color: var(--color-text-secondary);">待加速</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="chart-section">
+          <div class="chart-card">
+            <div class="chart-header">
+              <div class="chart-title">部门进度对比</div>
+              <div class="flex items-center gap-3">
+                <span class="legend-item"><span class="legend-dot" style="background: var(--color-primary);"></span>自评</span>
+                <span class="legend-item"><span class="legend-dot" style="background: var(--color-chart-2);"></span>互评</span>
+              </div>
+            </div>
+            <div class="dept-progress-list">
+              <div class="dept-progress-item">
+                <div class="dept-name">产品研发部</div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 88%;"></div>
+                  </div>
+                  <span class="progress-label">88%</span>
+                </div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 62%; background: var(--color-chart-2);"></div>
+                  </div>
+                  <span class="progress-label">62%</span>
+                </div>
+              </div>
+              <div class="dept-progress-item">
+                <div class="dept-name">设计中心</div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 76%;"></div>
+                  </div>
+                  <span class="progress-label">76%</span>
+                </div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 45%; background: var(--color-chart-2);"></div>
+                  </div>
+                  <span class="progress-label">45%</span>
+                </div>
+              </div>
+              <div class="dept-progress-item">
+                <div class="dept-name">市场运营部</div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 65%;"></div>
+                  </div>
+                  <span class="progress-label">65%</span>
+                </div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 38%; background: var(--color-chart-2);"></div>
+                  </div>
+                  <span class="progress-label">38%</span>
+                </div>
+              </div>
+              <div class="dept-progress-item">
+                <div class="dept-name">销售部</div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 54%;"></div>
+                  </div>
+                  <span class="progress-label">54%</span>
+                </div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 28%; background: var(--color-chart-2);"></div>
+                  </div>
+                  <span class="progress-label">28%</span>
+                </div>
+              </div>
+              <div class="dept-progress-item">
+                <div class="dept-name">职能支持部</div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 92%;"></div>
+                  </div>
+                  <span class="progress-label">92%</span>
+                </div>
+                <div class="progress-with-label">
+                  <div class="progress">
+                    <div class="progress-bar" style="width: 71%; background: var(--color-chart-2);"></div>
+                  </div>
+                  <span class="progress-label">71%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-header">
+              <div class="chart-title">绩效等级分布</div>
+              <button class="btn btn-ghost btn-sm">查看详情</button>
+            </div>
+            <div class="chart-donut-wrapper">
+              <div class="donut-chart"></div>
+              <div style="flex: 1;">
+                <div class="distribution-row">
+                  <div class="distribution-info">
+                    <span class="distribution-color" style="background: var(--color-chart-1);"></span>
+                    <span class="distribution-label">优秀</span>
+                  </div>
+                  <div>
+                    <span class="distribution-value">36</span>
+                    <span class="distribution-target">/ 目标 30%</span>
+                  </div>
+                </div>
+                <div class="distribution-row">
+                  <div class="distribution-info">
+                    <span class="distribution-color" style="background: var(--color-chart-2);"></span>
+                    <span class="distribution-label">部分超出</span>
+                  </div>
+                  <div>
+                    <span class="distribution-value">21</span>
+                    <span class="distribution-target">/ 目标 25%</span>
+                  </div>
+                </div>
+                <div class="distribution-row">
+                  <div class="distribution-info">
+                    <span class="distribution-color" style="background: var(--color-chart-3);"></span>
+                    <span class="distribution-label">符合</span>
+                  </div>
+                  <div>
+                    <span class="distribution-value">27</span>
+                    <span class="distribution-target">/ 目标 30%</span>
+                  </div>
+                </div>
+                <div class="distribution-row">
+                  <div class="distribution-info">
+                    <span class="distribution-color" style="background: var(--color-chart-5);"></span>
+                    <span class="distribution-label">部分不符</span>
+                  </div>
+                  <div>
+                    <span class="distribution-value">13</span>
+                    <span class="distribution-target">/ 目标 10%</span>
+                  </div>
+                </div>
+                <div class="distribution-row">
+                  <div class="distribution-info">
+                    <span class="distribution-color" style="background: var(--color-chart-4);"></span>
+                    <span class="distribution-label">不符合</span>
+                  </div>
+                  <div>
+                    <span class="distribution-value">4</span>
+                    <span class="distribution-target">/ 目标 5%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mobile Distribution Bars -->
+            <div class="mobile-distribution">
+              <div class="mobile-distribution-item">
+                <div class="mobile-distribution-header">
+                  <span class="font-medium">优秀</span>
+                  <span class="font-medium">36 / 目标 30%</span>
+                </div>
+                <div class="mobile-distribution-bar">
+                  <div class="mobile-distribution-fill" style="width: 36%; background: var(--color-chart-1);"></div>
+                </div>
+                <div class="mobile-distribution-meta">
+                  <span>实际 36%</span>
+                  <span>目标 30%</span>
+                </div>
+              </div>
+              <div class="mobile-distribution-item">
+                <div class="mobile-distribution-header">
+                  <span class="font-medium">部分超出</span>
+                  <span class="font-medium">21 / 目标 25%</span>
+                </div>
+                <div class="mobile-distribution-bar">
+                  <div class="mobile-distribution-fill" style="width: 21%; background: var(--color-chart-2);"></div>
+                </div>
+                <div class="mobile-distribution-meta">
+                  <span>实际 21%</span>
+                  <span>目标 25%</span>
+                </div>
+              </div>
+              <div class="mobile-distribution-item">
+                <div class="mobile-distribution-header">
+                  <span class="font-medium">符合</span>
+                  <span class="font-medium">27 / 目标 30%</span>
+                </div>
+                <div class="mobile-distribution-bar">
+                  <div class="mobile-distribution-fill" style="width: 27%; background: var(--color-chart-3);"></div>
+                </div>
+                <div class="mobile-distribution-meta">
+                  <span>实际 27%</span>
+                  <span>目标 30%</span>
+                </div>
+              </div>
+              <div class="mobile-distribution-item">
+                <div class="mobile-distribution-header">
+                  <span class="font-medium">部分不符</span>
+                  <span class="font-medium">13 / 目标 10%</span>
+                </div>
+                <div class="mobile-distribution-bar">
+                  <div class="mobile-distribution-fill" style="width: 13%; background: var(--color-chart-5);"></div>
+                </div>
+                <div class="mobile-distribution-meta">
+                  <span>实际 13%</span>
+                  <span>目标 10%</span>
+                </div>
+              </div>
+              <div class="mobile-distribution-item">
+                <div class="mobile-distribution-header">
+                  <span class="font-medium">不符合</span>
+                  <span class="font-medium">4 / 目标 5%</span>
+                </div>
+                <div class="mobile-distribution-bar">
+                  <div class="mobile-distribution-fill" style="width: 4%; background: var(--color-chart-4);"></div>
+                </div>
+                <div class="mobile-distribution-meta">
+                  <span>实际 4%</span>
+                  <span>目标 5%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trend Chart -->
+        <div class="chart-card mb-5">
+          <div class="chart-header">
+            <div class="chart-title">近周期完成率趋势</div>
+            <div class="flex items-center gap-3">
+              <span class="legend-item"><span class="legend-dot" style="background: var(--color-primary);"></span>自评完成率</span>
+              <span class="legend-item"><span class="legend-dot" style="background: var(--color-chart-6);"></span>上级评估完成率</span>
+            </div>
+          </div>
+          <div class="line-chart">
+            <div class="line-chart-grid">
+              <div class="grid-line"><span class="grid-label">100%</span></div>
+              <div class="grid-line"><span class="grid-label">75%</span></div>
+              <div class="grid-line"><span class="grid-label">50%</span></div>
+              <div class="grid-line"><span class="grid-label">25%</span></div>
+              <div class="grid-line"><span class="grid-label">0%</span></div>
+            </div>
+            <div class="line-chart-area">
+              <svg class="line-svg" viewBox="0 0 600 160" preserveAspectRatio="xMidYMid meet">
+                <circle cx="50" cy="140" r="3" fill="var(--color-chart-grid)"/>
+                <circle cx="162" cy="140" r="3" fill="var(--color-chart-grid)"/>
+                <circle cx="275" cy="140" r="3" fill="var(--color-chart-grid)"/>
+                <circle cx="387" cy="140" r="3" fill="var(--color-chart-grid)"/>
+                <circle cx="500" cy="140" r="3" fill="var(--color-chart-grid)"/>
+
+                <polyline points="50,100 162,70 275,55 387,45 500,25" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="50" cy="100" r="4" fill="var(--color-primary)"/>
+                <circle cx="162" cy="70" r="4" fill="var(--color-primary)"/>
+                <circle cx="275" cy="55" r="4" fill="var(--color-primary)"/>
+                <circle cx="387" cy="45" r="4" fill="var(--color-primary)"/>
+                <circle cx="500" cy="25" r="4" fill="var(--color-primary)"/>
+
+                <polyline points="50,125 162,110 275,95 387,75 500,55" fill="none" stroke="var(--color-chart-6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="50" cy="125" r="4" fill="var(--color-chart-6)"/>
+                <circle cx="162" cy="110" r="4" fill="var(--color-chart-6)"/>
+                <circle cx="275" cy="95" r="4" fill="var(--color-chart-6)"/>
+                <circle cx="387" cy="75" r="4" fill="var(--color-chart-6)"/>
+                <circle cx="500" cy="55" r="4" fill="var(--color-chart-6)"/>
+
+                <text x="50" y="155" text-anchor="middle" font-size="11" fill="var(--color-text-tertiary)">2022 下</text>
+                <text x="162" y="155" text-anchor="middle" font-size="11" fill="var(--color-text-tertiary)">2023 上</text>
+                <text x="275" y="155" text-anchor="middle" font-size="11" fill="var(--color-text-tertiary)">2023 下</text>
+                <text x="387" y="155" text-anchor="middle" font-size="11" fill="var(--color-text-tertiary)">2024 上</text>
+                <text x="500" y="155" text-anchor="middle" font-size="11" fill="var(--color-text-tertiary)">2024 下</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Mobile Trend Summary -->
+          <div class="trend-summary">
+            <div class="trend-summary-item">
+              <span class="trend-summary-label">自评完成率</span>
+              <div class="trend-summary-value">
+                72%
+                <span class="statistic-trend up">
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>
+                  +12%
+                </span>
+              </div>
+            </div>
+            <div class="trend-summary-item">
+              <span class="trend-summary-label">上级评估完成率</span>
+              <div class="trend-summary-value">
+                18%
+                <span class="statistic-trend down">
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>
+                  -3%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mobile Sparkline -->
+          <div class="trend-sparkline mobile-only">
+            <svg class="line-svg" viewBox="0 0 300 80" preserveAspectRatio="xMidYMid meet">
+              <polyline points="10,60 70,40 130,30 190,20 250,5" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <polyline points="10,75 70,65 130,55 190,45 250,35" fill="none" stroke="var(--color-chart-6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- Summary Table -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">部门概览</div>
+            <button class="btn btn-secondary btn-sm">导出明细</button>
+          </div>
+          <div class="card-body card-body-clean">
+            <div class="table-wrapper table-wrapper-clean">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>部门</th>
+                    <th>参与人数</th>
+                    <th>目标设定</th>
+                    <th>自评完成</th>
+                    <th>互评完成</th>
+                    <th>上级评估</th>
+                    <th>整体状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="cell-primary">产品研发部</td>
+                    <td>48</td>
+                    <td><span class="tag tag-success">100%</span></td>
+                    <td><span class="tag tag-primary">88%</span></td>
+                    <td><span class="tag tag-warning">62%</span></td>
+                    <td><span class="tag tag-warning">15%</span></td>
+                    <td><span class="tag tag-primary">正常推进</span></td>
+                  </tr>
+                  <tr>
+                    <td class="cell-primary">设计中心</td>
+                    <td>22</td>
+                    <td><span class="tag tag-success">100%</span></td>
+                    <td><span class="tag tag-warning">76%</span></td>
+                    <td><span class="tag tag-warning">45%</span></td>
+                    <td><span class="tag tag-warning">8%</span></td>
+                    <td><span class="tag tag-warning">需关注</span></td>
+                  </tr>
+                  <tr>
+                    <td class="cell-primary">市场运营部</td>
+                    <td>36</td>
+                    <td><span class="tag tag-success">100%</span></td>
+                    <td><span class="tag tag-warning">65%</span></td>
+                    <td><span class="tag tag-danger">38%</span></td>
+                    <td><span class="tag tag-danger">5%</span></td>
+                    <td><span class="tag tag-danger">滞后</span></td>
+                  </tr>
+                  <tr>
+                    <td class="cell-primary">销售部</td>
+                    <td>42</td>
+                    <td><span class="tag tag-success">100%</span></td>
+                    <td><span class="tag tag-warning">54%</span></td>
+                    <td><span class="tag tag-danger">28%</span></td>
+                    <td><span class="tag tag-danger">3%</span></td>
+                    <td><span class="tag tag-danger">严重滞后</span></td>
+                  </tr>
+                  <tr>
+                    <td class="cell-primary">职能支持部</td>
+                    <td>21</td>
+                    <td><span class="tag tag-success">100%</span></td>
+                    <td><span class="tag tag-primary">92%</span></td>
+                    <td><span class="tag tag-primary">71%</span></td>
+                    <td><span class="tag tag-warning">22%</span></td>
+                    <td><span class="tag tag-primary">正常推进</span></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <!-- Mobile Table Card List -->
+              <div class="table-card-list">
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <span class="font-medium">产品研发部</span>
+                    <span class="tag tag-primary">正常推进</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">参与人数</span>
+                      <span class="table-card-value">48</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">目标设定</span>
+                      <span class="table-card-value"><span class="tag tag-success">100%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">自评完成</span>
+                      <span class="table-card-value"><span class="tag tag-primary">88%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">互评完成</span>
+                      <span class="table-card-value"><span class="tag tag-warning">62%</span></span>
+                    </div>
+                    <div class="table-card-row full-width">
+                      <span class="table-card-label">上级评估</span>
+                      <span class="table-card-value"><span class="tag tag-warning">15%</span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <span class="font-medium">设计中心</span>
+                    <span class="tag tag-warning">需关注</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">参与人数</span>
+                      <span class="table-card-value">22</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">目标设定</span>
+                      <span class="table-card-value"><span class="tag tag-success">100%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">自评完成</span>
+                      <span class="table-card-value"><span class="tag tag-warning">76%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">互评完成</span>
+                      <span class="table-card-value"><span class="tag tag-warning">45%</span></span>
+                    </div>
+                    <div class="table-card-row full-width">
+                      <span class="table-card-label">上级评估</span>
+                      <span class="table-card-value"><span class="tag tag-warning">8%</span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <span class="font-medium">市场运营部</span>
+                    <span class="tag tag-danger">滞后</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">参与人数</span>
+                      <span class="table-card-value">36</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">目标设定</span>
+                      <span class="table-card-value"><span class="tag tag-success">100%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">自评完成</span>
+                      <span class="table-card-value"><span class="tag tag-warning">65%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">互评完成</span>
+                      <span class="table-card-value"><span class="tag tag-danger">38%</span></span>
+                    </div>
+                    <div class="table-card-row full-width">
+                      <span class="table-card-label">上级评估</span>
+                      <span class="table-card-value"><span class="tag tag-danger">5%</span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <span class="font-medium">销售部</span>
+                    <span class="tag tag-danger">严重滞后</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">参与人数</span>
+                      <span class="table-card-value">42</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">目标设定</span>
+                      <span class="table-card-value"><span class="tag tag-success">100%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">自评完成</span>
+                      <span class="table-card-value"><span class="tag tag-warning">54%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">互评完成</span>
+                      <span class="table-card-value"><span class="tag tag-danger">28%</span></span>
+                    </div>
+                    <div class="table-card-row full-width">
+                      <span class="table-card-label">上级评估</span>
+                      <span class="table-card-value"><span class="tag tag-danger">3%</span></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-card">
+                  <div class="table-card-header">
+                    <span class="font-medium">职能支持部</span>
+                    <span class="tag tag-primary">正常推进</span>
+                  </div>
+                  <div class="table-card-body">
+                    <div class="table-card-row">
+                      <span class="table-card-label">参与人数</span>
+                      <span class="table-card-value">21</span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">目标设定</span>
+                      <span class="table-card-value"><span class="tag tag-success">100%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">自评完成</span>
+                      <span class="table-card-value"><span class="tag tag-primary">92%</span></span>
+                    </div>
+                    <div class="table-card-row">
+                      <span class="table-card-label">互评完成</span>
+                      <span class="table-card-value"><span class="tag tag-primary">71%</span></span>
+                    </div>
+                    <div class="table-card-row full-width">
+                      <span class="table-card-label">上级评估</span>
+                      <span class="table-card-value"><span class="tag tag-warning">22%</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Mobile Filter Drawer -->
+  <div class="modal-backdrop" id="filterBackdrop"></div>
+  <div class="mobile-filter-drawer" id="filterDrawer">
+    <div class="mobile-filter-drawer-header">
+      <span class="font-medium">筛选看板</span>
+      <button class="icon-btn" id="filterClose" aria-label="关闭">
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="mobile-filter-drawer-body">
+      <div class="form-group">
+        <label class="form-label">绩效周期</label>
+        <select class="form-control select-control">
+          <option>2024 下半年绩效周期</option>
+          <option>2024 上半年绩效周期</option>
+          <option>2023 下半年绩效周期</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">部门</label>
+        <select class="form-control select-control">
+          <option>全部部门</option>
+          <option>产品研发部</option>
+          <option>设计中心</option>
+          <option>市场运营部</option>
+          <option>销售部</option>
+          <option>职能支持部</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">状态</label>
+        <select class="form-control select-control">
+          <option>全部状态</option>
+          <option>正常推进</option>
+          <option>需关注</option>
+          <option>滞后</option>
+        </select>
+      </div>
+    </div>
+    <div class="mobile-filter-drawer-footer">
+      <button class="btn btn-secondary">重置</button>
+      <button class="btn btn-primary" id="filterApply">应用</button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('menuToggle').addEventListener('click', function() {
+      document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    document.addEventListener('click', function(e) {
+      var sidebar = document.getElementById('sidebar');
+      var menuToggle = document.getElementById('menuToggle');
+      if (window.innerWidth < 1024 && sidebar.classList.contains('open') &&
+          !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+
+    // Mobile filter drawer
+    var filterToggle = document.getElementById('filterToggle');
+    var filterDrawer = document.getElementById('filterDrawer');
+    var filterBackdrop = document.getElementById('filterBackdrop');
+    var filterClose = document.getElementById('filterClose');
+    var filterApply = document.getElementById('filterApply');
+
+    function openFilter() {
+      filterDrawer.classList.add('open');
+      filterBackdrop.classList.add('open');
+    }
+
+    function closeFilter() {
+      filterDrawer.classList.remove('open');
+      filterBackdrop.classList.remove('open');
+    }
+
+    if (filterToggle) filterToggle.addEventListener('click', openFilter);
+    if (filterClose) filterClose.addEventListener('click', closeFilter);
+    if (filterApply) filterApply.addEventListener('click', closeFilter);
+    if (filterBackdrop) filterBackdrop.addEventListener('click', closeFilter);
+  </script>
+</body>
+</html>

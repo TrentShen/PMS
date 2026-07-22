@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>下属评估 - 绩效管理 | PMS</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Page specific: leader-eval */
+    .eval-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: var(--space-5);
+      align-items: start;
+    }
+
+    .subordinate-list {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-raised);
+      overflow: hidden;
+    }
+
+    .subordinate-list-header {
+      padding: var(--space-4) var(--space-5);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .subordinate-list-title {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .subordinate-search {
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .subordinate-search input {
+      width: 100%;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      outline: none;
+    }
+
+    .subordinate-items {
+      display: flex;
+      flex-direction: column;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .subordinate-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-3) var(--space-4);
+      border-bottom: 1px solid var(--color-border);
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      gap: var(--space-3);
+    }
+
+    .subordinate-item:hover {
+      background: var(--color-bg);
+    }
+
+    .subordinate-item.active {
+      background: var(--color-primary-subtle);
+    }
+
+    .subordinate-item:last-child {
+      border-bottom: none;
+    }
+
+    .subordinate-info {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      min-width: 0;
+      flex: 1;
+    }
+
+    .subordinate-name {
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subordinate-role {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+
+    .detail-panel {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-raised);
+      overflow: hidden;
+    }
+
+    .detail-header {
+      padding: var(--space-5);
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-4);
+      flex-wrap: wrap;
+    }
+
+    .detail-user {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .detail-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--color-primary-subtle);
+      color: var(--color-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: var(--font-weight-semibold);
+    }
+
+    .detail-name {
+      font-size: 18px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+    }
+
+    .detail-meta {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-top: 2px;
+    }
+
+    .detail-body {
+      padding: var(--space-5);
+    }
+
+    .detail-section {
+      margin-bottom: var(--space-6);
+    }
+
+    .detail-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .detail-section-title {
+      font-size: 16px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-primary);
+      margin-bottom: var(--space-4);
+    }
+
+    .peer-review-item {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      margin-bottom: var(--space-3);
+      background: var(--color-surface-raised);
+    }
+
+    .peer-review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--space-3);
+    }
+
+    .peer-review-author {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: 14px;
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
+    }
+
+    .peer-review-content {
+      font-size: 14px;
+      color: var(--color-text-secondary);
+      line-height: 1.7;
+    }
+
+    .eval-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-5);
+    }
+
+    .summary-box {
+      background: var(--color-primary-subtle);
+      border: 1px solid rgba(51, 112, 255, 0.2);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+    }
+
+    .summary-title {
+      font-size: 13px;
+      font-weight: var(--font-weight-medium);
+      color: var(--color-primary);
+      margin-bottom: var(--space-2);
+    }
+
+    .summary-text {
+      font-size: 14px;
+      color: var(--color-text-primary);
+      line-height: 1.7;
+    }
+
+    .detail-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-5);
+      border-top: 1px solid var(--color-border);
+      background: var(--color-surface-raised);
+    }
+
+    /* Mobile goal cards */
+    .goal-card-list {
+      display: none;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .goal-card {
+      background: var(--color-surface-raised);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+    }
+
+    .goal-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: var(--space-2);
+      gap: var(--space-3);
+    }
+
+    .goal-card-title {
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-primary);
+    }
+
+    .goal-card-desc {
+      font-size: var(--font-size-small-mobile);
+      color: var(--color-text-secondary);
+      margin-bottom: var(--space-3);
+    }
+
+    .goal-card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mobile-back-btn {
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--color-primary);
+      font-weight: var(--font-weight-medium);
+      margin-bottom: var(--space-4);
+    }
+
+    @media (max-width: 1200px) {
+      .eval-layout {
+        grid-template-columns: 1fr;
+      }
+      .subordinate-items {
+        max-height: 240px;
+      }
+    }
+
+    @media (max-width: 767px) {
+      .eval-layout {
+        display: block;
+      }
+
+      .subordinate-list {
+        display: block;
+      }
+
+      .subordinate-list.hidden-mobile {
+        display: none;
+      }
+
+      .detail-panel {
+        display: none;
+      }
+
+      .detail-panel.visible-mobile {
+        display: block;
+      }
+
+      .mobile-back-btn {
+        display: inline-flex;
+      }
+
+      .subordinate-search input {
+        height: var(--form-input-height-mobile);
+      }
+
+      .subordinate-item {
+        min-height: var(--touch-target-comfortable);
+      }
+
+      .subordinate-name {
+        font-size: var(--font-size-body-large-mobile);
+      }
+
+      .subordinate-role {
+        font-size: var(--font-size-micro-mobile);
+      }
+
+      .detail-header {
+        flex-direction: column;
+        padding: var(--space-4);
+      }
+
+      .detail-avatar {
+        width: 48px;
+        height: 48px;
+        font-size: 18px;
+      }
+
+      .detail-name {
+        font-size: var(--font-size-h2-mobile);
+      }
+
+      .detail-meta {
+        font-size: var(--font-size-small-mobile);
+      }
+
+      .detail-body {
+        padding: var(--space-4);
+      }
+
+      .detail-section-title {
+        font-size: var(--font-size-h3-mobile);
+      }
+
+      .detail-section .data-table {
+        display: none;
+      }
+
+      .goal-card-list {
+        display: flex;
+      }
+
+      .summary-box {
+        padding: var(--space-4);
+      }
+
+      .summary-text {
+        font-size: var(--font-size-body-large-mobile);
+      }
+
+      .peer-review-item {
+        padding: var(--space-4);
+      }
+
+      .peer-review-content {
+        font-size: var(--font-size-body-large-mobile);
+      }
+
+      .eval-form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .detail-actions {
+        display: none;
+      }
+
+      .table-card-list.mobile-only {
+        display: flex !important;
+      }
+
+      .form-bottom-actions.mobile-only {
+        display: flex !important;
+      }
+
+      .subordinate-items {
+        display: none;
+      }
+    }
+
+    @media (max-width: 639px) {
+      .subordinate-list {
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        margin: 0 calc(-1 * var(--space-3));
+        width: calc(100% + 2 * var(--space-3));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">P</div>
+        <span class="logo-text">绩效管理</span>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-title">我的</div>
+          <a href="./home.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </span>
+            首页
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </span>
+            历史绩效
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            </span>
+            通知
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            互评任务
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            </span>
+            匿名评价
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">评估</div>
+          <a href="./leader-eval.html" class="nav-item active">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+            </span>
+            下属评估
+          </a>
+          <a href="./calibration.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </span>
+            校准
+          </a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">管理</div>
+          <a href="./hr-console.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            </span>
+            HR 管理台
+          </a>
+          <a href="./dashboard.html" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </span>
+            绩效看板
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </span>
+            目标周期
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
+            试用期管理
+          </a>
+          <a href="#" class="nav-item">
+            <span class="nav-icon">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            用户与权限
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" id="menuToggle" aria-label="打开菜单">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <span class="page-title">下属评估</span>
+        </div>
+        <div class="topbar-right">
+          <div class="search-box">
+            <span class="search-icon">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <input type="text" placeholder="搜索下属、目标…">
+          </div>
+          <button class="icon-btn" aria-label="通知">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          </button>
+          <button class="role-switch">
+            <span>当前角色：直属上级</span>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="user-avatar" aria-label="当前用户：王强">王</div>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <div class="page-header mb-5">
+          <div class="page-header-left">
+            <div class="page-header-title">下属评估</div>
+            <div class="page-header-subtitle">查看并评估你的下属绩效</div>
+          </div>
+          <div class="page-header-actions">
+            <select class="form-control select-control" style="width: 180px;">
+              <option>2024 下半年绩效周期</option>
+              <option>2024 上半年绩效周期</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="eval-layout">
+          <!-- Subordinate List -->
+          <div class="subordinate-list" id="subordinateList">
+            <div class="subordinate-list-header">
+              <div class="subordinate-list-title">下属列表</div>
+              <span class="tag tag-default">5 人</span>
+            </div>
+            <div class="subordinate-search">
+              <input type="text" placeholder="搜索姓名">
+            </div>
+            <div class="subordinate-items">
+              <div class="subordinate-item active" data-subordinate="zhangyu">
+                <div class="subordinate-info">
+                  <div class="avatar" aria-label="张宇">张</div>
+                  <div>
+                    <div class="subordinate-name">张宇</div>
+                    <div class="subordinate-role">前端工程师</div>
+                  </div>
+                </div>
+                <span class="tag tag-warning">待评估</span>
+              </div>
+              <div class="subordinate-item" data-subordinate="limin">
+                <div class="subordinate-info">
+                  <div class="avatar" aria-label="李敏" style="background: var(--color-success-bg); color: var(--color-success);">李</div>
+                  <div>
+                    <div class="subordinate-name">李敏</div>
+                    <div class="subordinate-role">产品经理</div>
+                  </div>
+                </div>
+                <span class="tag tag-success">已完成</span>
+              </div>
+              <div class="subordinate-item" data-subordinate="chenchen">
+                <div class="subordinate-info">
+                  <div class="avatar" aria-label="陈晨" style="background: var(--color-warning-bg); color: var(--color-warning);">陈</div>
+                  <div>
+                    <div class="subordinate-name">陈晨</div>
+                    <div class="subordinate-role">UI 设计师</div>
+                  </div>
+                </div>
+                <span class="tag tag-warning">自评中</span>
+              </div>
+              <div class="subordinate-item" data-subordinate="zhaoyang">
+                <div class="subordinate-info">
+                  <div class="avatar" aria-label="赵阳" style="background: var(--color-info-bg); color: var(--color-info);">赵</div>
+                  <div>
+                    <div class="subordinate-name">赵阳</div>
+                    <div class="subordinate-role">后端工程师</div>
+                  </div>
+                </div>
+                <span class="tag tag-warning">待评估</span>
+              </div>
+              <div class="subordinate-item" data-subordinate="liujia">
+                <div class="subordinate-info">
+                  <div class="avatar" aria-label="刘佳" style="background: var(--color-danger-bg); color: var(--color-danger);">刘</div>
+                  <div>
+                    <div class="subordinate-name">刘佳</div>
+                    <div class="subordinate-role">测试工程师</div>
+                  </div>
+                </div>
+                <span class="tag tag-success">已完成</span>
+              </div>
+            </div>
+
+            <!-- Mobile List Card View (alternative) -->
+            <div class="table-card-list mobile-only" style="padding: 0; border-top: 1px solid var(--color-border);">
+              <div class="table-card" style="border-radius: 0; border-left: none; border-right: none;">
+                <div class="table-card-header">
+                  <div class="user-cell">
+                    <div class="avatar" aria-label="张宇">张</div>
+                    <div class="user-info">
+                      <div class="user-name">张宇</div>
+                      <div class="user-meta">前端工程师</div>
+                    </div>
+                  </div>
+                  <span class="tag tag-warning">待评估</span>
+                </div>
+                <div class="table-card-footer">
+                  <button class="btn btn-primary btn-sm mobile-eval-btn">去评估</button>
+                </div>
+              </div>
+              <div class="table-card" style="border-radius: 0; border-left: none; border-right: none; border-top: none;">
+                <div class="table-card-header">
+                  <div class="user-cell">
+                    <div class="avatar" aria-label="李敏" style="background: var(--color-success-bg); color: var(--color-success);">李</div>
+                    <div class="user-info">
+                      <div class="user-name">李敏</div>
+                      <div class="user-meta">产品经理</div>
+                    </div>
+                  </div>
+                  <span class="tag tag-success">已完成</span>
+                </div>
+                <div class="table-card-footer">
+                  <button class="btn btn-ghost btn-sm mobile-eval-btn">查看</button>
+                </div>
+              </div>
+              <div class="table-card" style="border-radius: 0; border-left: none; border-right: none; border-top: none;">
+                <div class="table-card-header">
+                  <div class="user-cell">
+                    <div class="avatar" aria-label="陈晨" style="background: var(--color-warning-bg); color: var(--color-warning);">陈</div>
+                    <div class="user-info">
+                      <div class="user-name">陈晨</div>
+                      <div class="user-meta">UI 设计师</div>
+                    </div>
+                  </div>
+                  <span class="tag tag-warning">自评中</span>
+                </div>
+                <div class="table-card-footer">
+                  <button class="btn btn-primary btn-sm mobile-eval-btn">去评估</button>
+                </div>
+              </div>
+              <div class="table-card" style="border-radius: 0; border-left: none; border-right: none; border-top: none;">
+                <div class="table-card-header">
+                  <div class="user-cell">
+                    <div class="avatar" aria-label="赵阳" style="background: var(--color-info-bg); color: var(--color-info);">赵</div>
+                    <div class="user-info">
+                      <div class="user-name">赵阳</div>
+                      <div class="user-meta">后端工程师</div>
+                    </div>
+                  </div>
+                  <span class="tag tag-warning">待评估</span>
+                </div>
+                <div class="table-card-footer">
+                  <button class="btn btn-primary btn-sm mobile-eval-btn">去评估</button>
+                </div>
+              </div>
+              <div class="table-card" style="border-radius: 0; border-left: none; border-right: none; border-top: none;">
+                <div class="table-card-header">
+                  <div class="user-cell">
+                    <div class="avatar" aria-label="刘佳" style="background: var(--color-danger-bg); color: var(--color-danger);">刘</div>
+                    <div class="user-info">
+                      <div class="user-name">刘佳</div>
+                      <div class="user-meta">测试工程师</div>
+                    </div>
+                  </div>
+                  <span class="tag tag-success">已完成</span>
+                </div>
+                <div class="table-card-footer">
+                  <button class="btn btn-ghost btn-sm mobile-eval-btn">查看</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detail Panel -->
+          <div class="detail-panel" id="detailPanel">
+            <button class="mobile-back-btn" id="mobileBackBtn">
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              返回下属列表
+            </button>
+            <div class="detail-header">
+              <div class="detail-user">
+                <div class="detail-avatar" aria-label="张宇">张</div>
+                <div>
+                  <div class="detail-name">张宇</div>
+                  <div class="detail-meta">前端工程师 · 产品研发部 · 入职 2 年</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="tag tag-warning">自评已提交</span>
+                <button class="btn btn-secondary btn-sm">查看历史</button>
+              </div>
+            </div>
+
+            <div class="detail-body">
+              <!-- Goals Read-only -->
+              <div class="detail-section">
+                <div class="detail-section-title">绩效目标</div>
+                <div class="table-wrapper table-wrapper-clean">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>目标</th>
+                        <th>衡量标准</th>
+                        <th>权重</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><div class="cell-primary">完成 PMS 绩效系统核心模块</div></td>
+                        <td class="cell-secondary">代码评审通过，测试覆盖率 ≥ 80%</td>
+                        <td>40%</td>
+                        <td><span class="tag tag-success">已达成</span></td>
+                      </tr>
+                      <tr>
+                        <td><div class="cell-primary">提升前端性能与体验</div></td>
+                        <td class="cell-secondary">LCP &lt; 2.5s，交互响应 &lt; 100ms</td>
+                        <td>30%</td>
+                        <td><span class="tag tag-primary">进行中</span></td>
+                      </tr>
+                      <tr>
+                        <td><div class="cell-primary">跨团队协作支持</div></td>
+                        <td class="cell-secondary">完成 3 次需求对接，零延期交付</td>
+                        <td>30%</td>
+                        <td><span class="tag tag-primary">进行中</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Mobile Goal Cards -->
+                <div class="goal-card-list">
+                  <div class="goal-card">
+                    <div class="goal-card-header">
+                      <div class="goal-card-title">完成 PMS 绩效系统核心模块</div>
+                      <span class="weight-badge">40%</span>
+                    </div>
+                    <div class="goal-card-desc">代码评审通过，测试覆盖率 ≥ 80%</div>
+                    <div class="goal-card-meta">
+                      <span class="tag tag-success">已达成</span>
+                    </div>
+                  </div>
+                  <div class="goal-card">
+                    <div class="goal-card-header">
+                      <div class="goal-card-title">提升前端性能与体验</div>
+                      <span class="weight-badge">30%</span>
+                    </div>
+                    <div class="goal-card-desc">LCP &lt; 2.5s，交互响应 &lt; 100ms</div>
+                    <div class="goal-card-meta">
+                      <span class="tag tag-primary">进行中</span>
+                    </div>
+                  </div>
+                  <div class="goal-card">
+                    <div class="goal-card-header">
+                      <div class="goal-card-title">跨团队协作支持</div>
+                      <span class="weight-badge">30%</span>
+                    </div>
+                    <div class="goal-card-desc">完成 3 次需求对接，零延期交付</div>
+                    <div class="goal-card-meta">
+                      <span class="tag tag-primary">进行中</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Self Review -->
+              <div class="detail-section">
+                <div class="detail-section-title">员工自评</div>
+                <div class="summary-box">
+                  <div class="summary-title">综合自评</div>
+                  <div class="summary-text">本周期主要完成了 PMS 绩效系统的核心页面原型与开发工作，首页工作台、自评流程、上级评估等模块均按里程碑交付。性能方面通过懒加载与代码分割，首屏加载时间从 3.2s 优化到 2.1s。</div>
+                </div>
+                <div class="grid-2 mt-4">
+                  <div>
+                    <div class="review-label">业绩评分</div>
+                    <div class="review-content font-semibold">5 / 5</div>
+                  </div>
+                  <div>
+                    <div class="review-label">价值观平均分</div>
+                    <div class="review-content font-semibold">4.3 / 5</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Peer Reviews -->
+              <div class="detail-section">
+                <div class="detail-section-title">互评汇总</div>
+                <div class="peer-review-item">
+                  <div class="peer-review-header">
+                    <div class="peer-review-author">
+                      <div class="avatar avatar-sm" aria-label="李敏">李</div>
+                      <span>李敏（产品经理）</span>
+                    </div>
+                    <span class="tag tag-primary">协作频繁</span>
+                  </div>
+                  <div class="peer-review-content">张宇在 PMS 项目中响应速度很快，需求变更时能及时调整方案，与产品团队配合顺畅。建议后续多参与前期需求讨论，提前识别技术风险。</div>
+                </div>
+                <div class="peer-review-item">
+                  <div class="peer-review-header">
+                    <div class="peer-review-author">
+                      <div class="avatar avatar-sm" aria-label="陈晨" style="background: var(--color-info-bg); color: var(--color-info);">陈</div>
+                      <span>陈晨（UI 设计师）</span>
+                    </div>
+                    <span class="tag tag-primary">协作频繁</span>
+                  </div>
+                  <div class="peer-review-content">对设计还原度要求高，能主动反馈实现成本，帮助设计团队优化方案。沟通积极主动，值得认可。</div>
+                </div>
+              </div>
+
+              <!-- Manager Evaluation Form -->
+              <div class="detail-section">
+                <div class="detail-section-title">上级评估</div>
+                <div class="eval-form-grid">
+                  <div class="form-group">
+                    <label class="form-label form-label-required">业绩评分</label>
+                    <select class="form-control select-control">
+                      <option>5 - 远超预期</option>
+                      <option selected>4 - 超出预期</option>
+                      <option>3 - 符合预期</option>
+                      <option>2 - 部分符合</option>
+                      <option>1 - 不符合</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label form-label-required">价值观评分</label>
+                    <select class="form-control select-control">
+                      <option>5 - 远超预期</option>
+                      <option selected>4 - 超出预期</option>
+                      <option>3 - 符合预期</option>
+                      <option>2 - 部分符合</option>
+                      <option>1 - 不符合</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label form-label-required">综合评语</label>
+                  <textarea class="form-control" placeholder="请给出具体的优势、待提升项及发展建议…">张宇本周期在 PMS 系统核心模块交付上表现突出，质量和进度均超出预期。在跨团队协作中积极主动，对设计还原和性能优化有较高追求。建议下一步提升系统架构设计能力，承担更复杂模块的 owner。</textarea>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">绩效等级建议</label>
+                  <div class="rating-options">
+                    <button type="button" class="rating-option selected" aria-pressed="true">A</button>
+                    <button type="button" class="rating-option" aria-pressed="false">B+</button>
+                    <button type="button" class="rating-option" aria-pressed="false">B</button>
+                    <button type="button" class="rating-option" aria-pressed="false">C</button>
+                    <button type="button" class="rating-option" aria-pressed="false">D</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-actions">
+              <button class="btn btn-secondary">退回修改</button>
+              <button class="btn btn-primary">提交评估</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Mobile Bottom Actions -->
+  <div class="form-bottom-actions mobile-only" id="mobileBottomActions">
+    <button class="btn btn-secondary">退回修改</button>
+    <button class="btn btn-primary">提交评估</button>
+  </div>
+
+  <script>
+    document.getElementById('menuToggle').addEventListener('click', function() {
+      document.getElementById('sidebar').classList.toggle('open');
+    });
+
+    document.addEventListener('click', function(e) {
+      var sidebar = document.getElementById('sidebar');
+      var menuToggle = document.getElementById('menuToggle');
+      if (window.innerWidth < 1024 && sidebar.classList.contains('open') &&
+          !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+
+    // Mobile list/detail navigation
+    var subordinateList = document.getElementById('subordinateList');
+    var detailPanel = document.getElementById('detailPanel');
+    var mobileBackBtn = document.getElementById('mobileBackBtn');
+    var mobileEvalBtns = document.querySelectorAll('.mobile-eval-btn');
+
+    function showMobileDetail() {
+      if (window.innerWidth < 768) {
+        subordinateList.classList.add('hidden-mobile');
+        detailPanel.classList.add('visible-mobile');
+      }
+    }
+
+    function showMobileList() {
+      if (window.innerWidth < 768) {
+        subordinateList.classList.remove('hidden-mobile');
+        detailPanel.classList.remove('visible-mobile');
+      }
+    }
+
+    mobileEvalBtns.forEach(function(btn) {
+      btn.addEventListener('click', showMobileDetail);
+    });
+
+    if (mobileBackBtn) mobileBackBtn.addEventListener('click', showMobileList);
+  </script>
+</body>
+</html>
