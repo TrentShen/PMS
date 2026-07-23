@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 # 绩效趋势分析（个人/部门）
-from datetime import date
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -11,7 +9,8 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.historical_performance import HistoricalPerformanceResult
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, require_role
+from pms.services.auth import get_current_user, require_role
+from pms.services.scope import visible_user_ids
 
 router = APIRouter(prefix="/trend", tags=["trend"])
 
@@ -95,18 +94,27 @@ def get_department_trend(
     session: Session = Depends(get_session),
     hr: User = Depends(require_role("hrbp", "super_admin")),
 ):
-    """部门绩效趋势：各部门在每个已发布周期的平均分。"""
-    rows = session.exec(
+    """部门绩效趋势：各部门在每个已发布周期的平均分。
+
+    hrbp 只能看到自己 scope（hrbp_scope_dept_ids）内的部门数据；
+    super_admin 全局可见。HR 部门成员按 scope 规则天然剔除。
+    """
+    visible_ids = visible_user_ids(session, hr)
+    stmt = (
         select(CycleParticipant, PerformanceCycle, User, Department)
         .join(PerformanceCycle, PerformanceCycle.id == CycleParticipant.cycle_id)
         .join(User, User.id == CycleParticipant.user_id)
         .join(Department, Department.id == User.department_id, isouter=True)
         .where(PerformanceCycle.status == "published")
-        .order_by(PerformanceCycle.end_date.asc(), Department.id.asc())
+    )
+    if visible_ids is not None:
+        stmt = stmt.where(CycleParticipant.user_id.in_(visible_ids))
+    rows = session.exec(
+        stmt.order_by(PerformanceCycle.end_date.asc(), Department.id.asc())
     ).all()
 
     grouped: dict[tuple[str, str], dict] = {}
-    for cp, cycle, user, dept in rows:
+    for cp, cycle, _user, dept in rows:
         dept_name = dept.name if dept else "未分配部门"
         key = (cycle.name, dept_name)
         if key not in grouped:

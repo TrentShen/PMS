@@ -1,7 +1,7 @@
 // 绩效趋势图（个人视角）
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Card, Empty, Space, Tag, Typography, message } from "antd";
+import { Card, Empty, Space, Typography, message } from "antd";
 import { Line } from "@ant-design/charts";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";

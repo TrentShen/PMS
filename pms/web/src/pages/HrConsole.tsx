@@ -1,5 +1,5 @@
 // HR 管理台：周期管理 + 参与人 + Excel 导入/导出 + 催办 + 考核对象过滤
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -24,7 +24,6 @@ import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api, formatError } from "@/services/api";
-import { useAuth } from "@/stores/auth";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -88,7 +87,6 @@ const ACTION_ICON_STYLE: React.CSSProperties = { fontSize: 16 };
 
 export default function HrConsole() {
   const navigate = useNavigate();
-  const user = useAuth((s) => s.user)!;
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [objectiveCycles, setObjectiveCycles] = useState<ObjectiveCycle[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -569,7 +567,7 @@ export default function HrConsole() {
 }
 
 // ========== 时间线配置面板（PRD 3.2.3）==========
-function StageConfigPanel({ cycleId, cycleStatus }: { cycleId: number; cycleStatus: string }) {
+function StageConfigPanel({ cycleId }: { cycleId: number; cycleStatus: string }) {
   const [stageForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
 

@@ -2,11 +2,9 @@
 // 员工看到自己所有已发布周期的结果；Leader/HR 可切员工看下属
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, Select, Space, Table, Tag, Typography } from "antd";
+import { Card, Empty, Space, Table, Tag, Typography } from "antd";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
-import { hasAnyRole } from "@/components/RequireRole";
-import { ROLE } from "@/App";
 
 interface MyCycleItem {
   cycle: { id: number; name: string; status: string; start_date: string; end_date: string };

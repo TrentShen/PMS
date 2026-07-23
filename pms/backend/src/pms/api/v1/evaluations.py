@@ -362,7 +362,7 @@ def submit_superior_evaluation(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # 只有该员工的直属上级才能做上级评估（HR 只能查看，不能代评）
+    # 直属上级可做上级评估；HR（hrbp/super_admin）可代评——部分 Leader 需要 HR 支持，刻意保留该入口
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
@@ -370,7 +370,7 @@ def submit_superior_evaluation(
         raise HTTPException(status_code=400, detail="不能给自己做上级评估（自评请用自评接口）")
 
     if not can_act_as_superior(current, target):
-        raise HTTPException(status_code=403, detail="只有直属上级才能做上级评估")
+        raise HTTPException(status_code=403, detail="只有直属上级或 HR 才能做上级评估")
 
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle or cycle.status != "in_progress":

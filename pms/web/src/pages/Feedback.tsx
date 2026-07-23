@@ -3,7 +3,7 @@
 //   - 上级/HR：从下属列表点进来 → 写面谈记录
 //   - 员工：从首页 → 查看上级对自己的反馈 → 确认/有异议
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   Alert,
   Button,

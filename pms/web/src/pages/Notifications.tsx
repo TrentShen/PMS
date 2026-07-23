@@ -1,6 +1,6 @@
 // 通知中心页面（PRD 3.5）
 import { useEffect, useState } from "react";
-import { Badge, Card, Empty, List, Tag } from "antd";
+import { Card, Empty, List, Tag } from "antd";
 import { api } from "@/services/api";
 
 interface Notify {
