@@ -50,6 +50,10 @@ class LeaderReviewRequest(BaseModel):
     remove_user_ids: list[int] = []
 
 
+class PeerDeclineRequest(BaseModel):
+    reason: str | None = None
+
+
 class PeerSubmit(BaseModel):
     perf_score: float
     # 价值观三维度（每个都是 jia/yi/bing）
@@ -381,6 +385,7 @@ def list_my_peer_tasks(
             "target_name": target.name,
             "target_position": target.position,
             "status": pe.status,
+            "decline_reason": pe.decline_reason,
             "submitted_at": pe.submitted_at.isoformat() if pe.submitted_at else None,
         }
         for pe, target, cycle in rows
@@ -460,6 +465,48 @@ def submit_peer_evaluation(
         )
 
     return {"status": "submitted", "task_id": task_id}
+
+
+@router.post("/peer/tasks/{task_id}/decline")
+def decline_peer_evaluation(
+    task_id: int,
+    payload: PeerDeclineRequest,
+    session: Session = Depends(get_session),
+    current: User = Depends(get_current_user),
+):
+    # 互评人拒绝评价（如与该同事无合作，无法客观评价）
+    # 拒绝后该任务不再阻塞上级评估流程（evaluations.py 只查 status == "pending"）
+    task = session.get(PeerEvaluation, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.evaluator_user_id != current.id:
+        raise HTTPException(status_code=403, detail="不是你的互评任务")
+    if task.status != "pending":
+        raise HTTPException(status_code=400, detail="任务已提交或已拒绝，不能重复操作")
+
+    cycle = session.get(PerformanceCycle, task.cycle_id)
+    if not cycle or cycle.status != "in_progress":
+        raise HTTPException(status_code=400, detail="周期不在进行中")
+
+    before = {"status": task.status}
+    reason = payload.reason.strip() if payload.reason else None
+    task.status = "declined"
+    task.decline_reason = reason or None
+    session.add(task)
+
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="decline_peer_evaluation",
+        resource_type="peer_evaluation",
+        resource_id=str(task_id),
+        before=before,
+        after={"status": "declined", "has_reason": bool(reason)},
+    )
+    session.commit()
+
+    return {"status": "declined", "task_id": task_id}
 
 
 # ============ Leader/HR 视角：某员工收到的互评汇总 ============

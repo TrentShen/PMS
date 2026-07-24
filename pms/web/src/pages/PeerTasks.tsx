@@ -15,6 +15,7 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import ValueGradeForm from "@/components/ValueGradeForm";
+import StatusTag from "@/components/ui/StatusTag";
 
 
 interface PeerTask {
@@ -24,13 +25,17 @@ interface PeerTask {
   target_user_id: number;
   target_name: string;
   target_position: string | null;
-  status: string; // pending / submitted
+  status: "pending" | "submitted" | "declined";
+  decline_reason: string | null;
   submitted_at: string | null;
 }
 
 export default function PeerTasks() {
   const [tasks, setTasks] = useState<PeerTask[]>([]);
   const [editing, setEditing] = useState<PeerTask | null>(null);
+  const [declining, setDeclining] = useState<PeerTask | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineSaving, setDeclineSaving] = useState(false);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
@@ -59,6 +64,69 @@ export default function PeerTasks() {
     }
   }
 
+  async function onDecline() {
+    if (!declining) return;
+    setDeclineSaving(true);
+    try {
+      const reason = declineReason.trim();
+      await api.post(`/v1/peer/tasks/${declining.id}/decline`, {
+        reason: reason === "" ? null : reason,
+      });
+      message.success("已拒绝该互评任务");
+      setDeclining(null);
+      setDeclineReason("");
+      await load();
+    } catch (e) {
+      message.error(formatError(e, "拒绝失败"));
+    } finally {
+      setDeclineSaving(false);
+    }
+  }
+
+  function statusTag(t: PeerTask) {
+    if (t.status === "pending") return <Tag color="orange">待评价</Tag>;
+    if (t.status === "submitted") return <Tag color="green">已提交</Tag>;
+    return <StatusTag type="default">已拒绝</StatusTag>;
+  }
+
+  function actionsOf(t: PeerTask) {
+    if (t.status === "declined") return [];
+    if (t.status === "submitted") {
+      return [
+        <Button
+          key="do"
+          onClick={() => {
+            setEditing(t);
+            form.resetFields();
+          }}
+        >
+          重新提交
+        </Button>,
+      ];
+    }
+    return [
+      <Button
+        key="do"
+        type="primary"
+        onClick={() => {
+          setEditing(t);
+          form.resetFields();
+        }}
+      >
+        去评价
+      </Button>,
+      <Button
+        key="decline"
+        onClick={() => {
+          setDeclining(t);
+          setDeclineReason("");
+        }}
+      >
+        拒绝
+      </Button>,
+    ];
+  }
+
   return (
     <Card title="我的互评任务">
       <Alert
@@ -73,30 +141,18 @@ export default function PeerTasks() {
         <List
           dataSource={tasks}
           renderItem={(t) => (
-            <List.Item
-              actions={[
-                <Button
-                  key="do"
-                  type={t.status === "pending" ? "primary" : "default"}
-                  onClick={() => {
-                    setEditing(t);
-                    form.resetFields();
-                  }}
-                >
-                  {t.status === "pending" ? "去评价" : "重新提交"}
-                </Button>,
-              ]}
-            >
+            <List.Item actions={actionsOf(t)}>
               <List.Item.Meta
                 title={
                   <>
-                    {t.target_name}{" "}
-                    <Tag color={t.status === "pending" ? "orange" : "green"}>
-                      {t.status === "pending" ? "待评价" : "已提交"}
-                    </Tag>
+                    {t.target_name} {statusTag(t)}
                   </>
                 }
-                description={`${t.target_position ?? ""} · ${t.cycle_name}`}
+                description={
+                  t.status === "declined" && t.decline_reason
+                    ? `${t.target_position ?? ""} · ${t.cycle_name} · 拒绝原因：${t.decline_reason}`
+                    : `${t.target_position ?? ""} · ${t.cycle_name}`
+                }
               />
             </List.Item>
           )}
@@ -124,6 +180,29 @@ export default function PeerTasks() {
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        open={!!declining}
+        title={declining ? `拒绝对 ${declining.target_name} 的互评` : ""}
+        onOk={onDecline}
+        confirmLoading={declineSaving}
+        okText="确认拒绝"
+        onCancel={() => setDeclining(null)}
+        destroyOnClose
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="拒绝后该任务将标记为已拒绝，上级评估流程不再等待"
+        />
+        <Input.TextArea
+          rows={3}
+          placeholder="拒绝原因（可选），例如：与该同事合作较少，无法客观评价"
+          value={declineReason}
+          onChange={(e) => setDeclineReason(e.target.value)}
+        />
       </Modal>
     </Card>
   );

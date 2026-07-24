@@ -65,7 +65,9 @@ class PeerEvaluation(SQLModel, table=True):
     comment: str | None = None
 
     submitted_at: datetime | None = None
-    status: str = Field(default="pending", max_length=16, index=True)  # pending / submitted
+    status: str = Field(default="pending", max_length=16, index=True)  # pending / submitted / declined
+    # 互评人拒绝评价时填的原因（可选）
+    decline_reason: str | None = None
 
 
 class AnonymousFeedback(SQLModel, table=True):
