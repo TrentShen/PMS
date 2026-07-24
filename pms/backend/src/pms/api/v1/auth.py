@@ -3,7 +3,7 @@ from __future__ import annotations
 # 认证接口：mock 登录（开发用）+ 企微 OAuth 免登（生产）
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -14,7 +14,7 @@ from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import decode_token, get_current_user, is_hr_dept_leader, require_role, sign_token
+from pms.services.auth import get_current_user, is_hr_dept_leader, sign_token
 from pms.services.wecom import get_user_detail, get_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])

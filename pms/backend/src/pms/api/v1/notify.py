@@ -16,6 +16,7 @@ from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, require_role
+from pms.services.notification import NotificationChannel
 from pms.services.wecom import send_textcard
 
 router = APIRouter(prefix="/notify", tags=["notify"])
@@ -89,7 +90,7 @@ def send_urge(
             continue
         notification = NotificationLog(
             target_userid=user.wecom_userid,
-            channel="wecom",
+            channel=NotificationChannel.WECOM_TEXT,
             title="催办通知",
             content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的绩效任务",
             payload={"cycle_id": payload.cycle_id, "from": current.wecom_userid},
@@ -121,7 +122,7 @@ def send_objective_urge(
             continue
         notification = NotificationLog(
             target_userid=user.wecom_userid,
-            channel="wecom",
+            channel=NotificationChannel.WECOM_TEXT,
             title="目标制定催办",
             content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的目标制定",
             payload={"objective_cycle_id": payload.objective_cycle_id, "from": current.wecom_userid},

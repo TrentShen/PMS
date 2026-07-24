@@ -16,11 +16,9 @@ import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
 
-interface MockUser {
+interface Colleague {
   id: number;
-  wecom_userid: string;
   name: string;
-  role: string;
   position: string | null;
 }
 
@@ -33,14 +31,27 @@ interface Cycle {
 export default function AnonymousFeedback() {
   const me = useAuth((s) => s.user)!;
   const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [users, setUsers] = useState<MockUser[]>([]);
+  const [users, setUsers] = useState<Colleague[]>([]);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get<Cycle[]>("/v1/cycles").then((r) => setCycles(r.data.filter((c) => c.status === "in_progress")));
-    api.get<MockUser[]>("/v1/users").then((r) => setUsers(r.data));
-  }, []);
+    api
+      .get<Cycle[]>("/v1/cycles")
+      .then((r) => {
+        const inProgress = r.data.filter((c) => c.status === "in_progress");
+        setCycles(inProgress);
+        // 周期列表异步返回后 initialValue 不会回填，这里默认选中第一个
+        if (inProgress.length > 0 && !form.getFieldValue("cycle_id")) {
+          form.setFieldValue("cycle_id", inProgress[0].id);
+        }
+      })
+      .catch((e) => message.error(formatError(e, "加载周期失败")));
+    api
+      .get<Colleague[]>("/v1/users/colleagues")
+      .then((r) => setUsers(r.data))
+      .catch((e) => message.error(formatError(e, "加载同事列表失败")));
+  }, [form]);
 
   async function onSubmit() {
     const v = await form.validateFields();
@@ -68,7 +79,7 @@ export default function AnonymousFeedback() {
   }
 
   const targetOptions = users
-    .filter((u) => u.wecom_userid !== me.wecom_userid && u.role !== "super_admin")
+    .filter((u) => u.id !== me.id)
     .map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }));
 
   return (
@@ -84,7 +95,6 @@ export default function AnonymousFeedback() {
           name="cycle_id"
           label="周期"
           rules={[{ required: true }]}
-          initialValue={cycles[0]?.id}
         >
           <Select options={cycles.map((c) => ({ value: c.id, label: c.name }))} />
         </Form.Item>

@@ -85,9 +85,9 @@ def save_objectives(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # 员工只能改自己的；周期必须在 in_progress 或 draft
+    # 员工只能改自己的；目标周期必须在 draft 或 active
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status not in ("draft", "in_progress"):
+    if not cycle or cycle.status not in ("draft", "active"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许修改目标")
 
     # 已提交审批后不能再改草稿（approved/locked 状态的目标不可改）
@@ -158,7 +158,7 @@ def submit_objectives_for_review(
 ):
     """员工提交目标给上级审批。要求：有 draft 状态目标，权重和=100"""
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status not in ("draft", "in_progress"):
+    if not cycle or cycle.status not in ("draft", "active"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许提交目标")
 
     objs = session.exec(
@@ -222,7 +222,7 @@ def approve_objectives(
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status not in ("draft", "in_progress"):
+    if not cycle or cycle.status not in ("draft", "active"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
     pending = session.exec(
@@ -276,7 +276,7 @@ def reject_objectives(
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status not in ("draft", "in_progress"):
+    if not cycle or cycle.status not in ("draft", "active"):
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
     if not payload.reason or not payload.reason.strip():
@@ -374,7 +374,7 @@ def request_adjustment(
 ):
     """员工对已 approved 的目标发起调整申请"""
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status != "in_progress":
+    if not cycle or cycle.status != "active":
         raise HTTPException(status_code=400, detail="当前周期状态不允许调整目标")
 
     existing = session.exec(
@@ -460,9 +460,13 @@ def list_adjustments(
             raise HTTPException(status_code=403, detail="无权查看")
         q = q.where(ObjectiveRevision.user_id == user_id)
     else:
-        # 不传 user_id 时，普通员工只能看自己，HR/Leader 看全部
-        if not has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader"):
-            q = q.where(ObjectiveRevision.user_id == current.id)
+        # 不传 user_id 时，HR/超管看全部；其余角色（含 Leader）只能看自己 scope 内的
+        if not has_any_role(current, "hrbp", "super_admin"):
+            from pms.services.scope import visible_user_ids
+            visible = visible_user_ids(session, current)
+            if visible is None:
+                visible = {current.id} if current.id is not None else set()
+            q = q.where(ObjectiveRevision.user_id.in_(visible))
 
     revisions = session.exec(q.order_by(ObjectiveRevision.created_at.desc())).all()
     return [
@@ -505,7 +509,7 @@ def approve_adjustment(
         raise HTTPException(status_code=403, detail="无权审批")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
-    if not cycle or cycle.status != "in_progress":
+    if not cycle or cycle.status != "active":
         raise HTTPException(status_code=400, detail="当前周期状态不允许审批")
 
     # 删除当前 objective 表中该用户该周期的所有目标

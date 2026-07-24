@@ -17,6 +17,7 @@ from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, is_hr_dept_leader, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
+from pms.services.scope import visible_user_ids
 from pms.utils.audit import write_audit
 from pms.utils.score import derive_perf_level, validate_perf_score
 
@@ -281,6 +282,16 @@ def calibrate(
     if approval and approval.status not in ("calibrating", "rejected_by_hr", "rejected_by_ceo"):
         raise HTTPException(status_code=400, detail=f"当前审批状态为 {approval.status}，不能修改")
 
+    # scope 校验：越权用户直接 403（visible_user_ids 返回 None 表示不限制）
+    scope = visible_user_ids(session, current)
+    if scope is not None:
+        for item in payload.items:
+            if item.user_id not in scope:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"无权校准 user_id={item.user_id}（不在你的管辖范围内）",
+                )
+
     modified = 0
     for item in payload.items:
         p = session.exec(
@@ -295,7 +306,13 @@ def calibrate(
             raise HTTPException(status_code=400, detail=f"user_id={item.user_id} 修改原因必填")
 
         if item.perf_score is not None:
-            score = validate_perf_score(item.perf_score)
+            try:
+                score = validate_perf_score(item.perf_score)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"user_id={item.user_id} {e}",
+                ) from e
             old_score = p.final_perf_score
             p.final_perf_score = score
             p.final_perf_level = derive_perf_level(score).value
@@ -371,6 +388,8 @@ def submit_calibration(
     approval = session.exec(
         select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
     ).first()
+    if approval and approval.status == "approved":
+        raise HTTPException(status_code=400, detail="审批已通过，不可回退重新提交")
     if not approval:
         approval = CycleApproval(cycle_id=cycle_id)
     approval.status = "pending_hr"

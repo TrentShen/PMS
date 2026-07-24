@@ -50,6 +50,13 @@ cp -r web "$BACKUP_DIR/" 2>/dev/null || true
 cp -r deploy "$BACKUP_DIR/" 2>/dev/null || true
 info "✅ 备份到 ${BACKUP_DIR}"
 
+# 备份保留策略：只保留最近 10 份
+OLD_BACKUPS=$(ls -dt "${REMOTE_DIR}"/backup.* 2>/dev/null | tail -n +11 || true)
+if [[ -n "$OLD_BACKUPS" ]]; then
+    info "清理旧备份（保留最近 10 份）..."
+    echo "$OLD_BACKUPS" | xargs rm -rf
+fi
+
 # ---------- 4. 构建并启动 ----------
 info "构建镜像并启动服务..."
 $DOCKER_COMPOSE -f deploy/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
@@ -69,13 +76,27 @@ done
 info "✅ 后端服务已就绪"
 
 # ---------- 6. 数据库迁移 ----------
+# 迁移前先备份数据库（凭据取自 deploy/.env.prod）
+info "迁移前备份数据库..."
+DB_USER=$(grep '^MYSQL_USER=' "$ENV_PROD" | head -1 | cut -d= -f2-)
+DB_PASS=$(grep '^MYSQL_PASSWORD=' "$ENV_PROD" | head -1 | cut -d= -f2-)
+DB_NAME=$(grep '^MYSQL_DATABASE=' "$ENV_PROD" | head -1 | cut -d= -f2-)
+[[ -n "$DB_USER" && -n "$DB_PASS" && -n "$DB_NAME" ]] || error "无法从 .env.prod 读取 MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE"
+if docker exec pms-mysql mysqldump -u"$DB_USER" -p"$DB_PASS" --single-transaction --quick "$DB_NAME" 2>/dev/null | gzip > "$BACKUP_DIR/db.sql.gz"; then
+    info "✅ 数据库已备份到 ${BACKUP_DIR}/db.sql.gz"
+else
+    error "数据库备份失败，中止迁移"
+fi
+
 info "执行数据库迁移..."
-docker exec pms-backend alembic upgrade head || warn "数据库迁移可能已是最新或失败"
+if ! docker exec pms-backend alembic upgrade head; then
+    error "数据库迁移失败，已中止。可用备份恢复：gunzip -c ${BACKUP_DIR}/db.sql.gz | docker exec -i pms-mysql mysql -u${DB_USER} -p\${DB_PASS} ${DB_NAME}"
+fi
 
 # ---------- 7. 健康检查 ----------
 info "健康检查..."
 DOMAIN=$(grep FRONTEND_ORIGIN "$ENV_PROD" | head -1 | cut -d= -f2 | sed 's|https://||;s|http://||')
-if curl -sf "http://localhost:80/health" >/dev/null 2>&1; then
+if curl -sf -H "Host: ${DOMAIN}" "http://localhost/health" >/dev/null 2>&1; then
     info "✅ 后端健康检查通过"
 else
     error "健康检查失败"

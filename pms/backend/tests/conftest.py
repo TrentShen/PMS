@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, text
 
-from pms.database.session import engine
+from pms.database.session import engine, redis_client
 from pms.main import app
 from pms.services.seed import seed
 
@@ -23,6 +23,20 @@ def setup_database():
                 conn.execute(text(f"TRUNCATE TABLE {table}"))
         conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
     seed()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _flush_redis_cache():
+    """每个测试前清理 pms:user / pms:scope 缓存。
+
+    测试会频繁 TRUNCATE + reseed 或直接改 role/department，
+    而缓存 TTL 10 分钟且不随 DB 重置失效，跨文件会读到脏数据。
+    """
+    for pattern in ("pms:user:*", "pms:scope:*"):
+        keys = list(redis_client.scan_iter(match=pattern))
+        if keys:
+            redis_client.delete(*keys)
     yield
 
 

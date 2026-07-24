@@ -107,7 +107,8 @@ export default function AdminUsers() {
       const payload: Record<string, unknown> = {
         role: values.role,
         leader_userid: values.leader_userid,
-        department_id: values.department_id === 0 ? null : values.department_id,
+        // 后端约定 department_id == 0 表示清空部门，None 表示不修改，原样透传保留 0
+        department_id: values.department_id,
         status: values.status,
       };
       // 仅当被编辑用户是 HR 时，处理管辖范围字段

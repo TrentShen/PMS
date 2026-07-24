@@ -275,9 +275,12 @@ def test_full_performance_cycle(client: TestClient) -> None:
         }
         for uid in employee_ids
     ]
+    # calibrate 接口已加 scope 校验：dept_leader 只能校准管辖内员工，
+    # 跨部门（employee_ids 含产品部）必须由 HR/超管操作
+    hr_token = _login(client, "mock-hr")
     resp = client.post(
         f"/api/v1/calibration/cycles/{cycle_id}/calibrate",
-        headers=_headers(leader_token),
+        headers=_headers(hr_token),
         json={"items": calibrate_items},
     )
     assert resp.status_code == 200, resp.text

@@ -12,7 +12,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import SUPERIOR_ROLES, can_act_as_superior, get_current_user, has_any_role, require_fte
+from pms.services.auth import SUPERIOR_ROLES, can_act_as_superior, get_current_user, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.utils.audit import write_audit
 
@@ -259,14 +259,21 @@ def list_feedback_status(
         q = q.where(CycleParticipant.user_id.in_(scope))
 
     rows = session.exec(q).all()
-    result = []
-    for p, u in rows:
-        fb = session.exec(
+
+    # 批量加载反馈记录，避免循环内逐人查询（N+1）
+    fb_map: dict[int, FeedbackRecord] = {}
+    if rows:
+        fbs = session.exec(
             select(FeedbackRecord).where(
                 FeedbackRecord.cycle_id == cycle_id,
-                FeedbackRecord.user_id == p.user_id,
+                FeedbackRecord.user_id.in_([p.user_id for p, _u in rows]),
             )
-        ).first()
+        ).all()
+        fb_map = {fb.user_id: fb for fb in fbs}
+
+    result = []
+    for p, u in rows:
+        fb = fb_map.get(p.user_id)
         result.append({
             "user_id": p.user_id,
             "user_name": u.name,

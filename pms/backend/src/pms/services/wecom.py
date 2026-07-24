@@ -119,6 +119,21 @@ def _post(url: str, json_body: dict, params: dict | None = None, *, use_contact_
     return data
 
 
+class WecomSendError(RuntimeError):
+    """企微消息发送失败（errcode != 0）"""
+
+    def __init__(self, data: dict) -> None:
+        self.errcode = data.get("errcode")
+        self.errmsg = data.get("errmsg")
+        super().__init__(f"企微消息发送失败: errcode={self.errcode} errmsg={self.errmsg}")
+
+
+def _raise_for_send_error(data: dict) -> None:
+    """消息发送接口 errcode != 0 时抛异常，避免误标为发送成功"""
+    if data.get("errcode") not in (0, None):
+        raise WecomSendError(data)
+
+
 # ---------- OAuth ----------
 
 def get_userinfo(code: str) -> str:
@@ -287,7 +302,7 @@ def batch_get_hr_staff_info(userids: list[str], max_workers: int = 5) -> dict[st
 
 def send_text(user_ids: list[str], content: str, agentid: int | None = None) -> dict:
     """发送文本消息"""
-    return _post(
+    data = _post(
         f"{WECOM_API_BASE}/message/send",
         json_body={
             "touser": "|".join(user_ids),
@@ -296,6 +311,8 @@ def send_text(user_ids: list[str], content: str, agentid: int | None = None) -> 
             "text": {"content": content},
         },
     )
+    _raise_for_send_error(data)
+    return data
 
 
 def send_textcard(
@@ -312,7 +329,7 @@ def send_textcard(
     # 截断处理，避免企微拒绝
     title = title.encode("utf-8")[:124].decode("utf-8", errors="ignore")
     description = description.encode("utf-8")[:508].decode("utf-8", errors="ignore")
-    return _post(
+    data = _post(
         f"{WECOM_API_BASE}/message/send",
         json_body={
             "touser": "|".join(user_ids),
@@ -326,11 +343,13 @@ def send_textcard(
             },
         },
     )
+    _raise_for_send_error(data)
+    return data
 
 
 def send_markdown(user_ids: list[str], content: str, agentid: int | None = None) -> dict:
     """发送 Markdown 消息"""
-    return _post(
+    data = _post(
         f"{WECOM_API_BASE}/message/send",
         json_body={
             "touser": "|".join(user_ids),
@@ -339,3 +358,5 @@ def send_markdown(user_ids: list[str], content: str, agentid: int | None = None)
             "markdown": {"content": content},
         },
     )
+    _raise_for_send_error(data)
+    return data

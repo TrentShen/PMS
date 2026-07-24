@@ -38,7 +38,7 @@ export default function AppLayout() {
     { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },
     hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/leader", label: "下属评估" },
-    hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/calibration", label: "校准" },
+    (hasAnyRole(user?.role, ["dept_leader", ...ROLE.HR]) || user?.has_hr_permission) && { key: "/calibration", label: "校准" },
     (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission) && { key: "/probation", label: "试用期管理" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/objective-cycles", label: "目标周期" },

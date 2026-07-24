@@ -81,6 +81,16 @@ def invalidate_scope_cache(user_id: int) -> None:
         redis_client.delete(key)
 
 
+def invalidate_all_scope_caches() -> None:
+    """清理全部 scope 缓存。
+
+    scope 缓存依赖全量组织数据（部门树、他人的 leader 关系），
+    通讯录同步等批量变更后无法逐用户精确失效，直接按前缀全清。
+    """
+    for key in redis_client.scan_iter(match="pms:scope:*"):
+        redis_client.delete(key)
+
+
 def _compute_visible_user_ids(session: Session, current: User) -> set[int] | None:
     # 可见范围由用户当前生效角色决定（角色切换用于测试不同视角）
     role = current.role

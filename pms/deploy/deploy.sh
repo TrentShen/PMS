@@ -44,6 +44,7 @@ if [[ ! -f "$ENV_PROD" ]]; then
     read -r -p "  WECOM_CONTACT_SECRET (通讯录同步Secret，可留空): " WECOM_CONTACT_SECRET
 
     APP_SECRET=$(openssl rand -hex 32)
+    MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)
     MYSQL_PASSWORD=$(openssl rand -hex 16)
 
     cat > "$ENV_PROD" <<EOF
@@ -54,6 +55,7 @@ APP_SECRET=${APP_SECRET}
 
 MYSQL_HOST=mysql
 MYSQL_PORT=3306
+MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
 MYSQL_USER=pms
 MYSQL_PASSWORD=${MYSQL_PASSWORD}
 MYSQL_DATABASE=pms

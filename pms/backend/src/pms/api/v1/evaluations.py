@@ -39,6 +39,11 @@ class ObjectiveView(BaseModel):
     description: str
     measure_criteria: str | None = None
     weight: int
+    order_num: int = 0
+    status: str = "draft"
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    reject_reason: str | None = None
 
 
 class EvaluationView(BaseModel):
@@ -384,7 +389,8 @@ def submit_superior_evaluation(
     ).first()
     if not participant:
         raise HTTPException(status_code=404, detail="该员工不在本周期的参与人列表")
-    if participant.status == "pending":
+    # 仅开启自评时才要求员工先完成自评；未开启自评的周期员工无法自评，直接跳过该前置
+    if cycle.enable_self_eval and participant.status == "pending":
         raise HTTPException(status_code=400, detail="员工尚未完成自评")
 
     # 环节阻断：如果该员工有已审批的互评任务，必须全部提交完才能做上级评估

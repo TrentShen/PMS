@@ -120,8 +120,8 @@ def send_notification(
         for log in logs:
             session.refresh(log)
 
-        # 配置缺失时统一标记失败，避免重复调企微接口
-        if not _wecom_configured():
+        # 企微配置缺失时统一标记失败，避免重复调企微接口（仅企微通道；EMAIL 通道不受企微配置影响）
+        if channel != NotificationChannel.EMAIL and not _wecom_configured():
             error = "企微配置不完整（corpid/agentid/secret），消息未发送"
             for log in logs:
                 log.status = "failed"
@@ -149,11 +149,13 @@ def send_notification(
                     from pms.services.email import send_email
                     user = session.exec(select(User).where(User.wecom_userid == log.target_userid)).first()
                     if user and user.email:
-                        send_email(
+                        success = send_email(
                             to_emails=[user.email],
                             subject=title,
                             content=content,
                         )
+                        if not success:
+                            raise RuntimeError("邮件发送失败")
                     else:
                         raise ValueError("用户无邮箱")
 

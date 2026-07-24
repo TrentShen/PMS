@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-# 超级管理员专属：用户与部门管理
-# 仅 role=super_admin 可访问；HR 不行（HR 自己就是被管理对象）
+# 用户与部门管理
+# super_admin / hrbp 可访问；但修改 role 字段仅 super_admin 可做，
+# 且任何人都不能修改自己的 role（防误锁）。
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import require_role
+from pms.services.auth import invalidate_user_cache, require_role
+from pms.services.scope import invalidate_scope_cache
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -87,6 +89,13 @@ def patch_user(
     if payload.role is not None:
         if payload.role not in ALLOWED_ROLES:
             raise HTTPException(status_code=400, detail=f"非法角色：{payload.role}")
+        if payload.role != user.role:
+            # 修改 role 仅 super_admin 可做；hrbp 只能改非 role 字段
+            if admin.role != "super_admin":
+                raise HTTPException(status_code=403, detail="仅超级管理员可修改用户角色")
+            # 任何人不能修改自己的 role，防止误锁
+            if user.id == admin.id:
+                raise HTTPException(status_code=403, detail="不能修改自己的角色")
         user.role = payload.role
 
     if payload.leader_userid is not None:
@@ -145,6 +154,12 @@ def patch_user(
     )
     session.commit()
     session.refresh(user)
+
+    # 角色/部门/汇报关系变更后，失效该用户的 scope 与 user 缓存，
+    # 避免旧权限在缓存 TTL（最长 10 分钟）内继续生效
+    invalidate_scope_cache(user_id)
+    invalidate_user_cache(user.wecom_userid)
+
     return AdminUserView.model_validate(user, from_attributes=True)
 
 

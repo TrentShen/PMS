@@ -62,8 +62,8 @@ export default function App() {
             <Route path="/leader/:cycleId/users/:userId" element={<LeaderEvalDetail />} />
           </Route>
 
-          {/* 仅 Leader/HR 可见：校准 */}
-          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" />}>
+          {/* 校准：dept_leader/HR + HR 部门 Leader（与后端口径一致，direct_leader 无权限） */}
+          <Route element={<RequireRole roles={["dept_leader", ...ROLE.HR]} fallback="forbid" allowHrPermission />}>
             <Route path="/calibration" element={<Calibration />} />
           </Route>
 

@@ -273,7 +273,14 @@ interface PeerSummary {
   comments: { perf_score: number; value_belief_grade: string | null; value_team_grade: string | null; value_growth_grade: string | null; comment: string }[];
   rater_bias: RaterBias[];
   anonymous_feedback:
-    | { perf_score: number | null; value_grade: string | null; comment: string; created_at: string }[]
+    | {
+        perf_score: number | null;
+        value_belief_grade: string | null;
+        value_team_grade: string | null;
+        value_growth_grade: string | null;
+        comment: string;
+        created_at: string;
+      }[]
     | null;
 }
 
@@ -367,7 +374,16 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
             dataSource={sum.anonymous_feedback}
             columns={[
               { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) ?? "-" },
-              { title: "价值观", dataIndex: "value_grade", render: (v) => (v ? VALUE_LABEL[v] : "-") },
+              {
+                title: "价值观",
+                render: (_, r) => (
+                  <Space>
+                    <span>信念 {VALUE_LABEL[r.value_belief_grade ?? ""] ?? "-"}</span>
+                    <span>团队 {VALUE_LABEL[r.value_team_grade ?? ""] ?? "-"}</span>
+                    <span>成长 {VALUE_LABEL[r.value_growth_grade ?? ""] ?? "-"}</span>
+                  </Space>
+                ),
+              },
               {
                 title: "评语",
                 dataIndex: "comment",
@@ -389,10 +405,11 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
 }
 
 function perfLevel(s: number): string {
+  // 与后端 utils/score.py derive_perf_level 保持一致（边界值归入高等级）
   if (s > 4.5) return "excellent";
-  if (s > 4.0) return "exceed_part";
-  if (s > 3.5) return "meet";
-  if (s > 3.0) return "below_part";
+  if (s >= 4.0) return "exceed_part";
+  if (s >= 3.5) return "meet";
+  if (s >= 3.0) return "below_part";
   return "below";
 }
 

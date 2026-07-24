@@ -68,6 +68,8 @@ def import_objectives(
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="目标周期不存在")
+    if cycle.status not in ("draft", "active"):
+        raise HTTPException(status_code=400, detail="当前目标周期状态不允许导入目标")
 
     # 读取上传的 Excel
     try:
@@ -152,6 +154,15 @@ def import_objectives(
             Objective.user_id.in_(user_ids),
         )
     ).all()
+
+    # 目标已被上级确认（approved/locked）的员工跳过导入，避免无差别覆盖
+    locked_user_ids = {obj.user_id for obj in existing if obj.status in ("approved", "locked")}
+    skipped_users = sorted({p["uid"] for p in parsed if p["user_id"] in locked_user_ids})
+    if locked_user_ids:
+        parsed = [p for p in parsed if p["user_id"] not in locked_user_ids]
+        existing = [obj for obj in existing if obj.user_id not in locked_user_ids]
+        user_ids = list({p["user_id"] for p in parsed})
+
     for obj in existing:
         session.delete(obj)
     session.flush()
@@ -208,4 +219,5 @@ def import_objectives(
     return {
         "imported_rows": len(parsed),
         "affected_users": len(user_ids),
+        "skipped_users": skipped_users,
     }

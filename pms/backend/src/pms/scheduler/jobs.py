@@ -13,7 +13,11 @@ from pms.database.models.probation import ProbationPlan
 from pms.database.models.user import User
 from pms.database.session import engine
 from pms.services.auth import is_fte
-from pms.services.notification import get_hrbp_userids, send_textcard_notification
+from pms.services.notification import (
+    get_hrbp_userids,
+    retry_failed_notifications_via_email,
+    send_textcard_notification,
+)
 
 STAGE_LABELS = {
     "self_eval": "自评",
@@ -287,6 +291,17 @@ def probation_evaluation_reminder():
             logger.exception("试用期评估提醒失败")
 
 
+def retry_failed_notifications_job():
+    """每小时将失败的企微通知通过邮件降级重发"""
+    with Session(engine) as s:
+        try:
+            retried = retry_failed_notifications_via_email(s)
+            if retried:
+                logger.info("失败通知邮件降级重发成功: {} 条", retried)
+        except Exception:
+            logger.exception("失败通知邮件降级重发失败")
+
+
 def start_scheduler():
     """启动定时任务调度器"""
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -303,5 +318,7 @@ def start_scheduler():
     scheduler.add_job(sync_probation_plans, "cron", hour=2, minute=30, id="probation_sync")
     # 每日早上 9 点提醒上级做试用期评估
     scheduler.add_job(probation_evaluation_reminder, "cron", hour=9, id="probation_eval_remind")
+    # 每小时将失败的企微通知通过邮件降级重发
+    scheduler.add_job(retry_failed_notifications_job, "interval", hours=1, id="email_fallback_retry")
     scheduler.start()
-    logger.info("APScheduler started: stage_remind + deadline_remind + contact_sync + probation_sync + probation_eval_remind")
+    logger.info("APScheduler started: stage_remind + deadline_remind + probation_sync + probation_eval_remind + email_fallback_retry")

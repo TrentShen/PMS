@@ -28,7 +28,7 @@ if {[info exists env(DEPLOY_SSH_PASSWORD)] && $env(DEPLOY_SSH_PASSWORD) ne ""} {
 send_user "\n"
 send_user "📦 正在打包 PMS 项目...\n"
 # 排除 .git、依赖、环境文件、证书，避免上传不必要或敏感文件
-set build_cmd "COPYFILE_DISABLE=1 tar czf ${local_tar} --exclude='.git' --exclude='node_modules' --exclude='.venv' --exclude='__pycache__' --exclude='.DS_Store' --exclude='*.pyc' --exclude='.env.prod' --exclude='certs' --exclude='._*' -C '${project_root}' ."
+set build_cmd "COPYFILE_DISABLE=1 tar czf ${local_tar} --exclude='.git' --exclude='node_modules' --exclude='.venv' --exclude='__pycache__' --exclude='.DS_Store' --exclude='*.pyc' --exclude='.env' --exclude='.env.prod' --exclude='certs' --exclude='._*' -C '${project_root}' ."
 spawn bash -c $build_cmd
 expect eof
 
@@ -89,8 +89,8 @@ expect "#"
 # 执行远程部署脚本
 send "bash ${remote_dir}/deploy/remote-deploy.sh\r"
 expect {
-    "🚀 PMS 部署完成" {}
-    "\[ERROR\]" { puts "\n\n部署脚本报告错误"; exit 1 }
+    -exact {🚀 PMS 部署完成} {}
+    -exact {[ERROR]} { puts "\n\n部署脚本报告错误"; exit 1 }
     timeout { puts "\n\n⏱️  部署脚本执行超时"; exit 1 }
 }
 

@@ -220,7 +220,7 @@ export default function Calibration() {
   async function loadView() {
     if (!selectedCid) return;
     try {
-      const r = await api.get(`/v1/calibration/cycles/${selectedCid}/view`);
+      const r = await api.get(`/v1/calibration/cycles/${selectedCid}/view?page_size=9999`);
       setItems(r.data.items);
       setDistribution(r.data.distribution);
       setMatrix(r.data.matrix);

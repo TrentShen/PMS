@@ -19,6 +19,7 @@ from pms.database.models.enums import (
 )
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.feedback import FeedbackRecord
+from pms.database.models.historical_performance import HistoricalPerformanceResult
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.objective_cycle_participant import ObjectiveCycleParticipant
@@ -26,7 +27,6 @@ from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import Department, User
-from pms.database.models.historical_performance import HistoricalPerformanceResult
 
 __all__ = [
     "AuditLog",

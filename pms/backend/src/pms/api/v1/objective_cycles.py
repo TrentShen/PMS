@@ -12,7 +12,7 @@ from pms.database.models.objective import Objective
 from pms.database.models.objective_revision import ObjectiveRevision
 from pms.database.models.user import Department
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, is_fte, require_fte, require_role
+from pms.services.auth import is_fte, require_role
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/objective-cycles", tags=["objective-cycles"])
@@ -194,7 +194,7 @@ def delete_objective_cycle(
     for model in (ObjectiveCycleParticipant, Objective, ObjectiveRevision):
         for row in session.exec(
             select(model).where(
-                getattr(model, "objective_cycle_id") == objective_cycle_id
+                model.objective_cycle_id == objective_cycle_id
             )
         ).all():
             session.delete(row)

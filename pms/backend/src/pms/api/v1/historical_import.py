@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # 历史绩效结果批量导入（只读快照，不参与当前流程）
 import io
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse

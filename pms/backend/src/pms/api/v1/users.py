@@ -10,8 +10,8 @@ from sqlmodel import Session, select
 
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import require_role
-from pms.services.scope import visible_user_ids
+from pms.services.auth import get_current_user, invalidate_user_cache, require_role
+from pms.services.scope import invalidate_all_scope_caches, visible_user_ids
 from pms.services.wecom import (
     batch_get_hr_staff_info,
     list_departments,
@@ -27,9 +27,17 @@ class UserBrief(BaseModel):
     name: str
     role: str
     position: str | None
+    level: str | None
     leader_userid: str | None
     department_id: int | None
     employee_type: str | None
+
+
+class ColleagueBrief(BaseModel):
+    """脱敏的同事信息：所有登录用户可见，仅用于匿名评价选人等场景"""
+    id: int
+    name: str
+    position: str | None
 
 
 class UserHRInfo(BaseModel):
@@ -55,6 +63,16 @@ def list_users(
         q = q.where(User.id.in_(scope))
     users = session.exec(q).all()
     return [UserBrief.model_validate(u, from_attributes=True) for u in users]
+
+
+@router.get("/colleagues", response_model=list[ColleagueBrief])
+def list_colleagues(
+    session: Session = Depends(get_session),
+    current: User = Depends(get_current_user),
+) -> list[ColleagueBrief]:
+    """所有登录用户可访问的脱敏同事列表（匿名评价选人用），不含 role/department 等敏感字段"""
+    users = session.exec(select(User).where(User.status == "active")).all()
+    return [ColleagueBrief.model_validate(u, from_attributes=True) for u in users]
 
 
 # ---------- 通讯录同步 ----------
@@ -220,6 +238,7 @@ def _sync_users(session: Session) -> int:
         return 0
 
     count = 0
+    changed_userids: set[str] = set()
     for u in userlist:
         wecom_userid = u.get("userid")
         if not wecom_userid:
@@ -251,6 +270,7 @@ def _sync_users(session: Session) -> int:
                 role="employee",
                 status=status,
             ))
+        changed_userids.add(wecom_userid)
         count += 1
 
     # 企微通讯录中已不存在的本地用户标记为 inactive
@@ -262,12 +282,21 @@ def _sync_users(session: Session) -> int:
         stale.status = "inactive"
         stale.synced_at = datetime.now(timezone.utc)
         session.add(stale)
+        changed_userids.add(stale.wecom_userid)
         logger.warning("企微通讯录中已无用户 {}, 标记为 inactive", stale.wecom_userid)
 
     # 根据 direct_leader 关系自动给有下属的用户分配 direct_leader 角色
     _assign_leader_roles(session)
 
     session.commit()
+
+    # 同步变更了部门/汇报关系/状态，失效相关缓存：
+    # 1) user 缓存里存了 id/status/role，需逐用户失效
+    # 2) scope 缓存依赖全量组织数据（部门树、他人的 leader），无法逐用户精确失效，按前缀全清
+    for userid in changed_userids:
+        invalidate_user_cache(userid)
+    invalidate_all_scope_caches()
+
     return count
 
 
@@ -317,4 +346,7 @@ def get_user_hr_info(
     user = session.exec(select(User).where(User.id == user_id)).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    scope = visible_user_ids(session, hr)
+    if scope is not None and user_id not in scope:
+        raise HTTPException(status_code=403, detail="无权查看该用户数据")
     return UserHRInfo.model_validate(user, from_attributes=True)

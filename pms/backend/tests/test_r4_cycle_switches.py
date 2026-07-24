@@ -133,15 +133,6 @@ def _start_cycle(client: TestClient, hr_token: str, cycle_id: int) -> None:
     assert resp.status_code == 200, resp.text
 
 
-def _update_cycle(client: TestClient, hr_token: str, cycle_id: int, **kwargs) -> None:
-    resp = client.put(
-        f"/api/v1/cycles/{cycle_id}",
-        headers=_headers(hr_token),
-        json=kwargs,
-    )
-    assert resp.status_code == 200, resp.text
-
-
 OBJECTIVES_PAYLOAD = {
     "items": [
         {
@@ -211,10 +202,9 @@ def test_self_eval_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
     objective_cycle_id = _create_objective_cycle(client, hr_token)
-    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id, enable_self_eval=False)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
-    _update_cycle(client, hr_token, cycle_id, enable_self_eval=False)
 
     token = _login(client, "mock-alice")
     resp = client.post(
@@ -230,12 +220,11 @@ def test_peer_eval_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
     objective_cycle_id = _create_objective_cycle(client, hr_token)
-    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id, enable_peer_eval=False)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"], uids["mock-bob"]])
     _start_cycle(client, hr_token, cycle_id)
 
     _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
-    _update_cycle(client, hr_token, cycle_id, enable_peer_eval=False)
 
     token = _login(client, "mock-alice")
     resp = client.post(
@@ -251,13 +240,12 @@ def test_calibration_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
     objective_cycle_id = _create_objective_cycle(client, hr_token)
-    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id, enable_calibration=False)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
 
     _submit_self_eval(client, cycle_id, objective_cycle_id, uids["mock-alice"])
     _submit_superior_eval(client, cycle_id, uids["mock-alice"], "mock-tech-leader")
-    _update_cycle(client, hr_token, cycle_id, enable_calibration=False)
 
     leader_token = _login(client, "mock-tech-leader")
     resp = client.post(
@@ -309,10 +297,9 @@ def test_feedback_disabled_returns_400(client: TestClient) -> None:
     uids = _user_ids(client)
     hr_token = _login(client, "mock-hr")
     objective_cycle_id = _create_objective_cycle(client, hr_token)
-    cycle_id = _create_cycle(client, hr_token, objective_cycle_id)
+    cycle_id = _create_cycle(client, hr_token, objective_cycle_id, enable_feedback=False)
     _add_participants(client, hr_token, cycle_id, [uids["mock-alice"]])
     _start_cycle(client, hr_token, cycle_id)
-    _update_cycle(client, hr_token, cycle_id, enable_feedback=False)
 
     leader_token = _login(client, "mock-tech-leader")
     resp = client.post(

@@ -84,6 +84,7 @@ class CycleBrief(BaseModel):
     enable_peer_eval: bool
     enable_calibration: bool
     enable_feedback: bool
+    exclusion_rules: dict[str, Any] | None
 
 
 class ParticipantDetail(BaseModel):
@@ -402,6 +403,31 @@ def update_cycle(
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
+
+    # 非草稿状态：模式开关和起止日期已冻结，只允许改名称等描述性字段。
+    # 否则 in_progress 中把 enable_calibration 关掉即可绕过审批直接发布。
+    if cycle.status != "draft":
+        restricted = [
+            f
+            for f in (
+                "start_date", "end_date",
+                "enable_self_eval", "enable_peer_eval",
+                "enable_calibration", "enable_feedback",
+            )
+            if getattr(payload, f) is not None
+        ]
+        if restricted:
+            raise HTTPException(
+                status_code=400,
+                detail=f"当前状态 {cycle.status}，不能修改开关或起止日期（{', '.join(restricted)}）",
+            )
+
+    # 只传单个日期时也要用更新后的生效值重新校验 start < end
+    new_start = payload.start_date if payload.start_date is not None else cycle.start_date
+    new_end = payload.end_date if payload.end_date is not None else cycle.end_date
+    if new_end <= new_start:
+        raise HTTPException(status_code=400, detail="结束日期必须晚于开始日期")
+
     if payload.name is not None:
         cycle.name = payload.name
     if payload.start_date is not None:
@@ -431,7 +457,8 @@ def update_cycle(
         action="update_cycle",
         resource_type="performance_cycle",
         resource_id=str(cycle.id),
-        after={k: v for k, v in payload.model_dump().items() if v is not None},
+        # mode="json"：date 等类型转成可 JSON 序列化的值，否则审计写入会 TypeError
+        after={k: v for k, v in payload.model_dump(mode="json").items() if v is not None},
     )
     session.commit()
     session.refresh(cycle)
@@ -566,6 +593,19 @@ def add_participants(
         raise HTTPException(status_code=404, detail="周期不存在")
     if cycle.status != "draft":
         raise HTTPException(status_code=400, detail="只能在草稿状态添加参与人")
+
+    # 与 suggest_participants 对齐：受限 HRBP 只能添加自己管辖范围内的员工
+    if hr.role == "hrbp" and hr.hrbp_scope_dept_ids:
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, hr)
+        if scope is not None:
+            outside = [uid for uid in payload.user_ids if uid not in scope]
+            if outside:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"以下用户超出你的管辖范围，无法添加：{outside}",
+                )
 
     existing_ids = {
         p.user_id
@@ -795,7 +835,6 @@ def cycle_dashboard(
 
     # 目标参与人（来自关联目标周期）
     objective_participant_count = 0
-    objective_user_ids: list[int] = []
     if cycle.objective_cycle_id:
         oc_participants = session.exec(
             select(ObjectiveCycleParticipant).where(
@@ -803,7 +842,6 @@ def cycle_dashboard(
             )
         ).all()
         objective_participant_count = len(oc_participants)
-        objective_user_ids = [p.user_id for p in oc_participants]
 
     # 自评完成数
     self_eval_submitted = 0
