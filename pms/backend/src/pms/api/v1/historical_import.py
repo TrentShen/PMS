@@ -12,7 +12,8 @@ from sqlmodel import Session, select
 from pms.database.models.historical_performance import HistoricalPerformanceResult
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import require_role
+from pms.services.auth import get_current_user, require_role
+from pms.services.scope import visible_user_ids
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/import/historical-performance", tags=["import"])
@@ -168,9 +169,16 @@ def import_historical_performance(
 def list_historical_performance(
     user_id: int | None = None,
     session: Session = Depends(get_session),
-    hr: User = Depends(require_role("hrbp", "super_admin")),
+    current: User = Depends(get_current_user),
 ):
+    # 查询口径与 trend 接口一致：hrbp/super_admin 按数据可见范围过滤，其余角色只看自己
     q = select(HistoricalPerformanceResult, User).join(User, User.id == HistoricalPerformanceResult.user_id)
+    if current.role in ("hrbp", "super_admin"):
+        scope = visible_user_ids(session, current)
+        if scope is not None:
+            q = q.where(HistoricalPerformanceResult.user_id.in_(scope))
+    else:
+        q = q.where(HistoricalPerformanceResult.user_id == current.id)
     if user_id:
         q = q.where(HistoricalPerformanceResult.user_id == user_id)
     rows = session.exec(q.order_by(HistoricalPerformanceResult.created_at.desc())).all()

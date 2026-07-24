@@ -16,7 +16,7 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import SUPERIOR_ROLES, can_act_as_superior, get_current_user, has_any_role, require_fte
+from pms.services.auth import SUPERIOR_ROLES, can_act_as_superior, get_current_user, has_any_role, is_fte, require_fte
 from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 from pms.utils.score import (
@@ -24,7 +24,7 @@ from pms.utils.score import (
     validate_perf_score,
 )
 
-router = APIRouter(tags=["peer"], dependencies=[Depends(require_fte)])
+router = APIRouter(tags=["peer"])
 
 MAX_INVITES = 5  # PRD 3.4.5：员工自选不超过 5 人
 
@@ -83,7 +83,7 @@ class AnonymousFeedbackSubmit(BaseModel):
 def list_my_peer_candidates(
     cycle_id: int,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # 返回"我已邀请 / Leader 已加的"互评人列表
     rows = session.exec(
@@ -111,7 +111,7 @@ def invite_peers(
     cycle_id: int,
     payload: InviteRequest,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # 员工提交/更新自己的互评人候选名单
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -197,13 +197,13 @@ def list_pending_peers_for_review(
     cycle_id: int,
     user_id: int,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # Leader 或 HR 看待审核名单
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
+    if not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="无权查看")
 
     rows = session.exec(
@@ -232,13 +232,13 @@ def approve_peer_list(
     user_id: int,
     payload: LeaderReviewRequest,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # Leader 审核：增删候选后一键发起正式互评
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
+    if not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="无权审核")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -366,6 +366,11 @@ def list_my_peer_tasks(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
+    # 非 FTE 员工（实习生等）返回空列表而非 403，避免初始化页面报错；
+    # 写接口仍由 require_fte 拦截
+    if not is_fte(current):
+        return []
+
     # 返回所有"需要我评价别人"的任务
     rows = session.exec(
         select(PeerEvaluation, User, PerformanceCycle)
@@ -397,7 +402,7 @@ def submit_peer_evaluation(
     task_id: int,
     payload: PeerSubmit,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     task = session.get(PeerEvaluation, task_id)
     if not task:
@@ -472,7 +477,7 @@ def decline_peer_evaluation(
     task_id: int,
     payload: PeerDeclineRequest,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # 互评人拒绝评价（如与该同事无合作，无法客观评价）
     # 拒绝后该任务不再阻塞上级评估流程（evaluations.py 只查 status == "pending"）
@@ -516,14 +521,14 @@ def get_peer_summary(
     cycle_id: int,
     user_id: int,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # 汇总某位员工收到的所有互评（评分+评语）
     # 仅 Leader / HR / 超管可见（PRD 3.4.5：被评人本人不可见）
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
+    if not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="被评人本人不可见自己收到的互评")
 
     rows = session.exec(
@@ -636,7 +641,7 @@ def submit_anonymous_feedback(
     cycle_id: int,
     payload: AnonymousFeedbackSubmit,
     session: Session = Depends(get_session),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_fte),
 ):
     # 任何员工都可以对任意在职同事发起匿名评价
     # 不允许评自己

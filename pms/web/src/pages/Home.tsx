@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Empty, Space, Typography } from "antd";
+import { Button, Card, Empty, Space, Typography, message } from "antd";
 import { ROLE } from "@/App";
 import { hasAnyRole } from "@/components/RequireRole";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -10,7 +10,7 @@ import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
 import type { CardColumn } from "@/components/ui/TableCardList";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
 interface ProbationPlanBrief {
@@ -133,8 +133,14 @@ export default function Home() {
   });
 
   useEffect(() => {
-    api.get<MyCycleItem[]>("/v1/cycles/mine").then((r) => setCycles(r.data));
-    api.get<ProbationPlanBrief | null>("/v1/probation/mine").then((r) => setMyProbation(r.data));
+    api
+      .get<MyCycleItem[]>("/v1/cycles/mine")
+      .then((r) => setCycles(r.data))
+      .catch((e) => message.error(formatError(e, "加载我的周期失败")));
+    api
+      .get<ProbationPlanBrief | null>("/v1/probation/mine")
+      .then((r) => setMyProbation(r.data))
+      .catch((e) => message.error(formatError(e, "加载试用期信息失败")));
     api.get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks").then((r) =>
       setTasks(r.data)
     );

@@ -22,7 +22,7 @@ import {
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
-import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
+import type { AdjustmentView } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
@@ -131,16 +131,12 @@ function PeerReviewSection({
   async function load() {
     const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/users/${userId}/peer/pending`);
     setCands(r.data);
-    const u = await api.get<Paginated<Participant>>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
-    // 注：ParticipantDetail 不含 role，原 any 过滤未生效，此处语义保留需后端补充字段
-    setAllUsers(
-      u.data.items
-        .filter((x) => x.user_id !== userId)
-        .map((x) => ({ id: x.user_id, name: x.user_name, position: x.user_position }))
-    );
+    // 候选人：脱敏同事列表（/v1/cycles/:id/participants 按 scope 过滤，员工视角下可选人恒为空）
+    const u = await api.get<{ id: number; name: string; position: string | null }[]>("/v1/users/colleagues");
+    setAllUsers(u.data.filter((x) => x.id !== userId));
   }
   useEffect(() => {
-    load();
+    load().catch((e) => message.error(formatError(e, "加载互评名单失败")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId, userId]);
 
@@ -290,7 +286,11 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
     api
       .get<PeerSummary>(`/v1/cycles/${cycleId}/users/${userId}/peer/summary`)
       .then((r) => setSum(r.data))
-      .catch(() => setSum(null));
+      // 无互评数据时后端返回 total=0 正常渲染空态；请求失败需提示而非静默
+      .catch((e) => {
+        setSum(null);
+        message.error(formatError(e, "加载互评汇总失败"));
+      });
   }, [cycleId, userId]);
   if (!sum) return null;
   if (sum.total === 0) return null;
@@ -448,7 +448,11 @@ function ObjectivesReviewSection({
     try {
       const r = await api.get<AdjustmentView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments?user_id=${userId}`);
       setAdjustments(r.data);
-    } catch { setAdjustments([]); }
+    } catch (e) {
+      // 无调整申请是正常情况（返回空数组）；请求失败需提示而非静默吞错
+      setAdjustments([]);
+      message.error(formatError(e, "加载调整申请失败"));
+    }
   }
   useEffect(() => { loadAdjustments(); }, [objectiveCycleId, userId]);
 

@@ -18,6 +18,8 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import { hasAnyRole } from "@/components/RequireRole";
+import { ROLE } from "@/App";
 
 
 interface FeedbackData {
@@ -49,6 +51,7 @@ export default function Feedback() {
   const { cycleId, userId } = useParams();
   const user = useAuth((s) => s.user)!;
   const [fb, setFb] = useState<FeedbackData | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [disputing, setDisputing] = useState(false);
@@ -57,17 +60,23 @@ export default function Feedback() {
   // 目标用户：如果 URL 有 userId 就是看/写别人的；没有就是看自己的
   const targetId = userId ? Number(userId) : user.id;
   const isSelf = targetId === user.id;
-  const canWrite = !isSelf; // 上级/HR 能写；员工只能看自己的
+  // 上级角色/HR 才能写别人的面谈记录；员工只能看自己的
+  const canWrite = !isSelf && (hasAnyRole(user.role, [...ROLE.LEADER]) || user.has_hr_permission);
 
   async function load() {
+    setLoadError(null);
     try {
       const r = await api.get(`/v1/feedback/cycles/${cycleId}/users/${targetId}`);
       setFb(r.data);
       if (r.data) {
         form.setFieldsValue(r.data);
       }
-    } catch {
+    } catch (e) {
+      // 请求失败（403/500 等）不能伪装成"暂无记录"，要明确报错
+      const msg = formatError(e, "加载反馈记录失败");
       setFb(null);
+      setLoadError(msg);
+      message.error(msg);
     }
   }
   useEffect(() => { load(); }, [cycleId, targetId]);
@@ -110,7 +119,10 @@ export default function Feedback() {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%", maxWidth: 800 }}>
       <Card title="绩效反馈面谈">
-        {fb && (
+        {loadError && (
+          <Alert type="error" showIcon message={loadError} style={{ marginBottom: 16 }} />
+        )}
+        {!loadError && fb && (
           <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="面谈人">{fb.interviewer_name}</Descriptions.Item>
             <Descriptions.Item label="状态">
@@ -122,7 +134,7 @@ export default function Feedback() {
         )}
 
         {/* 上级写面谈记录 */}
-        {canWrite && (
+        {!loadError && canWrite && (
           <>
             {!fb && <Alert type="info" showIcon message="尚未填写面谈记录" style={{ marginBottom: 16 }} />}
             <Form form={form} layout="vertical" onFinish={onSubmitFeedback}>
@@ -145,7 +157,7 @@ export default function Feedback() {
         )}
 
         {/* 员工查看 + 确认 */}
-        {isSelf && fb && (
+        {!loadError && isSelf && fb && (
           <>
             <Card type="inner" title="面谈内容">
               <Descriptions column={1} size="small">
@@ -167,7 +179,7 @@ export default function Feedback() {
           </>
         )}
 
-        {isSelf && !fb && (
+        {!loadError && isSelf && !fb && (
           <Alert type="info" showIcon message="上级尚未填写面谈记录，请耐心等待" />
         )}
       </Card>

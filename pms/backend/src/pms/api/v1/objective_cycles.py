@@ -257,6 +257,19 @@ def add_participants(
     if cycle.status != ObjectiveCycleStatus.DRAFT:
         raise HTTPException(status_code=400, detail="仅在 draft 状态可添加参与人")
 
+    # 与绩效周期 add_participants 对齐：受限 HRBP 只能添加自己管辖范围内的员工
+    if current.role == "hrbp" and current.hrbp_scope_dept_ids:
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, current)
+        if scope is not None:
+            outside = [uid for uid in payload.user_ids if uid not in scope]
+            if outside:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"以下用户超出你的管辖范围，无法添加：{outside}",
+                )
+
     existing_ids = {
         p.user_id
         for p in session.exec(

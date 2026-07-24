@@ -59,10 +59,11 @@ class TestFteGuard:
         )
         assert resp.status_code == 403, resp.text
 
-    def test_intern_blocked_from_probation(self, client: TestClient, alice_token: str, make_intern) -> None:
+    def test_intern_probation_mine_returns_none(self, client: TestClient, alice_token: str, make_intern) -> None:
+        # 非 FTE 访问 /probation/mine 返回 None 而非 403（避免初始化页面报错）
         resp = client.get("/api/v1/probation/mine", headers=_headers(alice_token))
-        assert resp.status_code == 403, resp.text
-        assert "全职" in resp.json()["detail"]
+        assert resp.status_code == 200, resp.text
+        assert resp.json() is None
 
     def test_full_time_can_self_eval(self, client: TestClient, alice_token: str) -> None:
         resp = client.post(

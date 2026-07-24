@@ -69,7 +69,7 @@ def create_or_update_feedback(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if current.id != user_id and not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
+    if current.id != user_id and not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="你不是该员工的直属上级")
 
     cycle = session.get(PerformanceCycle, cycle_id)
@@ -154,7 +154,7 @@ def get_feedback(
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
     is_self = current.id == user_id
-    if not is_self and not can_act_as_superior(current, target, allowed_roles=SUPERIOR_ROLES):
+    if not is_self and not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
         raise HTTPException(status_code=403, detail="无权查看")
 
     fb = session.exec(

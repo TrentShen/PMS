@@ -52,9 +52,13 @@ export default function App() {
           <Route path="/history" element={<History />} />
           <Route path="/trend" element={<Trend />} />
           <Route path="/trend/:userId" element={<Trend />} />
-          {/* 反馈：员工看自己 /feedback/:cycleId；上级写别人 /feedback/:cycleId/:userId */}
+          {/* 反馈：员工看自己 /feedback/:cycleId 全员开放 */}
           <Route path="/feedback/:cycleId" element={<Feedback />} />
-          <Route path="/feedback/:cycleId/:userId" element={<Feedback />} />
+
+          {/* 上级写别人 /feedback/:cycleId/:userId：仅 Leader/HR（含 HR 部门 Leader） */}
+          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" allowHrPermission />}>
+            <Route path="/feedback/:cycleId/:userId" element={<Feedback />} />
+          </Route>
 
           {/* 试用期详情：员工可看/填写自己的；上级/HR 看下属的（后端按 scope 控制） */}
           <Route path="/probation/:userId" element={<ProbationDetail />} />

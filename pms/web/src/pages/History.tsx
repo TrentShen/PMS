@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Empty, Space, Table, Tag, Typography } from "antd";
 import { api } from "@/services/api";
-import { useAuth } from "@/stores/auth";
 
 interface MyCycleItem {
   cycle: { id: number; name: string; status: string; start_date: string; end_date: string };
@@ -40,7 +39,6 @@ const PERF_COLOR: Record<string, string> = {
 };
 
 export default function History() {
-  const user = useAuth((s) => s.user)!;
   const navigate = useNavigate();
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
   const [historical, setHistorical] = useState<HistoricalItem[]>([]);
@@ -50,8 +48,9 @@ export default function History() {
       // 只展示已发布的
       setCycles(r.data.filter((c) => c.cycle.status === "published"));
     });
+    // 后端已按当前用户过滤，直接使用返回数据
     api.get<HistoricalItem[]>("/v1/import/historical-performance").then((r) => {
-      setHistorical(r.data.filter((h) => h.user_id === user.id));
+      setHistorical(r.data);
     }).catch(() => setHistorical([]));
   }, []);
 

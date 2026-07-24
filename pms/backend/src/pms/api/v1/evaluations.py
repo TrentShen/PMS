@@ -374,7 +374,7 @@ def submit_superior_evaluation(
     if user_id == current.id:
         raise HTTPException(status_code=400, detail="不能给自己做上级评估（自评请用自评接口）")
 
-    if not can_act_as_superior(current, target):
+    if not can_act_as_superior(current, target, session):
         raise HTTPException(status_code=403, detail="只有直属上级或 HR 才能做上级评估")
 
     cycle = session.get(PerformanceCycle, cycle_id)

@@ -218,7 +218,7 @@ def approve_objectives(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    if not can_act_as_superior(current, target):
+    if not can_act_as_superior(current, target, session):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
@@ -272,7 +272,7 @@ def reject_objectives(
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    if not can_act_as_superior(current, target):
+    if not can_act_as_superior(current, target, session):
         raise HTTPException(status_code=403, detail="无权审批该员工的目标")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)
@@ -505,7 +505,7 @@ def approve_adjustment(
     target = session.get(User, revision.user_id)
     if not target:
         raise HTTPException(status_code=404, detail="用户不存在")
-    if not can_act_as_superior(current, target):
+    if not can_act_as_superior(current, target, session):
         raise HTTPException(status_code=403, detail="无权审批")
 
     cycle = session.get(ObjectiveCycle, objective_cycle_id)

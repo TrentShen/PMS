@@ -20,7 +20,7 @@ from pms.database.models.objective_cycle_participant import ObjectiveCyclePartic
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, is_fte, require_fte, require_role
+from pms.services.auth import get_current_user, has_any_role, is_fte, require_role
 from pms.services.notification import send_textcard_notification
 from pms.utils.audit import write_audit
 
@@ -516,6 +516,12 @@ def suggest_participants(
         q = q.where(User.department_id.in_(allowed_depts))
 
     users = session.exec(q).all()
+    # 与 add_participants 的 visible_user_ids 口径对齐：不建议 HR 部门成员
+    from pms.services.scope import _hr_dept_member_ids
+
+    hr_member_ids = _hr_dept_member_ids(session)
+    if hr_member_ids:
+        users = [u for u in users if u.id not in hr_member_ids]
     return [
         {"id": u.id, "name": u.name, "role": u.role, "position": u.position,
          "department_id": u.department_id, "level": u.level,
@@ -731,9 +737,14 @@ def delete_participant(
 @router.get("/mine", response_model=list[dict])
 def my_cycles(
     session: Session = Depends(get_session),
-    current: User = Depends(require_fte),
+    current: User = Depends(get_current_user),
 ) -> list[dict]:
     from pms.database.models.feedback import FeedbackRecord
+
+    # 非 FTE 员工（实习生等）返回空列表而非 403，避免初始化页面报错；
+    # 写接口仍由 require_fte 拦截
+    if not is_fte(current):
+        return []
 
     as_self = session.exec(
         select(PerformanceCycle, CycleParticipant)
@@ -827,10 +838,19 @@ def cycle_dashboard(
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
 
+    # 受限 HRBP 数据范围收窄：仅统计可见参与人（返回结构不变）
+    scope: set[int] | None = None
+    if current.role == "hrbp" and current.hrbp_scope_dept_ids:
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, current)
+
     # 评估参与人
     perf_participants = session.exec(
         select(CycleParticipant).where(CycleParticipant.cycle_id == cycle_id)
     ).all()
+    if scope is not None:
+        perf_participants = [p for p in perf_participants if p.user_id in scope]
     perf_user_ids = [p.user_id for p in perf_participants]
 
     # 目标参与人（来自关联目标周期）
@@ -841,6 +861,8 @@ def cycle_dashboard(
                 ObjectiveCycleParticipant.objective_cycle_id == cycle.objective_cycle_id
             )
         ).all()
+        if scope is not None:
+            oc_participants = [p for p in oc_participants if p.user_id in scope]
         objective_participant_count = len(oc_participants)
 
     # 自评完成数

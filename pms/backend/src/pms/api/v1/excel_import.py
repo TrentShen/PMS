@@ -146,6 +146,19 @@ def import_objectives(
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
 
+    # 与 add_participants 对齐：受限 HRBP 只能导入自己管辖范围内员工的目标
+    if hr.role == "hrbp" and hr.hrbp_scope_dept_ids:
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, hr)
+        if scope is not None:
+            outside = sorted({p["uid"] for p in parsed if p["user_id"] not in scope})
+            if outside:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"以下员工超出你的管辖范围，无法导入：{outside}",
+                )
+
     # 全部通过，写入数据库（先删旧目标再写新的）
     user_ids = list({p["user_id"] for p in parsed})
     existing = session.exec(

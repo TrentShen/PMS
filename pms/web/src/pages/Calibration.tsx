@@ -206,7 +206,7 @@ export default function Calibration() {
   const [rejectComment, setRejectComment] = useState("");
   const [approvalSaving, setApprovalSaving] = useState(false);
 
-  const isHr = user.role === "hrbp" || user.role === "super_admin";
+  const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
   const isLeader = user.role === "dept_leader";
 
   useEffect(() => {

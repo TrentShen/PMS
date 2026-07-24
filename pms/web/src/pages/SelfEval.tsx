@@ -17,7 +17,7 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
-import type { AdjustmentView, Paginated, Participant } from "@/services/api.types";
+import type { AdjustmentView } from "@/services/api.types";
 
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
@@ -212,7 +212,11 @@ function ObjectivesSection({
       const r = await api.get<AdjustmentView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments`);
       const pending = r.data.find((a) => a.status === "pending");
       setPendingAdj(pending || null);
-    } catch { setPendingAdj(null); }
+    } catch (e) {
+      // 无调整申请是正常情况（返回空数组）；请求失败才提示，避免静默吞错
+      setPendingAdj(null);
+      message.error(formatError(e, "加载调整申请失败"));
+    }
   }
   useEffect(() => { loadPendingAdjustment(); }, [objectiveCycleId]);
   const rejected = objectives.find((o) => o.reject_reason);
@@ -369,15 +373,9 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
     setCandidates(r.data);
     // employee-proposed 的作为可编辑初值；leader-added 和 approved 都不展示在选择框里
     setSelected(r.data.filter((c) => c.proposed_by === "employee" && c.status !== "removed").map((c) => c.user_id));
-    // 候选人：从周期参与人列表获取（排除自己、超管、HR）
-    const u = await api.get<Paginated<Participant>>(`/v1/cycles/${cycleId}/participants?page_size=9999`);
-    // 注：/v1/cycles/:id/participants 返回的 ParticipantDetail 不含 role，
-    // 原 any 时代的 role 过滤实际上未生效（undefined !== "super_admin" 恒为 true），此处保留身份过滤语义需后端补充字段。
-    setAllUsers(
-      u.data.items
-        .filter((x) => x.user_id !== me.id)
-        .map((x) => ({ id: x.user_id, name: x.user_name, position: x.user_position }))
-    );
+    // 候选人：脱敏同事列表（/v1/cycles/:id/participants 按 scope 过滤后员工只剩自己，排除后下拉恒空）
+    const u = await api.get<UserBrief[]>("/v1/users/colleagues");
+    setAllUsers(u.data.filter((x) => x.id !== me.id));
   }
   useEffect(() => {
     load();

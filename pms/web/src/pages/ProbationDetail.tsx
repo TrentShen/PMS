@@ -51,6 +51,7 @@ interface ProbationPlan {
   user_name: string;
   department_name: string | null;
   leader_name: string | null;
+  leader_userid: string | null;
   start_date: string;
   end_date: string;
   remaining_days: number;
@@ -84,7 +85,6 @@ export default function ProbationDetail() {
 
   const isSelf = currentUser.id === Number(userId);
   const isHr = hasAnyRole(currentUser?.role, [...ROLE.HR]) || currentUser?.has_hr_permission;
-  const isLeader = hasAnyRole(currentUser?.role, [...ROLE.LEADER]) || currentUser?.has_subordinates;
 
   const [plan, setPlan] = useState<ProbationPlan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -146,16 +146,20 @@ export default function ProbationDetail() {
     return ["draft", "objective_draft", "objective_pending_review"].includes(plan.status);
   }
 
+  // 审批/评估口径与后端 can_act_as_superior 对齐：HR 或该员工的直属上级；员工本人不能审批/评估自己
+  function canActOnPlan(p: ProbationPlan): boolean {
+    if (isSelf) return false;
+    return Boolean(isHr) || p.leader_userid === currentUser.wecom_userid;
+  }
+
   function canApproveObjectives() {
     if (!plan) return false;
-    if (!(isLeader || isHr)) return false;
-    return plan.status === "objective_pending_review";
+    return canActOnPlan(plan) && plan.status === "objective_pending_review";
   }
 
   function canEvaluate() {
     if (!plan) return false;
-    if (!(isLeader || isHr)) return false;
-    return ["in_progress", "pending_evaluation", "extended"].includes(plan.status);
+    return canActOnPlan(plan) && ["in_progress", "pending_evaluation", "extended"].includes(plan.status);
   }
 
   function updateObjective(idx: number, field: keyof ProbationObjective, value: string) {

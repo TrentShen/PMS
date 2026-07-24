@@ -139,17 +139,22 @@ LEADER_WRITE_ROLES = ("direct_leader", "dept_leader", "hrbp", "super_admin")
 def can_act_as_superior(
     current: User,
     target: User,
+    session: Session,
     allowed_roles: tuple[str, ...] = LEADER_WRITE_ROLES,
 ) -> bool:
     """判断 current 是否可以对 target 执行直属上级/HR 类的写操作。
 
     角色切换后，current.role 为生效角色；仅当生效角色在允许列表内且满足
     汇报关系（或本身是 HR/超管）时才放行。
+    HR 部门的 dept_leader 与 require_role 口径一致，视同 hrbp 直通。
     """
     if current.role in ("hrbp", "super_admin"):
         return True
     if current.role not in allowed_roles:
         return False
+    # HR 部门 Leader 兜底：与 require_role 的 is_hr_dept_leader 规则保持一致
+    if is_hr_dept_leader(current, session):
+        return True
     return target.leader_userid == current.wecom_userid
 
 

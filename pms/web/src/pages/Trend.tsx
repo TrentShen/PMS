@@ -42,12 +42,12 @@ export default function Trend() {
       .catch((e) => message.error(formatError(e, "加载趋势失败")))
       .finally(() => setLoading(false));
 
-    if (user.role === "hrbp" || user.role === "super_admin") {
+    if (user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission) {
       api.get<DeptTrendPoint[]>("/v1/trend/departments")
         .then((r) => setDeptPoints(r.data))
         .catch(() => setDeptPoints([]));
     }
-  }, [targetId, user.role]);
+  }, [targetId, user.role, user.has_hr_permission]);
 
   const personalChartData = useMemo(() => {
     return points

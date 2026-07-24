@@ -12,7 +12,7 @@ from pms.database.models.enums import ProbationObjectiveStatus, ProbationPlanSta
 from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
-from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, require_fte, require_role
+from pms.services.auth import can_act_as_superior, get_current_user, has_any_role, is_fte, require_fte, require_role
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import ensure_can_view_user, visible_user_ids
 from pms.utils.audit import write_audit
@@ -20,7 +20,6 @@ from pms.utils.audit import write_audit
 router = APIRouter(
     prefix="/probation",
     tags=["probation"],
-    dependencies=[Depends(require_fte)],
 )
 
 DEFAULT_PROBATION_MONTHS = 6
@@ -89,7 +88,7 @@ def _ensure_can_write_objectives(session: Session, current: User, target: User) 
 def _ensure_can_evaluate(session: Session, current: User, target: User) -> None:
     if current.id == target.id:
         raise HTTPException(status_code=403, detail="不能评估自己")
-    if not can_act_as_superior(current, target):
+    if not can_act_as_superior(current, target, session):
         raise HTTPException(status_code=403, detail="无权评估该员工")
 
 
@@ -149,6 +148,7 @@ class ProbationPlanView(BaseModel):
     user_name: str
     department_name: str | None
     leader_name: str | None
+    leader_userid: str | None
     start_date: date
     end_date: date
     remaining_days: int
@@ -228,6 +228,7 @@ def _build_plan_view(
         user_name=name_map.get(plan.user_id, "未知"),
         department_name=dept_map.get(user.department_id) if user and user.department_id else None,
         leader_name=leader_name,
+        leader_userid=user.leader_userid if user else None,
         start_date=plan.start_date,
         end_date=plan.end_date,
         remaining_days=remaining_days,
@@ -311,7 +312,7 @@ def _sync_probation_plans(session: Session) -> int:
 
 # ============ API：手动同步 ============
 
-@router.post("/sync-plans")
+@router.post("/sync-plans", dependencies=[Depends(require_fte)])
 def sync_probation_plans(
     session: Session = Depends(get_session),
     current: User = Depends(require_role("hrbp", "super_admin")),
@@ -333,7 +334,7 @@ def sync_probation_plans(
 
 # ============ API：列表查询 ============
 
-@router.get("", response_model=list[ProbationListItem])
+@router.get("", response_model=list[ProbationListItem], dependencies=[Depends(require_fte)])
 def list_probation_plans(
     status: str | None = Query(None),
     keyword: str | None = Query(None),
@@ -378,6 +379,11 @@ def get_my_probation_plan(
     current: User = Depends(get_current_user),
 ):
     """当前用户查看自己的试用期计划；没有则自动创建（如果是试用期员工）。"""
+    # 非 FTE 员工（实习生等）返回 None 而非 403，避免初始化页面报错；
+    # 其余试用期接口仍由 require_fte 拦截
+    if not is_fte(current):
+        return None
+
     plan = session.exec(
         select(ProbationPlan).where(ProbationPlan.user_id == current.id)
     ).first()
@@ -417,7 +423,7 @@ def get_my_probation_plan(
 
 # ============ API：详情查询 ============
 
-@router.get("/{user_id}", response_model=ProbationPlanView)
+@router.get("/{user_id}", response_model=ProbationPlanView, dependencies=[Depends(require_fte)])
 def get_probation_plan_detail(
     user_id: int,
     session: Session = Depends(get_session),
@@ -437,7 +443,7 @@ def get_probation_plan_detail(
 
 # ============ API：保存/提交目标 ============
 
-@router.post("/{user_id}/objectives")
+@router.post("/{user_id}/objectives", dependencies=[Depends(require_fte)])
 def save_probation_objectives(
     user_id: int,
     payload: ProbationObjectiveSave,
@@ -530,7 +536,7 @@ def save_probation_objectives(
 
 # ============ API：批准目标 ============
 
-@router.post("/{user_id}/objectives/approve")
+@router.post("/{user_id}/objectives/approve", dependencies=[Depends(require_fte)])
 def approve_probation_objectives(
     user_id: int,
     session: Session = Depends(get_session),
@@ -593,7 +599,7 @@ def approve_probation_objectives(
 
 # ============ API：驳回目标 ============
 
-@router.post("/{user_id}/objectives/reject")
+@router.post("/{user_id}/objectives/reject", dependencies=[Depends(require_fte)])
 def reject_probation_objectives(
     user_id: int,
     payload: ObjectiveReviewPayload,
@@ -666,7 +672,7 @@ def reject_probation_objectives(
 
 # ============ API：提交评估 ============
 
-@router.post("/{user_id}/evaluate")
+@router.post("/{user_id}/evaluate", dependencies=[Depends(require_fte)])
 def submit_probation_evaluation(
     user_id: int,
     payload: ProbationEvaluationPayload,
@@ -742,7 +748,7 @@ def submit_probation_evaluation(
 
 # ============ API：HR 修改计划 ============
 
-@router.patch("/{user_id}")
+@router.patch("/{user_id}", dependencies=[Depends(require_fte)])
 def update_probation_plan(
     user_id: int,
     payload: ProbationPlanUpdatePayload,
