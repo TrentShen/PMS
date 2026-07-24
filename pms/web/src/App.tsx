@@ -56,6 +56,9 @@ export default function App() {
           <Route path="/feedback/:cycleId" element={<Feedback />} />
           <Route path="/feedback/:cycleId/:userId" element={<Feedback />} />
 
+          {/* 试用期详情：员工可看/填写自己的；上级/HR 看下属的（后端按 scope 控制） */}
+          <Route path="/probation/:userId" element={<ProbationDetail />} />
+
           {/* 仅 Leader/HR 可见 */}
           <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" />}>
             <Route path="/leader" element={<LeaderEval />} />
@@ -78,7 +81,6 @@ export default function App() {
           {/* 试用期管理：Leader/HR 可见 */}
           <Route element={<RequireRole roles={[...ROLE.HR, ...ROLE.LEADER]} fallback="forbid" allowHrPermission />}>
             <Route path="/probation" element={<Probation />} />
-            <Route path="/probation/:userId" element={<ProbationDetail />} />
           </Route>
 
           {/* 仅超级管理员可见 */}
