@@ -19,6 +19,7 @@ from pms.database.models.enums import (
 )
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.feedback import FeedbackRecord
+from pms.database.models.historical_objective import HistoricalObjective
 from pms.database.models.historical_performance import HistoricalPerformanceResult
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
@@ -39,6 +40,7 @@ __all__ = [
     "PerformanceCycle",
     "ObjectiveCycle",
     "ObjectiveCycleParticipant",
+    "HistoricalObjective",
     "HistoricalPerformanceResult",
     "Evaluation",
     "Objective",

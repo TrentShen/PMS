@@ -27,11 +27,13 @@ import { api, formatError } from "@/services/api";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
+import { showObjectiveImportResult } from "@/components/ui/showImportResult";
 import type {
   Cycle,
   DeptBrief,
   ExclusionRules,
   ObjectiveCycle,
+  ObjectiveImportResult,
   Paginated,
   Participant,
   UserBrief,
@@ -233,6 +235,21 @@ export default function HrConsole() {
     return false;
   }
 
+  // === 历史目标导入 ===
+  async function onUploadHistoricalObjectives(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post<ObjectiveImportResult>("/v1/import/historical-objectives", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      showObjectiveImportResult(r.data);
+    } catch (e) {
+      message.error(formatError(e, "导入失败"));
+    }
+    return false;
+  }
+
   // === Excel 导出 ===
   async function onExport() {
     if (!selectedCycle) return;
@@ -425,6 +442,10 @@ export default function HrConsole() {
             <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
               <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
             </Upload>
+            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-objectives/template">下载历史目标模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
+              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
+            </Upload>
             <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
           </Space>
         </ResponsiveShow>
@@ -433,6 +454,10 @@ export default function HrConsole() {
             <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-performance/template">下载历史绩效模板</Button>
             <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
               <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
+            </Upload>
+            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-objectives/template">下载历史目标模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
+              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
             </Upload>
             <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
           </div>

@@ -13,12 +13,14 @@ from pms.api.v1 import (
     feedback,
     health,
     historical_import,
+    historical_objective_import,
     history,
     notify,
     objective_cycles,
     objectives,
     peer,
     probation,
+    probation_import,
     trend,
     users,
 )
@@ -41,5 +43,7 @@ api_v1_router.include_router(notify.router)
 api_v1_router.include_router(history.router)
 api_v1_router.include_router(admin.router)
 api_v1_router.include_router(probation.router)
+api_v1_router.include_router(probation_import.router)
 api_v1_router.include_router(historical_import.router)
+api_v1_router.include_router(historical_objective_import.router)
 api_v1_router.include_router(trend.router)

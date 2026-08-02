@@ -2,8 +2,10 @@
 // 员工看到自己所有已发布周期的结果；Leader/HR 可切员工看下属
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, Space, Table, Tag, Typography } from "antd";
-import { api } from "@/services/api";
+import { Card, Empty, message, Space, Table, Tag, Typography } from "antd";
+import { api, formatError } from "@/services/api";
+import { useAuth } from "@/stores/auth";
+import type { HistoricalObjective } from "@/services/api.types";
 
 interface MyCycleItem {
   cycle: { id: number; name: string; status: string; start_date: string; end_date: string };
@@ -40,8 +42,10 @@ const PERF_COLOR: Record<string, string> = {
 
 export default function History() {
   const navigate = useNavigate();
+  const user = useAuth((s) => s.user);
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
   const [historical, setHistorical] = useState<HistoricalItem[]>([]);
+  const [histObjectives, setHistObjectives] = useState<HistoricalObjective[]>([]);
 
   useEffect(() => {
     api.get<MyCycleItem[]>("/v1/cycles/mine").then((r) => {
@@ -52,9 +56,33 @@ export default function History() {
     api.get<HistoricalItem[]>("/v1/import/historical-performance").then((r) => {
       setHistorical(r.data);
     }).catch(() => setHistorical([]));
-  }, []);
+    // 历史目标：当前页面只看自己（非 HR 后端也只允许查自己）
+    if (user) {
+      api.get<HistoricalObjective[]>("/v1/import/historical-objectives", {
+        params: { user_id: user.id },
+      }).then((r) => {
+        setHistObjectives(r.data);
+      }).catch((e) => {
+        message.error(formatError(e, "历史目标加载失败"));
+      });
+    }
+  }, [user]);
 
   const published = cycles.filter((c) => c.participant_status === "published");
+
+  // 历史目标按周期分组（保持接口返回顺序，组内按 order_num 排序）
+  const objectiveGroups: [string, HistoricalObjective[]][] = [];
+  for (const o of histObjectives) {
+    const group = objectiveGroups.find(([name]) => name === o.cycle_name);
+    if (group) {
+      group[1].push(o);
+    } else {
+      objectiveGroups.push([o.cycle_name, [o]]);
+    }
+  }
+  for (const [, objs] of objectiveGroups) {
+    objs.sort((a, b) => a.order_num - b.order_num);
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -126,6 +154,34 @@ export default function History() {
               { title: "评语", dataIndex: "comment", render: (c) => c || "-" },
             ]}
           />
+        </Card>
+      )}
+
+      {objectiveGroups.length > 0 && (
+        <Card title="历史目标（只读）">
+          {objectiveGroups.map(([cycleName, objs]) => (
+            <div key={cycleName} style={{ marginBottom: 16 }}>
+              <Typography.Title level={5} style={{ marginTop: 0 }}>{cycleName}</Typography.Title>
+              {objs.map((o) => (
+                <Card key={o.id} size="small" style={{ marginBottom: 8 }}>
+                  <Space size={8}>
+                    <Typography.Text strong>{o.title}</Typography.Text>
+                    {o.weight > 0 && <Tag>权重 {o.weight}</Tag>}
+                  </Space>
+                  {o.description && (
+                    <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 4, whiteSpace: "pre-wrap" }}>
+                      {o.description}
+                    </Typography.Paragraph>
+                  )}
+                  {o.measure_criteria && (
+                    <Typography.Paragraph type="secondary" style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                      衡量标准：{o.measure_criteria}
+                    </Typography.Paragraph>
+                  )}
+                </Card>
+              ))}
+            </div>
+          ))}
         </Card>
       )}
     </Space>

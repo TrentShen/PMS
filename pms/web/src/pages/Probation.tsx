@@ -2,13 +2,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnsType } from "antd/es/table";
-import { Button, Card, Input, message, Select, Space, Table, Tag, Typography } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Input, message, Select, Space, Table, Tag, Typography, Upload } from "antd";
+import { DownloadOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
+import { showObjectiveImportResult } from "@/components/ui/showImportResult";
+import type { ObjectiveImportResult } from "@/services/api.types";
 
 
 interface ProbationListItem {
@@ -72,6 +74,22 @@ export default function Probation() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  // === 试用期目标导入 ===
+  async function onUploadObjectives(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post<ObjectiveImportResult>("/v1/probation/import-objectives", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      showObjectiveImportResult(r.data);
+      load();
+    } catch (e) {
+      message.error(formatError(e, "导入失败"));
+    }
+    return false; // 阻止 antd 默认上传
   }
 
   useEffect(() => {
@@ -186,6 +204,16 @@ export default function Probation() {
             <Button icon={<ReloadOutlined />} onClick={syncPlans} loading={syncing}>
               同步试用期计划
             </Button>
+          )}
+          {isHr && (
+            <>
+              <Button icon={<DownloadOutlined />} href="/api/v1/probation/import-objectives/template">
+                下载目标导入模板
+              </Button>
+              <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadObjectives(f)}>
+                <Button icon={<UploadOutlined />}>导入试用期目标</Button>
+              </Upload>
+            </>
           )}
         </Space>
 

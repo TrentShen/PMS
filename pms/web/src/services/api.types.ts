@@ -105,6 +105,33 @@ export interface ObjectiveView {
   reject_reason: string | null;
 }
 
+// 目标导入（试用期目标 / 历史目标）跳过的单条记录
+export interface ObjectiveImportSkip {
+  wecom_userid: string;
+  name: string;
+  reason: string;
+}
+
+// POST /v1/probation/import-objectives 与 POST /v1/import/historical-objectives 的响应
+export interface ObjectiveImportResult {
+  imported_users: number;
+  imported_objectives: number;
+  skipped: ObjectiveImportSkip[];
+}
+
+// GET /v1/import/historical-objectives 的单条历史目标
+export interface HistoricalObjective {
+  id: number;
+  user_id: number;
+  user_name: string;
+  cycle_name: string;
+  title: string;
+  description: string | null;
+  measure_criteria: string | null;
+  weight: number;
+  order_num: number;
+}
+
 // 通用 API 错误结构（axios 错误响应）
 export interface ApiErrorResponse {
   response?: {
