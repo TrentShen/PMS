@@ -16,6 +16,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Spin,
   Statistic,
   Table,
   Typography,
@@ -656,7 +657,13 @@ export default function LeaderEvalDetail() {
     }
   }
 
-  if (!detail) return null;
+  if (!detail) {
+    return (
+      <div style={{ textAlign: "center", padding: 64 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   const selfEva = detail.self_evaluation;
   const readonly = detail.cycle.status !== "in_progress";
@@ -796,7 +803,7 @@ export default function LeaderEvalDetail() {
           label="业绩评分（1-5，0.25 分段）"
           rules={[{ required: true }]}
         >
-          <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+          <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
         </Form.Item>
         <ValueGradeForm disabled={readonly || !selfDone} />
         <Form.Item

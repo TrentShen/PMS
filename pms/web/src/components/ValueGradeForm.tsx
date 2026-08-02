@@ -1,6 +1,6 @@
 // 价值观三维度评分表单组件（信念/团队/成长）
 // 复用于自评、互评、上级评估表单
-import { Form, Input, Select, Typography } from "antd";
+import { Form, Input, Radio, Typography } from "antd";
 
 const DIMS = [
   { key: "belief", label: "信念", desc: "创新、专业" },
@@ -8,10 +8,11 @@ const DIMS = [
   { key: "growth", label: "成长", desc: "挑战、担当" },
 ];
 
+// 按钮直选，label 保持简短避免移动端溢出；等级含义在下方说明
 const GRADE_OPTIONS = [
-  { value: "jia", label: "甲 — 持续超越期望" },
-  { value: "yi", label: "乙 — 基本符合价值观要求" },
-  { value: "bing", label: "丙 — 不符合基本要求" },
+  { value: "jia", label: "甲" },
+  { value: "yi", label: "乙" },
+  { value: "bing", label: "丙" },
 ];
 
 interface Props {
@@ -24,7 +25,7 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
   return (
     <>
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
-        请对三个价值观维度分别评级（评"甲"时必须填写具体事例）
+        请对三个价值观维度分别评级：甲=持续超越期望，乙=基本符合价值观要求，丙=不符合基本要求（评"甲"时必须填写具体事例）
       </Typography.Text>
       {DIMS.map((dim) => (
         <div key={dim.key} style={{ marginBottom: 16, padding: "12px 16px", background: "#fafafa", borderRadius: 8 }}>
@@ -37,7 +38,13 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
               rules={[{ required: true, message: `请选择「${dim.label}」等级` }]}
               style={{ marginBottom: 8 }}
             >
-              <Select options={GRADE_OPTIONS} disabled={disabled} placeholder="选择等级" />
+              <Radio.Group
+                options={GRADE_OPTIONS}
+                optionType="button"
+                buttonStyle="solid"
+                size="large"
+                disabled={disabled}
+              />
             </Form.Item>
             <Form.Item
               name={`${prefix}_${dim.key}_example`}

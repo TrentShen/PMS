@@ -173,7 +173,7 @@ export default function PeerTasks() {
             label="业绩评分（1-5，0.25 分段）"
             rules={[{ required: true }]}
           >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
           </Form.Item>
           <ValueGradeForm />
           <Form.Item name="comment" label="评语（可选）">

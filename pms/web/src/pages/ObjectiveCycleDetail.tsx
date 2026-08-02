@@ -9,6 +9,7 @@ import {
   Modal,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Upload,
@@ -147,7 +148,13 @@ export default function ObjectiveCycleDetail() {
   );
   const pendingParticipants = participants.filter((p) => p.status === "pending");
 
-  if (!cycle) return null;
+  if (!cycle) {
+    return (
+      <div style={{ textAlign: "center", padding: 64 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>

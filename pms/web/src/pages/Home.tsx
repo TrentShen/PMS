@@ -1,8 +1,9 @@
-// 首页："我的周期"卡片列表 + 根据角色显示不同入口
+// 首页：任务驱动 —— 首屏"当前待办"hero 卡 + 全部待办列表 + 周期卡片
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Empty, Space, Typography, message } from "antd";
+import { Button, Card, Empty, List, Space, Typography, message } from "antd";
+import { RightOutlined } from "@ant-design/icons";
 import { ROLE } from "@/App";
 import { hasAnyRole } from "@/components/RequireRole";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -10,6 +11,7 @@ import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
 import type { CardColumn } from "@/components/ui/TableCardList";
+import { useMobile } from "@/hooks/useMobile";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
@@ -30,6 +32,23 @@ interface TaskItem {
   status: string;
   participant_status?: string | null;
   objective_status?: string | null;
+}
+
+// 互评待办（只取列表需要的字段，完整结构见 PeerTasks 页）
+interface PeerTaskBrief {
+  id: number;
+  cycle_name: string;
+  target_name: string;
+  status: string;
+}
+
+// 首页统一待办条目：绩效评估 / 目标制定 / 互评
+interface TodoItem {
+  key: string;
+  type: "evaluation" | "objective_setting" | "peer";
+  name: string;
+  statusNode: ReactNode;
+  onClick: () => void;
 }
 
 interface MyCycleItem {
@@ -82,11 +101,13 @@ const PSTATUS_TAG_TYPE: Record<string, StatusType> = {
 const TASK_TYPE_LABEL: Record<string, string> = {
   evaluation: "绩效评估",
   objective_setting: "目标制定",
+  peer: "互评",
 };
 
 const TASK_TYPE_TAG_TYPE: Record<string, StatusType> = {
   evaluation: "primary",
   objective_setting: "success",
+  peer: "info",
 };
 
 const OBJ_STATUS_LABEL: Record<string, string> = {
@@ -122,15 +143,25 @@ const PERF_LEVEL_LABEL: Record<string, string> = {
 
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// 距周期结束的自然天数（负数表示已逾期）
+function daysUntil(endDate: string): number {
+  const end = new Date(`${endDate}T23:59:59`);
+  return Math.ceil((end.getTime() - Date.now()) / MS_PER_DAY);
+}
+
 export default function Home() {
   const user = useAuth((s) => s.user)!;
   const navigate = useNavigate();
+  const isMobile = useMobile();
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
   const [myProbation, setMyProbation] = useState<ProbationPlanBrief | null>(null);
   const [tasks, setTasks] = useState<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>({
     evaluations: [],
     objective_settings: [],
   });
+  const [pendingPeerTasks, setPendingPeerTasks] = useState<PeerTaskBrief[]>([]);
 
   useEffect(() => {
     api
@@ -141,9 +172,15 @@ export default function Home() {
       .get<ProbationPlanBrief | null>("/v1/probation/mine")
       .then((r) => setMyProbation(r.data))
       .catch((e) => message.error(formatError(e, "加载试用期信息失败")));
-    api.get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks").then((r) =>
-      setTasks(r.data)
-    );
+    api
+      .get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks")
+      .then((r) => setTasks(r.data))
+      .catch((e) => message.error(formatError(e, "加载待办任务失败")));
+    // 互评待办与上面的请求并发，只保留待评价的任务
+    api
+      .get<PeerTaskBrief[]>("/v1/peer/my-tasks")
+      .then((r) => setPendingPeerTasks(r.data.filter((t) => t.status === "pending")))
+      .catch((e) => message.error(formatError(e, "加载互评任务失败")));
   }, []);
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
@@ -162,6 +199,15 @@ export default function Home() {
       {PSTATUS_LABEL[status] ?? status}
     </StatusTag>
   );
+
+  // 周期剩余天数：仅进行中的周期展示；≤3 天 warning，逾期 danger
+  const renderRemainingDays = (item: MyCycleItem): ReactNode => {
+    if (item.cycle.status !== "in_progress") return null;
+    const days = daysUntil(item.cycle.end_date);
+    if (days < 0) return <StatusTag type="danger">已逾期 {Math.abs(days)} 天</StatusTag>;
+    if (days <= 3) return <StatusTag type="warning">剩 {days} 天</StatusTag>;
+    return <StatusTag type="default">剩 {days} 天</StatusTag>;
+  };
 
   const renderFinalResult = (item: MyCycleItem): ReactNode => (
     <Space size={4} wrap>
@@ -199,10 +245,42 @@ export default function Home() {
     </Space>
   );
 
-  // 移动端周期卡片列：周期名、状态、我的状态、最终结果
+  // 全部待办：绩效评估优先，其次目标制定，最后互评
+  const todos: TodoItem[] = [
+    ...tasks.evaluations.map((t) => ({
+      key: `eval-${t.id}`,
+      type: "evaluation" as const,
+      name: t.name,
+      statusNode: renderParticipantStatus(t.participant_status ?? ""),
+      onClick: () => navigate(`/self/${t.id}`),
+    })),
+    ...tasks.objective_settings.map((t) => ({
+      key: `obj-${t.id}`,
+      type: "objective_setting" as const,
+      name: t.name,
+      statusNode: (
+        <StatusTag type={OBJ_STATUS_TAG_TYPE[t.objective_status ?? ""] ?? "default"}>
+          {OBJ_STATUS_LABEL[t.objective_status ?? ""]}
+        </StatusTag>
+      ),
+      onClick: () => navigate(`/objectives/${t.id}`),
+    })),
+    ...pendingPeerTasks.map((t) => ({
+      key: `peer-${t.id}`,
+      type: "peer" as const,
+      name: `互评 ${t.target_name}（${t.cycle_name}）`,
+      statusNode: <StatusTag type="warning">待评价</StatusTag>,
+      onClick: () => navigate("/peer"),
+    })),
+  ];
+  // hero 取最紧急的一条（数组顺序即优先级：评估 > 目标 > 互评）
+  const heroTodo = todos[0] ?? null;
+
+  // 移动端周期卡片列：周期名、状态、剩余天数、我的状态、最终结果
   const cycleCardColumns: CardColumn<MyCycleItem>[] = [
     { title: "周期", render: (item) => item.cycle.name },
     { title: "状态", render: (item) => renderCycleStatus(item.cycle.status) },
+    { title: "剩余天数", render: (item) => renderRemainingDays(item) ?? "-" },
     { title: "我的状态", render: (item) => renderParticipantStatus(item.participant_status) },
     {
       title: "最终结果",
@@ -212,63 +290,76 @@ export default function Home() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Card title={`你好，${user.name}`}>
-        <Space wrap>
-          {isHr && (
-            <Button type="primary" onClick={() => navigate("/hr")}>
-              HR 管理台
+      {/* 首屏 hero：当前最紧急待办，一键进入 */}
+      <Card>
+        {heroTodo ? (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Typography.Text type="secondary">当前待办</Typography.Text>
+            <Typography.Title level={isMobile ? 4 : 3} style={{ margin: 0 }}>
+              {TASK_TYPE_LABEL[heroTodo.type]} · {heroTodo.name}
+            </Typography.Title>
+            <Space size={4} wrap>
+              <StatusTag type={TASK_TYPE_TAG_TYPE[heroTodo.type] ?? "default"}>
+                {TASK_TYPE_LABEL[heroTodo.type]}
+              </StatusTag>
+              {heroTodo.statusNode}
+            </Space>
+            <Button
+              type="primary"
+              size="large"
+              block={isMobile}
+              onClick={heroTodo.onClick}
+            >
+              去处理
             </Button>
-          )}
-          {(isLeader || isHr) && (
-            <Button onClick={() => navigate("/leader")}>下属评估</Button>
-          )}
-          {canSeeProbationMenu && (
-            <Button onClick={() => navigate("/probation")}>试用期管理</Button>
-          )}
-        </Space>
+            {todos.length > 1 && (
+              <Typography.Text type="secondary">还有 {todos.length - 1} 条待办</Typography.Text>
+            )}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">当前没有待办事项 ✅</Typography.Text>
+        )}
       </Card>
 
-      {(tasks.evaluations.length > 0 || tasks.objective_settings.length > 0) && (
-        <Card title="我的待办任务">
-          <Space direction="vertical" style={{ width: "100%" }}>
-            {tasks.evaluations.map((t) => (
-              <Card key={`eval-${t.id}`} type="inner" size="small" className="pms-card-hover">
-                <Space>
-                  <StatusTag type={TASK_TYPE_TAG_TYPE[t.type] ?? "default"}>
-                    {TASK_TYPE_LABEL[t.type]}
+      {/* 全部待办：整行可点，行高 ≥48px */}
+      {todos.length > 1 && (
+        <Card title="全部待办">
+          <List
+            dataSource={todos}
+            renderItem={(todo) => (
+              <List.Item
+                onClick={todo.onClick}
+                style={{ cursor: "pointer", minHeight: 48, padding: "12px 8px" }}
+              >
+                <Space size={8} wrap style={{ flex: 1 }}>
+                  <StatusTag type={TASK_TYPE_TAG_TYPE[todo.type] ?? "default"}>
+                    {TASK_TYPE_LABEL[todo.type]}
                   </StatusTag>
-                  <Typography.Text>{t.name}</Typography.Text>
-                  {renderParticipantStatus(t.participant_status ?? "")}
-                  <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => navigate(`/self/${t.id}`)}
-                  >
-                    去处理
-                  </Button>
+                  <Typography.Text>{todo.name}</Typography.Text>
+                  {todo.statusNode}
                 </Space>
-              </Card>
-            ))}
-            {tasks.objective_settings.map((t) => (
-              <Card key={`obj-${t.id}`} type="inner" size="small" className="pms-card-hover">
-                <Space>
-                  <StatusTag type={TASK_TYPE_TAG_TYPE[t.type] ?? "default"}>
-                    {TASK_TYPE_LABEL[t.type]}
-                  </StatusTag>
-                  <Typography.Text>{t.name}</Typography.Text>
-                  <StatusTag type={OBJ_STATUS_TAG_TYPE[t.objective_status ?? ""] ?? "default"}>
-                    {OBJ_STATUS_LABEL[t.objective_status ?? ""]}
-                  </StatusTag>
-                  <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => navigate(`/objectives/${t.id}`)}
-                  >
-                    去填写
-                  </Button>
-                </Space>
-              </Card>
-            ))}
+                <RightOutlined style={{ color: "var(--color-text-tertiary)" }} />
+              </List.Item>
+            )}
+          />
+        </Card>
+      )}
+
+      {/* 角色快捷入口（待办之后） */}
+      {(isHr || isLeader || canSeeProbationMenu) && (
+        <Card title={`你好，${user.name}`}>
+          <Space wrap>
+            {isHr && (
+              <Button type="primary" onClick={() => navigate("/hr")}>
+                HR 管理台
+              </Button>
+            )}
+            {(isLeader || isHr) && (
+              <Button onClick={() => navigate("/leader")}>下属评估</Button>
+            )}
+            {canSeeProbationMenu && (
+              <Button onClick={() => navigate("/probation")}>试用期管理</Button>
+            )}
           </Space>
         </Card>
       )}
@@ -300,7 +391,7 @@ export default function Home() {
 
       <Card title="我参与的周期">
         {cycles.length === 0 ? (
-          <Empty description="暂无周期" />
+          <Empty description="暂无参与的绩效周期，待 HR 发起新周期后即可在这里查看" />
         ) : (
           <>
             <ResponsiveShow on="desktop">
@@ -315,7 +406,8 @@ export default function Home() {
                   >
                     <Space direction="vertical">
                       <span>
-                        周期：{item.cycle.start_date} ~ {item.cycle.end_date}
+                        周期：{item.cycle.start_date} ~ {item.cycle.end_date}{" "}
+                        {renderRemainingDays(item)}
                       </span>
                       <span>我的状态：{renderParticipantStatus(item.participant_status)}</span>
                       {item.participant_status === "published" && (

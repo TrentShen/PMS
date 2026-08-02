@@ -563,7 +563,7 @@ export default function Calibration() {
               },
             ]}
           >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: "100%" }} />
+            <InputNumber min={1} max={5} step={0.25} style={{ width: "100%" }} inputMode="decimal" />
           </Form.Item>
           <ValueGradeForm prefix="value" />
           <Form.Item name="reason" label="调整原因（必填）" rules={[{ required: true }]}>

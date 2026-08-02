@@ -81,6 +81,15 @@ function participantStatusType(status: string): StatusType {
   return "default";
 }
 
+// 参与人进度中文文案
+const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
+  pending: "待自评",
+  self_done: "待上级评估",
+  leader_done: "待发布",
+  published: "已公布",
+  excluded: "已排除",
+};
+
 /** 操作列图标统一 16px */
 const ACTION_ICON_STYLE: React.CSSProperties = { fontSize: 16 };
 
@@ -345,7 +354,7 @@ export default function HrConsole() {
     {
       title: "进度",
       dataIndex: "status",
-      render: (s: string) => <StatusTag type={participantStatusType(s)}>{s}</StatusTag>,
+      render: (s: string) => <StatusTag type={participantStatusType(s)}>{PARTICIPANT_STATUS_LABEL[s] ?? s}</StatusTag>,
     },
     { title: "业绩", render: (_, p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
     {
@@ -484,7 +493,7 @@ export default function HrConsole() {
               { title: "职位", render: (p) => p.user_position ?? "-" },
               {
                 title: "进度",
-                render: (p) => <StatusTag type={participantStatusType(p.status)}>{p.status}</StatusTag>,
+                render: (p) => <StatusTag type={participantStatusType(p.status)}>{PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}</StatusTag>,
               },
               { title: "业绩", render: (p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
               {

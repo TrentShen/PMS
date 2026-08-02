@@ -23,6 +23,21 @@ import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import { useMobile } from "@/hooks/useMobile";
+import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
+
+// 试用期目标状态（对应后端 ProbationObjectiveStatus：draft/pending_review/approved/locked）
+const OBJECTIVE_STATUS_LABEL: Record<string, string> = {
+  draft: "草稿",
+  pending_review: "待审批",
+  approved: "已确认",
+  locked: "已锁定",
+};
+const OBJECTIVE_STATUS_TYPE: Record<string, StatusType> = {
+  draft: "default",
+  pending_review: "warning",
+  approved: "success",
+  locked: "info",
+};
 
 
 interface ProbationObjective {
@@ -384,7 +399,7 @@ export default function ProbationDetail() {
                   { title: "目标项", dataIndex: "title", key: "title", width: "22%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
                   { title: "描述", dataIndex: "description", key: "description", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
                   { title: "衡量标准", dataIndex: "measure_criteria", key: "measure_criteria", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "状态", dataIndex: "status", key: "status", width: "8%", render: (v: string) => <Tag>{v}</Tag> },
+                  { title: "状态", dataIndex: "status", key: "status", width: "8%", render: (v: string) => <StatusTag type={OBJECTIVE_STATUS_TYPE[v] ?? "default"}>{OBJECTIVE_STATUS_LABEL[v] ?? v}</StatusTag> },
                 ]}
               />
             )}

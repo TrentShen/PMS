@@ -2,7 +2,7 @@
 // 断点：≤1023px 侧边栏隐藏，汉堡按钮 + Drawer 替代（样式见 global.css）
 import { useState } from "react";
 import { Button, Drawer, Layout as AntLayout, Menu, Modal, Space, Tag, message } from "antd";
-import { MenuOutlined, SwapOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, MenuOutlined, SwapOutlined } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE } from "@/App";
 import { useAuth } from "@/stores/auth";
@@ -17,6 +17,22 @@ const ROLE_LABEL: Record<string, string> = {
   direct_leader: "直属上级",
   employee: "员工",
 };
+
+// 深层路由（详情页等不在菜单中的页面）→ 顶栏标题，按前缀匹配，顺序即优先级
+const PATH_TITLE: [string, string][] = [
+  ["/self/", "绩效自评"],
+  ["/objectives/", "目标制定"],
+  ["/objective-cycles", "目标周期"],
+  ["/leader", "下属评估"],
+  ["/calibration", "绩效校准"],
+  ["/feedback", "绩效反馈"],
+  ["/probation/", "试用期详情"],
+  ["/probation", "试用期管理"],
+  ["/trend", "绩效趋势"],
+  ["/hr/dashboard", "绩效看板"],
+  ["/hr", "HR 管理台"],
+  ["/admin/users", "用户与权限"],
+];
 
 export default function AppLayout() {
   const user = useAuth((s) => s.user);
@@ -48,7 +64,12 @@ export default function AppLayout() {
 
   const activeKey =
     menuItems.find((m) => m.key !== "/" && location.pathname.startsWith(m.key))?.key ?? "/";
-  const pageTitle = menuItems.find((m) => m.key === activeKey)?.label ?? "绩效管理";
+  const pageTitle =
+    PATH_TITLE.find(([prefix]) => location.pathname.startsWith(prefix))?.[1] ??
+    menuItems.find((m) => m.key === activeKey)?.label ??
+    "绩效管理";
+  // 路径段数 >1 视为详情/深层页面（如 /self/1、/leader/2/users/3），顶栏左侧显示返回按钮
+  const isDetailPage = location.pathname.split("/").filter(Boolean).length > 1;
 
   function onMenuClick(key: string) {
     navigate(key);
@@ -128,14 +149,23 @@ export default function AppLayout() {
         {/* 顶部全局栏 */}
         <AntLayout.Header className="pms-topbar">
           <div className="pms-topbar-left">
-            {/* 移动端/平板汉堡按钮 */}
-            <Button
-              className="pms-menu-trigger"
-              type="text"
-              aria-label="打开菜单"
-              icon={<MenuOutlined />}
-              onClick={() => setDrawerOpen(true)}
-            />
+            {/* 详情/深层页面：返回按钮（移动端/桌面均显示）；一级页面：移动端/平板汉堡按钮 */}
+            {isDetailPage ? (
+              <Button
+                type="text"
+                aria-label="返回"
+                icon={<ArrowLeftOutlined />}
+                onClick={() => navigate(-1)}
+              />
+            ) : (
+              <Button
+                className="pms-menu-trigger"
+                type="text"
+                aria-label="打开菜单"
+                icon={<MenuOutlined />}
+                onClick={() => setDrawerOpen(true)}
+              />
+            )}
             <span className="pms-page-title">{pageTitle}</span>
           </div>
           <Space className="pms-topbar-right">

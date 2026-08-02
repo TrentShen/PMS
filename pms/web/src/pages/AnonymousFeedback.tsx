@@ -107,27 +107,27 @@ export default function AnonymousFeedback() {
           />
         </Form.Item>
         <Form.Item name="perf_score" label="业绩评分（可选，1-5，0.25 分段）">
-          <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+          <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
         </Form.Item>
         <Form.Item name="value_belief_grade" label="价值观-信念（可选）">
-          <Radio.Group>
-            <Radio value="jia">甲</Radio>
-            <Radio value="yi">乙</Radio>
-            <Radio value="bing">丙</Radio>
+          <Radio.Group optionType="button" buttonStyle="solid" size="large">
+            <Radio.Button value="jia">甲</Radio.Button>
+            <Radio.Button value="yi">乙</Radio.Button>
+            <Radio.Button value="bing">丙</Radio.Button>
           </Radio.Group>
         </Form.Item>
         <Form.Item name="value_team_grade" label="价值观-团队（可选）">
-          <Radio.Group>
-            <Radio value="jia">甲</Radio>
-            <Radio value="yi">乙</Radio>
-            <Radio value="bing">丙</Radio>
+          <Radio.Group optionType="button" buttonStyle="solid" size="large">
+            <Radio.Button value="jia">甲</Radio.Button>
+            <Radio.Button value="yi">乙</Radio.Button>
+            <Radio.Button value="bing">丙</Radio.Button>
           </Radio.Group>
         </Form.Item>
         <Form.Item name="value_growth_grade" label="价值观-成长（可选）">
-          <Radio.Group>
-            <Radio value="jia">甲</Radio>
-            <Radio value="yi">乙</Radio>
-            <Radio value="bing">丙</Radio>
+          <Radio.Group optionType="button" buttonStyle="solid" size="large">
+            <Radio.Button value="jia">甲</Radio.Button>
+            <Radio.Button value="yi">乙</Radio.Button>
+            <Radio.Button value="bing">丙</Radio.Button>
           </Radio.Group>
         </Form.Item>
         <Form.Item name="comment" label="评语（必填）" rules={[{ required: true }]}>

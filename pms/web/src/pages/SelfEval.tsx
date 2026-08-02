@@ -11,6 +11,7 @@ import {
   InputNumber,
   Select,
   Space,
+  Spin,
   Table,
   Typography,
   message,
@@ -46,6 +47,14 @@ interface ObjView {
 
 const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
   pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
+};
+
+// 周期状态中文文案与语义色
+const CYCLE_STATUS_LABEL: Record<string, string> = {
+  draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档",
+};
+const CYCLE_STATUS_TYPE: Record<string, StatusType> = {
+  draft: "warning", in_progress: "primary", published: "success", closed: "success",
 };
 
 interface Detail {
@@ -324,7 +333,7 @@ function ObjectivesSection({
                 <Input placeholder="目标标题" value={item.title} onChange={(e) => updateRow(idx, "title", e.target.value)} />
                 <Input.TextArea placeholder="目标描述" rows={2} value={item.description} onChange={(e) => updateRow(idx, "description", e.target.value)} />
                 <Input placeholder="衡量标准（如何算达成）" value={item.measure_criteria} onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)} />
-                <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" />
+                <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" inputMode="decimal" />
               </Space>
             </Card>
           ))}
@@ -350,7 +359,7 @@ function ObjectivesSection({
               <Input placeholder="目标标题" value={item.title} onChange={(e) => updateRow(idx, "title", e.target.value)} />
               <Input.TextArea placeholder="目标描述" rows={2} value={item.description} onChange={(e) => updateRow(idx, "description", e.target.value)} />
               <Input placeholder="衡量标准（如何算达成）" value={item.measure_criteria} onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)} />
-              <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" />
+              <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" inputMode="decimal" />
             </Space>
           </Card>
         ))}
@@ -500,7 +509,13 @@ export default function SelfEval() {
     }
   }
 
-  if (!detail) return null;
+  if (!detail) {
+    return (
+      <div style={{ textAlign: "center", padding: 64 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   // 底部固定操作栏仅在自评可编辑时展示，容器同步加 .has-bottom-actions 腾出空间
   const showBottomActions = detail.cycle.enable_self_eval && !readonly;
@@ -509,7 +524,11 @@ export default function SelfEval() {
     <Space direction="vertical" size="large" style={{ width: "100%" }} className={showBottomActions ? "has-bottom-actions" : undefined}>
       <Card
         title={detail.cycle.name}
-        extra={<StatusTag type="primary">{detail.cycle.status}</StatusTag>}
+        extra={
+          <StatusTag type={CYCLE_STATUS_TYPE[detail.cycle.status] ?? "default"}>
+            {CYCLE_STATUS_LABEL[detail.cycle.status] ?? detail.cycle.status}
+          </StatusTag>
+        }
       >
         <Descriptions column={2} size="small">
           <Descriptions.Item label="被考核人">{detail.user.name}</Descriptions.Item>
@@ -556,7 +575,7 @@ export default function SelfEval() {
               rules={[{ required: true, message: "请打分" }]}
               extra="有效分数示例：3.00 / 3.25 / 3.50 / 4.00 / 4.75"
             >
-              <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} />
+              <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
             </Form.Item>
             <ValueGradeForm disabled={readonly} />
             <Form.Item

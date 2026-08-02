@@ -13,6 +13,7 @@ import {
   Input,
   Modal,
   Space,
+  Spin,
   Tag,
   message,
 } from "antd";
@@ -114,7 +115,13 @@ export default function Feedback() {
     } catch (e) { message.error(formatError(e, "操作失败")); }
   }
 
-  if (fb === undefined) return null;
+  if (fb === undefined) {
+    return (
+      <div style={{ textAlign: "center", padding: 64 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%", maxWidth: 800 }}>

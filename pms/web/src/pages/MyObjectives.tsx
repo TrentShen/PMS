@@ -1,11 +1,27 @@
 // 员工目标制定页：填写/提交目标到指定目标周期
+// 移动端优先：查看态为目标卡片列表，编辑态每目标一卡 + 底部固定操作栏
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, Input, InputNumber, Space, Table, Tag, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Input,
+  InputNumber,
+  Popconfirm,
+  Space,
+  Spin,
+  Typography,
+  message,
+} from "antd";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import type { ObjectiveView } from "@/services/api.types";
-
+import BottomActions from "@/components/ui/BottomActions";
+import ResponsiveShow from "@/components/ui/ResponsiveShow";
+import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 
 interface ObjItem {
   title: string;
@@ -14,11 +30,21 @@ interface ObjItem {
   weight: number;
 }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "草稿", color: "default" },
-  pending_review: { text: "待上级审批", color: "orange" },
-  approved: { text: "已确认", color: "green" },
-  locked: { text: "已锁定", color: "blue" },
+// 每个周期最多 10 条目标
+const MAX_OBJECTIVES = 10;
+
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "草稿", type: "default" },
+  pending_review: { text: "待上级审批", type: "warning" },
+  approved: { text: "已确认", type: "success" },
+  locked: { text: "已锁定", type: "primary" },
+};
+
+// 编辑态字段的小标签样式（跟随 tokens.css 文本层级色）
+const FIELD_LABEL_STYLE: React.CSSProperties = {
+  color: "var(--color-text-secondary)",
+  fontSize: 13,
+  marginBottom: 4,
 };
 
 export default function MyObjectives() {
@@ -28,6 +54,7 @@ export default function MyObjectives() {
   const [editing, setEditing] = useState(false);
   const [items, setItems] = useState<ObjItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
 
   async function load() {
     const r = await api.get<ObjectiveView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives`);
@@ -35,7 +62,10 @@ export default function MyObjectives() {
   }
 
   useEffect(() => {
-    load();
+    setPageLoading(true);
+    load()
+      .catch((e) => message.error(formatError(e, "加载目标失败")))
+      .finally(() => setPageLoading(false));
   }, [objectiveCycleId]);
 
   useEffect(() => {
@@ -54,6 +84,10 @@ export default function MyObjectives() {
   }, [objectives]);
 
   function addRow() {
+    if (items.length >= MAX_OBJECTIVES) {
+      message.warning(`最多添加 ${MAX_OBJECTIVES} 条目标`);
+      return;
+    }
     setItems([...items, { title: "", description: "", measure_criteria: "", weight: 0 }]);
   }
   function removeRow(idx: number) {
@@ -115,87 +149,189 @@ export default function MyObjectives() {
 
   if (editing) {
     const totalWeight = items.reduce((s, i) => s + (i.weight || 0), 0);
+    const reachedMax = items.length >= MAX_OBJECTIVES;
     return (
-      <Card
-        title="录入/修改绩效目标"
-        extra={
-          <Space>
-            <Tag color={totalWeight === 100 ? "green" : "red"}>权重合计 {totalWeight}%</Tag>
-            <Button onClick={() => setEditing(false)}>取消</Button>
-            <Button type="primary" onClick={onSave} loading={loading}>
-              保存草稿
+      <div className="has-bottom-actions">
+        <Card
+          title="录入/修改绩效目标"
+          extra={
+            <StatusTag type={totalWeight === 100 ? "success" : "warning"}>
+              权重合计 {totalWeight}%（需等于 100%）
+            </StatusTag>
+          }
+        >
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            {items.map((item, idx) => (
+              <Card
+                key={idx}
+                size="small"
+                type="inner"
+                title={`目标 ${idx + 1}`}
+                extra={
+                  <Popconfirm
+                    title="确定删除该目标？"
+                    okText="删除"
+                    cancelText="取消"
+                    onConfirm={() => removeRow(idx)}
+                  >
+                    <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                }
+              >
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>目标标题</div>
+                    <Input
+                      placeholder="例：完成 Q3 销售额 500 万"
+                      value={item.title}
+                      onChange={(e) => updateRow(idx, "title", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                    <Input.TextArea
+                      autoSize={{ minRows: 2 }}
+                      placeholder="目标的背景、范围与关键交付物"
+                      value={item.description}
+                      onChange={(e) => updateRow(idx, "description", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                    <Input.TextArea
+                      autoSize={{ minRows: 2 }}
+                      placeholder="如何算达成（量化口径 / 验收方式）"
+                      value={item.measure_criteria}
+                      onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>权重</div>
+                    <InputNumber
+                      min={1}
+                      max={100}
+                      addonAfter="%"
+                      inputMode="decimal"
+                      style={{ width: 140 }}
+                      placeholder="权重"
+                      value={item.weight || undefined}
+                      onChange={(v) => updateRow(idx, "weight", v ?? 0)}
+                    />
+                  </div>
+                </Space>
+              </Card>
+            ))}
+            <Button
+              type="dashed"
+              block
+              icon={<PlusOutlined />}
+              onClick={addRow}
+              disabled={reachedMax}
+            >
+              添加目标
             </Button>
+            {reachedMax && (
+              <Typography.Text type="secondary">最多添加 {MAX_OBJECTIVES} 条目标</Typography.Text>
+            )}
           </Space>
-        }
-      >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          {items.map((item, idx) => (
-            <Card key={idx} size="small" type="inner" title={`目标 ${idx + 1}`} extra={<a onClick={() => removeRow(idx)} style={{ color: "red" }}>删除</a>}>
-              <Space direction="vertical" style={{ width: "100%" }}>
-                <Input placeholder="目标标题" value={item.title} onChange={(e) => updateRow(idx, "title", e.target.value)} />
-                <Input.TextArea placeholder="目标描述" rows={2} value={item.description} onChange={(e) => updateRow(idx, "description", e.target.value)} />
-                <Input placeholder="衡量标准（如何算达成）" value={item.measure_criteria} onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)} />
-                <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" />
-              </Space>
-            </Card>
-          ))}
-          <Button type="dashed" block onClick={addRow}>+ 添加目标</Button>
-        </Space>
-      </Card>
+        </Card>
+        <BottomActions>
+          <Button onClick={() => setEditing(false)}>取消</Button>
+          <Button type="primary" onClick={onSave} loading={loading}>
+            保存草稿
+          </Button>
+        </BottomActions>
+      </div>
     );
   }
 
+  const actionButtons = (
+    <>
+      {hasDraft && (
+        <Button type="primary" block onClick={onSubmit} loading={loading}>
+          提交上级审批
+        </Button>
+      )}
+      {!allApproved && (
+        <Button
+          block
+          onClick={() => {
+            setEditing(true);
+            if (items.length === 0) addRow();
+          }}
+        >
+          {objectives.length > 0 ? "修改目标" : "录入目标"}
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      <Card title={`${user.name} 的绩效目标`}>
-        <Typography.Paragraph type="secondary">目标周期 ID：{objectiveCycleId}</Typography.Paragraph>
-      </Card>
-
       <Card
         title={
-          <Space>
-            绩效目标
-            <Tag color={STATUS_LABEL[overallStatus]?.color}>{STATUS_LABEL[overallStatus]?.text}</Tag>
-          </Space>
-        }
-        extra={
-          <Space>
-            {hasDraft && (
-              <Button type="primary" onClick={onSubmit} loading={loading}>
-                提交上级审批
-              </Button>
-            )}
-            {!allApproved && (
-              <Button onClick={() => { setEditing(true); if (items.length === 0) addRow(); }}>
-                {objectives.length > 0 ? "修改目标" : "录入目标"}
-              </Button>
+          <Space size={8} wrap>
+            {`${user.name} 的绩效目标`}
+            {objectives.length > 0 && (
+              <StatusTag type={STATUS_LABEL[overallStatus]?.type ?? "default"}>
+                {STATUS_LABEL[overallStatus]?.text ?? overallStatus}
+              </StatusTag>
             )}
           </Space>
         }
+        extra={<ResponsiveShow on="desktop"><Space>{actionButtons}</Space></ResponsiveShow>}
       >
-        {objectives.length === 0 ? (
-          <Typography.Paragraph type="warning">你还没有绩效目标，请点击「录入目标」开始填写。</Typography.Paragraph>
+        {/* 移动端：操作按钮在卡片顶部全宽展示 */}
+        <ResponsiveShow on="mobile">
+          <Space direction="vertical" size={8} style={{ width: "100%", marginBottom: 16 }}>
+            {actionButtons}
+          </Space>
+        </ResponsiveShow>
+
+        {pageLoading ? (
+          <div style={{ textAlign: "center", padding: "48px 0" }}>
+            <Spin />
+          </div>
+        ) : objectives.length === 0 ? (
+          <Empty description="点击「录入目标」开始制定本周期目标" />
         ) : (
           <>
             {rejected && (
-              <Typography.Paragraph type="danger" style={{ marginBottom: 12 }}>
-                上级驳回原因：{rejected.reject_reason}
-              </Typography.Paragraph>
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="上级已驳回，请修改后重新提交"
+                description={rejected.reject_reason}
+              />
             )}
-            <Table
-              rowKey="id"
-              size="small"
-              pagination={false}
-              tableLayout="fixed"
-              dataSource={objectives}
-              columns={[
-                { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
-                { title: "状态", dataIndex: "status", render: (v) => <Tag color={STATUS_LABEL[v]?.color}>{STATUS_LABEL[v]?.text}</Tag> },
-              ]}
-            />
+            {objectives.map((o, idx) => (
+              <Card key={o.id} size="small" style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <Typography.Text strong style={{ fontSize: 15 }}>
+                    {idx + 1}. {o.title}
+                  </Typography.Text>
+                  <Typography.Text strong style={{ fontSize: 18, color: "var(--color-primary)", flexShrink: 0 }}>
+                    {o.weight}%
+                  </Typography.Text>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                  <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                    {o.description || "-"}
+                  </Typography.Paragraph>
+                  <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                  <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                    {o.measure_criteria || "-"}
+                  </Typography.Paragraph>
+                </div>
+                <StatusTag type={STATUS_LABEL[o.status]?.type ?? "default"}>
+                  {STATUS_LABEL[o.status]?.text ?? o.status}
+                </StatusTag>
+              </Card>
+            ))}
           </>
         )}
       </Card>
