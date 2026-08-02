@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Card,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -205,6 +206,7 @@ export default function Calibration() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [approvalSaving, setApprovalSaving] = useState(false);
+  const isMobile = useMobile();
 
   const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
   const isLeader = user.role === "dept_leader";
@@ -321,6 +323,8 @@ export default function Calibration() {
 
   const canCalibrate = ["calibrating", "rejected_by_hr", "rejected_by_ceo"].includes(approvalStatus);
   const canSubmit = canCalibrate && items.every((i) => i.calibrated_perf_score != null);
+  // 未校准人数（校准分为空），用于提交按钮旁的进度提示
+  const uncalibratedCount = items.filter((i) => i.calibrated_perf_score == null).length;
   const canApproveHr = isHr && approvalStatus === "pending_hr";
   const canApproveCeo = isHr && approvalStatus === "pending_ceo";
   const showBottomActions = ((isLeader || isHr) && canCalibrate) || canApproveHr || canApproveCeo;
@@ -391,8 +395,36 @@ export default function Calibration() {
     ) },
   ];
 
+  // 校准表单（移动端 Drawer / 桌面端 Modal 共用）
+  const calibrateForm = (
+    <Form form={form} layout="vertical">
+      <Form.Item
+        name="perf_score"
+        label="调整后业绩分（1-5，0.25 分段）"
+        rules={[
+          {
+            validator: (_, value: number | null | undefined) => {
+              if (value == null) return Promise.resolve();
+              if (value < 1 || value > 5 || !Number.isInteger(value * 4)) {
+                return Promise.reject(new Error("业绩分需为 1-5 之间、以 0.25 为步进"));
+              }
+              return Promise.resolve();
+            },
+          },
+        ]}
+      >
+        <InputNumber min={1} max={5} step={0.25} style={{ width: "100%" }} inputMode="decimal" />
+      </Form.Item>
+      <ValueGradeForm prefix="value" />
+      <Form.Item name="reason" label="调整原因（必填）" rules={[{ required: true }]}>
+        <Input.TextArea rows={3} placeholder="需说明为什么调整" />
+      </Form.Item>
+    </Form>
+  );
+  const calibrateTitle = editingItem ? `校准：${editingItem.user_name}` : "";
+
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }} className="has-bottom-actions">
+    <Space direction="vertical" size="large" style={{ width: "100%" }} className={showBottomActions ? "has-bottom-actions" : undefined}>
       <Card
         title="绩效校准"
         extra={
@@ -494,11 +526,18 @@ export default function Calibration() {
       {showBottomActions && (
         <BottomActions>
           {(isLeader || isHr) && canCalibrate && (
-            <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit}>
-              <Button type="primary" disabled={!canSubmit}>
-                提交校准（进入 HR 审批）
-              </Button>
-            </Popconfirm>
+            <>
+              <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit}>
+                <Button type="primary" disabled={!canSubmit}>
+                  提交校准（进入 HR 审批）
+                </Button>
+              </Popconfirm>
+              {!canSubmit && (
+                <Typography.Text type="secondary">
+                  还差 {uncalibratedCount} 人未校准
+                </Typography.Text>
+              )}
+            </>
           )}
           {canApproveHr && (
             <>
@@ -538,39 +577,36 @@ export default function Calibration() {
         />
       </Modal>
 
-      {/* 校准弹窗 */}
-      <Modal
-        open={!!editingItem}
-        title={editingItem ? `校准：${editingItem.user_name}` : ""}
-        onCancel={() => setEditingItem(null)}
-        onOk={onCalibrate}
-        confirmLoading={saving}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="perf_score"
-            label="调整后业绩分（1-5，0.25 分段）"
-            rules={[
-              {
-                validator: (_, value: number | null | undefined) => {
-                  if (value == null) return Promise.resolve();
-                  if (value < 1 || value > 5 || !Number.isInteger(value * 4)) {
-                    return Promise.reject(new Error("业绩分需为 1-5 之间、以 0.25 为步进"));
-                  }
-                  return Promise.resolve();
-                },
-              },
-            ]}
-          >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: "100%" }} inputMode="decimal" />
-          </Form.Item>
-          <ValueGradeForm prefix="value" />
-          <Form.Item name="reason" label="调整原因（必填）" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} placeholder="需说明为什么调整" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {/* 校准表单：移动端全屏底部抽屉 + 底部固定保存，桌面端 Modal */}
+      {isMobile ? (
+        <Drawer
+          open={!!editingItem}
+          title={calibrateTitle}
+          placement="bottom"
+          height="100%"
+          onClose={() => setEditingItem(null)}
+          destroyOnClose
+          classNames={{ wrapper: "pms-form-drawer" }}
+        >
+          {calibrateForm}
+          <BottomActions>
+            <Button type="primary" block loading={saving} onClick={onCalibrate}>
+              保存
+            </Button>
+          </BottomActions>
+        </Drawer>
+      ) : (
+        <Modal
+          open={!!editingItem}
+          title={calibrateTitle}
+          onCancel={() => setEditingItem(null)}
+          onOk={onCalibrate}
+          confirmLoading={saving}
+          destroyOnClose
+        >
+          {calibrateForm}
+        </Modal>
+      )}
     </Space>
   );
 }

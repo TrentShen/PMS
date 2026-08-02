@@ -218,6 +218,18 @@ textarea:focus-visible,
 .has-bottom-actions {
   padding-bottom: calc(var(--bottom-action-height) + var(--space-6) + env(safe-area-inset-bottom, 0px));
 }
+/* 移动端全屏底部抽屉表单（互评/校准）：抽屉层级高于全局 fixed 栏，
+   抽屉内的 .form-bottom-actions 改为相对抽屉面板绝对定位 */
+.pms-form-drawer {
+  position: relative;
+}
+.pms-form-drawer .ant-drawer-body {
+  padding-bottom: calc(var(--bottom-action-height) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+.pms-form-drawer .form-bottom-actions {
+  position: absolute;
+  z-index: 1;
+}
 
 /* ========== 平板（≤1023px）：侧边栏抽屉化 ========== */
 @media (max-width: 1023px) {
@@ -374,4 +386,59 @@ textarea:focus-visible,
 }
 .hr-console-mobile-actions .ant-btn {
   min-height: var(--touch-target-min);
+}
+
+/* ========== 移动端底部 Tab 导航（≤767px 显示，追加，勿改上方既有规则） ========== */
+/* 默认隐藏；桌面端无任何视觉变化 */
+.pms-mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .pms-mobile-tabbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--bottom-action-z);
+    display: flex;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+  }
+  .pms-mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-micro-mobile);
+    line-height: 1.4;
+  }
+  .pms-mobile-tab-active {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .pms-mobile-tab-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  /* 内容底部留白，避免被 TabBar 遮挡 */
+  .pms-content {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + var(--space-4));
+  }
+
+  /* 页面级固定底栏（BottomActions）叠在 TabBar 上方，避免与全局 TabBar 重叠 */
+  .form-bottom-actions {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--bottom-action-padding);
+  }
 }

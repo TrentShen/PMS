@@ -1,12 +1,13 @@
-// 主布局：桌面端左侧边栏 + 顶部栏（Linear 结构），移动端抽屉侧边栏
-// 断点：≤1023px 侧边栏隐藏，汉堡按钮 + Drawer 替代（样式见 global.css）
-import { useState } from "react";
+// 主布局：桌面端左侧边栏 + 顶部栏（Linear 结构），移动端抽屉侧边栏 + 底部 Tab 导航
+// 断点：≤1023px 侧边栏隐藏，汉堡按钮 + Drawer 替代；≤767px 显示底部 TabBar（样式见 global.css）
+import { useEffect, useState } from "react";
 import { Button, Drawer, Layout as AntLayout, Menu, Modal, Space, Tag, message } from "antd";
 import { ArrowLeftOutlined, MenuOutlined, SwapOutlined } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ROLE } from "@/App";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
+import MobileTabBar from "@/components/MobileTabBar";
 import { api, formatError } from "@/services/api";
 
 
@@ -43,6 +44,36 @@ export default function AppLayout() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [todoCount, setTodoCount] = useState(0);
+
+  // 底部 TabBar 待办角标：评估任务 + 目标制定 + 待互评任务
+  // 低频刷新：路由切换时重新拉取 + 60 秒轮询；失败静默（角标非关键路径）
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTodoCount() {
+      try {
+        const [tasksRes, peerRes] = await Promise.all([
+          api.get<{ evaluations: { id: number }[]; objective_settings: { id: number }[] }>(
+            "/v1/auth/me/tasks"
+          ),
+          api.get<{ status: string }[]>("/v1/peer/my-tasks"),
+        ]);
+        if (cancelled) return;
+        const pendingPeer = peerRes.data.filter((t) => t.status === "pending").length;
+        setTodoCount(
+          tasksRes.data.evaluations.length + tasksRes.data.objective_settings.length + pendingPeer
+        );
+      } catch {
+        // 角标加载失败不打扰用户，保留上一次计数
+      }
+    }
+    loadTodoCount();
+    const timer = setInterval(loadTodoCount, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [location.pathname]);
 
   // 菜单/入口权限基于当前生效角色（role），切换角色后菜单同步变化
 
@@ -188,6 +219,9 @@ export default function AppLayout() {
           </div>
         </AntLayout.Content>
       </AntLayout>
+
+      {/* 移动端底部 Tab 导航（≤767px 由 CSS 显示，桌面端不渲染视觉差异） */}
+      <MobileTabBar todoCount={todoCount} />
 
       {/* 移动端侧边抽屉 */}
       <Drawer

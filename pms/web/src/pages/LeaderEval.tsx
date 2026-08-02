@@ -1,7 +1,7 @@
 // Leader 端：选周期 -> 列下属 -> 进入单人评估页
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, List, Select, Space, Typography } from "antd";
+import { Card, Empty, List, Progress, Select, Space, Typography } from "antd";
 import { api } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import StatusTag from "@/components/ui/StatusTag";
@@ -73,6 +73,16 @@ export default function LeaderEval() {
   }, [selectedCycle]);
 
   const visible = participants.filter((p) => p.user_id !== me.id);
+  // 已评 = leader_done / published；self_done 为待评估；pending 为等待自评
+  const total = visible.length;
+  const doneCount = visible.filter(
+    (p) => p.status === "leader_done" || p.status === "published"
+  ).length;
+  const todoCount = visible.filter((p) => p.status === "self_done").length;
+  // 待评估（self_done）排最前，其余保持原顺序（sort 稳定）
+  const sorted = [...visible].sort(
+    (a, b) => Number(b.status === "self_done") - Number(a.status === "self_done")
+  );
 
   const goDetail = (p: Participant): void => {
     navigate(`/leader/${p.cycle_id}/users/${p.user_id}`);
@@ -122,10 +132,23 @@ export default function LeaderEval() {
         />
       ) : (
         <>
+          {/* 完成度汇总：还差几人没评 */}
+          <div style={{ marginBottom: 16 }}>
+            <Space style={{ width: "100%", justifyContent: "space-between" }}>
+              <Typography.Text strong>
+                待评估 {todoCount} 人 / 共 {total} 人
+              </Typography.Text>
+              <Typography.Text type="secondary">已评 {doneCount} 人</Typography.Text>
+            </Space>
+            <Progress
+              percent={total > 0 ? Math.round((doneCount / total) * 100) : 0}
+              size="small"
+            />
+          </div>
           {/* 桌面端：列表 */}
           <ResponsiveShow on="desktop">
             <List
-              dataSource={visible}
+              dataSource={sorted}
               renderItem={(p) => (
                 <List.Item
                   actions={[
@@ -152,7 +175,7 @@ export default function LeaderEval() {
           {/* 移动端：卡片列表（.table-card-list 由 CSS 在 ≤767px 自动显示） */}
           <TableCardList<Participant>
             columns={cardColumns}
-            dataSource={visible}
+            dataSource={sorted}
             rowKey={(p) => p.id}
             onCardClick={goDetail}
           />

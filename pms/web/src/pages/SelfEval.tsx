@@ -1,5 +1,5 @@
 // 自评页 + 查看最终结果页 + 互评人邀请（根据周期状态切换）
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Alert,
@@ -432,6 +432,8 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
           onChange={(v) => setSelected(v.slice(0, 5))}
           style={{ width: "100%" }}
           placeholder="最多选 5 人"
+          showSearch
+          optionFilterProp="label"
           options={allUsers.map((u) => ({
             value: u.id,
             label: `${u.name}（${u.position ?? ""}）`,
@@ -475,13 +477,30 @@ export default function SelfEval() {
   const user = useAuth((s) => s.user)!;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<EvalView>();
+
+  // 自评草稿：localStorage 按周期隔离，仅服务端无已提交内容时恢复一次
+  const draftKey = `self_draft_${cycleId}`;
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRestored = useRef(false);
 
   async function reload() {
     const r = await api.get<Detail>(`/v1/cycles/${cycleId}/users/${user.id}/detail`);
     setDetail(r.data);
     if (r.data.self_evaluation) {
+      // 服务端已有数据时以服务端为准，不恢复草稿
       form.setFieldsValue(r.data.self_evaluation);
+    } else if (!draftRestored.current) {
+      draftRestored.current = true;
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        try {
+          form.setFieldsValue(JSON.parse(raw) as Partial<EvalView>);
+          message.info("已恢复上次未提交的草稿");
+        } catch {
+          localStorage.removeItem(draftKey);
+        }
+      }
     }
   }
 
@@ -490,10 +509,30 @@ export default function SelfEval() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId]);
 
+  // 组件卸载时清掉未触发的防抖计时器
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, []);
+
   const readonly = useMemo(() => {
     // 周期不在进行中 = 不可编辑
     return detail?.cycle.status !== "in_progress";
   }, [detail]);
+
+  // 表单值变化时防抖 500ms 写入草稿
+  function onValuesChange() {
+    if (readonly) return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(form.getFieldsValue()));
+      } catch {
+        // localStorage 不可用（隐私模式/超限）时静默跳过草稿
+      }
+    }, 500);
+  }
 
   async function onSubmit(values: EvalView) {
     // 价值观甲事例校验交给后端三维度校验
@@ -501,6 +540,7 @@ export default function SelfEval() {
     try {
       await api.post(`/v1/cycles/${cycleId}/self-evaluation`, values);
       message.success("自评已提交");
+      localStorage.removeItem(draftKey);
       await reload();
     } catch (e) {
       message.error(formatError(e, "提交失败"));
@@ -568,6 +608,11 @@ export default function SelfEval() {
             layout="vertical"
             disabled={readonly}
             onFinish={onSubmit}
+            onFinishFailed={({ errorFields }) => {
+              // 校验失败时定位到第一个错误字段
+              if (errorFields.length > 0) form.scrollToField(errorFields[0].name);
+            }}
+            onValuesChange={onValuesChange}
           >
             <Form.Item
               name="perf_score"

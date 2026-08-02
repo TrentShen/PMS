@@ -8,7 +8,7 @@ import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
-import { useMobile } from "@/hooks/useMobile";
+import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
 
 
 interface ProbationListItem {
@@ -38,7 +38,6 @@ const STATUS_LABEL: Record<string, { text: string; color: string }> = {
 export default function Probation() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user)!;
-  const isMobile = useMobile();
   const isHr = hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission;
 
   const [items, setItems] = useState<ProbationListItem[]>([]);
@@ -79,50 +78,51 @@ export default function Probation() {
     load();
   }, [statusFilter]);
 
+  // 桌面列（≤767px 时整个 Table 由 CSS 隐藏，改由 TableCardList 卡片呈现）
   const columns: ColumnsType<ProbationListItem> = [
     {
       title: "姓名",
       dataIndex: "user_name",
       key: "user_name",
-      fixed: isMobile ? undefined : "left",
-      width: isMobile ? 100 : 120,
+      fixed: "left",
+      width: 120,
     },
     {
       title: "部门",
       dataIndex: "department_name",
       key: "department_name",
-      width: isMobile ? 100 : 140,
+      width: 140,
     },
     {
       title: "直属上级",
       dataIndex: "leader_name",
       key: "leader_name",
-      width: isMobile ? 100 : 120,
+      width: 120,
     },
     {
       title: "开始日期",
       dataIndex: "start_date",
       key: "start_date",
-      width: isMobile ? 110 : 120,
+      width: 120,
     },
     {
       title: "结束日期",
       dataIndex: "end_date",
       key: "end_date",
-      width: isMobile ? 110 : 120,
+      width: 120,
     },
     {
       title: "剩余天数",
       dataIndex: "remaining_days",
       key: "remaining_days",
-      width: isMobile ? 90 : 110,
+      width: 110,
       render: (v: number) => (v < 0 ? `已逾期 ${Math.abs(v)} 天` : `${v} 天`),
     },
     {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      width: isMobile ? 120 : 160,
+      width: 160,
       render: (status: string, record: ProbationListItem) => {
         const cfg = STATUS_LABEL[status] ?? { text: record.status_text, color: "default" };
         return <Tag color={cfg.color}>{cfg.text}</Tag>;
@@ -131,13 +131,30 @@ export default function Probation() {
     {
       title: "操作",
       key: "action",
-      fixed: isMobile ? undefined : "right",
-      width: isMobile ? 90 : 120,
+      fixed: "right",
+      width: 120,
       render: (_: unknown, record: ProbationListItem) => (
         <Button type="link" size="small" onClick={() => navigate(`/probation/${record.user_id}`)}>
           查看
         </Button>
       ),
+    },
+  ];
+
+  // 移动端卡片列：姓名 / 状态 / 剩余天数 + 操作区，点击卡片跳详情
+  const cardColumns: CardColumn<ProbationListItem>[] = [
+    { title: "姓名", dataIndex: "user_name" },
+    {
+      title: "状态",
+      render: (record) => {
+        const cfg = STATUS_LABEL[record.status] ?? { text: record.status_text, color: "default" };
+        return <Tag color={cfg.color}>{cfg.text}</Tag>;
+      },
+    },
+    {
+      title: "剩余天数",
+      render: (record) =>
+        record.remaining_days < 0 ? `已逾期 ${Math.abs(record.remaining_days)} 天` : `${record.remaining_days} 天`,
     },
   ];
 
@@ -172,14 +189,26 @@ export default function Probation() {
           )}
         </Space>
 
-        <Table
-          rowKey="id"
+        <div className="pms-responsive-table">
+          <Table
+            rowKey="id"
+            dataSource={items}
+            columns={columns}
+            loading={loading}
+            size="small"
+            pagination={false}
+          />
+        </div>
+        <TableCardList<ProbationListItem>
+          columns={cardColumns}
           dataSource={items}
-          columns={columns}
-          loading={loading}
-          size="small"
-          scroll={{ x: isMobile ? 700 : undefined }}
-          pagination={false}
+          rowKey={(r) => r.id}
+          onCardClick={(r) => navigate(`/probation/${r.user_id}`)}
+          renderActions={(r) => (
+            <Button type="link" size="small" onClick={() => navigate(`/probation/${r.user_id}`)}>
+              查看
+            </Button>
+          )}
         />
       </Card>
     </div>

@@ -1,20 +1,27 @@
 // 我的互评任务：列表 + 填评价（被评人不可见自己的互评内容）
+// 移动端：评价表单用全屏底部抽屉 + BottomActions 固定提交，避免键盘遮挡；
+// 提交成功后自动打开下一条待评价任务；桌面端保持 Modal
 import { useEffect, useState } from "react";
 import {
   Alert,
   Button,
   Card,
+  Drawer,
   Empty,
   Form,
   Input,
   InputNumber,
   List,
   Modal,
+  Progress,
   Tag,
+  Typography,
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
 import ValueGradeForm from "@/components/ValueGradeForm";
+import { useMobile } from "@/hooks/useMobile";
+import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
 
 
@@ -30,14 +37,27 @@ interface PeerTask {
   submitted_at: string | null;
 }
 
+// 互评表单值（字段名与后端 PeerSubmit 契约一致）
+interface PeerEvalFormValues {
+  perf_score: number;
+  value_belief_grade: string;
+  value_team_grade: string;
+  value_growth_grade: string;
+  value_belief_example?: string;
+  value_team_example?: string;
+  value_growth_example?: string;
+  comment?: string;
+}
+
 export default function PeerTasks() {
   const [tasks, setTasks] = useState<PeerTask[]>([]);
   const [editing, setEditing] = useState<PeerTask | null>(null);
   const [declining, setDeclining] = useState<PeerTask | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [declineSaving, setDeclineSaving] = useState(false);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<PeerEvalFormValues>();
   const [saving, setSaving] = useState(false);
+  const isMobile = useMobile();
 
   async function load() {
     const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
@@ -47,16 +67,38 @@ export default function PeerTasks() {
     load();
   }, []);
 
+  // 进度：已提交 / 已拒绝都计为已处理
+  const processedCount = tasks.filter((t) => t.status !== "pending").length;
+  const progressPercent = tasks.length > 0 ? Math.round((processedCount / tasks.length) * 100) : 0;
+
+  function openEdit(t: PeerTask) {
+    setEditing(t);
+    form.resetFields();
+  }
+
   async function onSubmit() {
     if (!editing) return;
-    const v = await form.validateFields();
+    let v: PeerEvalFormValues;
+    try {
+      v = await form.validateFields();
+    } catch {
+      return; // 校验失败：Form 已展示错误提示，阻止提交
+    }
     setSaving(true);
     try {
       await api.post(`/v1/peer/tasks/${editing.id}/submit`, v);
-      message.success("互评已提交");
-      setEditing(null);
       form.resetFields();
-      await load();
+      const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
+      setTasks(r.data);
+      // 还有待评价任务时自动打开下一位，保持连贯填写体验
+      const next = r.data.find((t) => t.status === "pending") ?? null;
+      if (next) {
+        message.success(`互评已提交，继续评价下一位：${next.target_name}`);
+        setEditing(next);
+      } else {
+        message.success("互评已提交，所有互评任务均已处理");
+        setEditing(null);
+      }
     } catch (e) {
       message.error(formatError(e, "提交失败"));
     } finally {
@@ -93,30 +135,19 @@ export default function PeerTasks() {
     if (t.status === "declined") return [];
     if (t.status === "submitted") {
       return [
-        <Button
-          key="do"
-          onClick={() => {
-            setEditing(t);
-            form.resetFields();
-          }}
-        >
+        <Button key="do" onClick={() => openEdit(t)}>
           重新提交
         </Button>,
       ];
     }
     return [
-      <Button
-        key="do"
-        type="primary"
-        onClick={() => {
-          setEditing(t);
-          form.resetFields();
-        }}
-      >
+      <Button key="do" type="primary" onClick={() => openEdit(t)}>
         去评价
       </Button>,
       <Button
         key="decline"
+        type="text"
+        size="small"
         onClick={() => {
           setDeclining(t);
           setDeclineReason("");
@@ -127,6 +158,24 @@ export default function PeerTasks() {
     ];
   }
 
+  const evalForm = (
+    <Form form={form} layout="vertical">
+      <Form.Item
+        name="perf_score"
+        label="业绩评分（1-5，0.25 分段）"
+        rules={[{ required: true }]}
+      >
+        <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
+      </Form.Item>
+      <ValueGradeForm />
+      <Form.Item name="comment" label="评语（可选）">
+        <Input.TextArea rows={3} />
+      </Form.Item>
+    </Form>
+  );
+
+  const evalTitle = editing ? `评价 ${editing.target_name}` : "";
+
   return (
     <Card title="我的互评任务">
       <Alert
@@ -135,6 +184,14 @@ export default function PeerTasks() {
         style={{ marginBottom: 16 }}
         message="请客观评价同事；被评人无法看到自己收到的评价内容，请安心填写"
       />
+      {tasks.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Progress percent={progressPercent} size="small" />
+          <Typography.Text type="secondary">
+            已完成 {processedCount}/{tasks.length}（含已拒绝）
+          </Typography.Text>
+        </div>
+      )}
       {tasks.length === 0 ? (
         <Empty description="暂无互评任务" />
       ) : (
@@ -159,28 +216,36 @@ export default function PeerTasks() {
         />
       )}
 
-      <Modal
-        open={!!editing}
-        title={editing ? `评价 ${editing.target_name}` : ""}
-        onOk={onSubmit}
-        confirmLoading={saving}
-        onCancel={() => setEditing(null)}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="perf_score"
-            label="业绩评分（1-5，0.25 分段）"
-            rules={[{ required: true }]}
-          >
-            <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
-          </Form.Item>
-          <ValueGradeForm />
-          <Form.Item name="comment" label="评语（可选）">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {/* 评价表单：移动端全屏底部抽屉（键盘弹起不遮挡 + 底部固定提交），桌面端 Modal */}
+      {isMobile ? (
+        <Drawer
+          open={!!editing}
+          title={evalTitle}
+          placement="bottom"
+          height="100%"
+          onClose={() => setEditing(null)}
+          destroyOnClose
+          classNames={{ wrapper: "pms-form-drawer" }}
+        >
+          {evalForm}
+          <BottomActions>
+            <Button type="primary" block loading={saving} onClick={onSubmit}>
+              提交
+            </Button>
+          </BottomActions>
+        </Drawer>
+      ) : (
+        <Modal
+          open={!!editing}
+          title={evalTitle}
+          onOk={onSubmit}
+          confirmLoading={saving}
+          onCancel={() => setEditing(null)}
+          destroyOnClose
+        >
+          {evalForm}
+        </Modal>
+      )}
 
       <Modal
         open={!!declining}

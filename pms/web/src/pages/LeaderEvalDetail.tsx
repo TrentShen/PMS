@@ -23,6 +23,7 @@ import {
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
+import type { FormProps } from "antd";
 import type { AdjustmentView } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
@@ -623,6 +624,8 @@ export default function LeaderEvalDetail() {
   const { cycleId, userId } = useParams();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 移动端 Collapse 展开项；null 表示用户尚未操作，使用按状态的智能默认
+  const [collapseActive, setCollapseActive] = useState<string[] | null>(null);
   const [form] = Form.useForm();
   // antd md 断点为 768px，与 global.css 的 767px 移动端断点一致
   const screens = Grid.useBreakpoint();
@@ -656,6 +659,16 @@ export default function LeaderEvalDetail() {
       setSubmitting(false);
     }
   }
+
+  // 校验失败（桌面/移动端都生效）：展开上级评估面板并滚动到第一个错误字段，
+  // 避免移动端面板收起时"点了没反应"
+  const onFinishFailed: FormProps<EvalView>["onFinishFailed"] = ({ errorFields }) => {
+    setCollapseActive(["superior"]);
+    const first = errorFields[0];
+    if (!first) return;
+    // 等面板展开渲染后再滚动
+    window.setTimeout(() => form.scrollToField(first.name), 100);
+  };
 
   if (!detail) {
     return (
@@ -797,6 +810,7 @@ export default function LeaderEvalDetail() {
         layout="vertical"
         disabled={readonly || !selfDone}
         onFinish={onSubmit}
+        onFinishFailed={onFinishFailed}
       >
         <Form.Item
           name="perf_score"
@@ -824,9 +838,11 @@ export default function LeaderEvalDetail() {
     <div className={showActions ? "has-bottom-actions" : undefined}>
       {isMobile ? (
         // 移动端：Collapse 分块，每屏只展开一个区块
+        // 智能默认：员工已自评（self_done/leader_done/...）展开上级评估，否则先看自评
         <Collapse
           accordion
-          defaultActiveKey="superior"
+          activeKey={collapseActive ?? [selfDone ? "superior" : "self"]}
+          onChange={(k) => setCollapseActive(Array.isArray(k) ? k : k ? [k] : [])}
           items={[
             {
               key: "info",

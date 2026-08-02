@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Descriptions,
   Form,
   Input,
@@ -18,11 +19,13 @@ import {
   Typography,
 } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import { useMobile } from "@/hooks/useMobile";
+import BottomActions from "@/components/ui/BottomActions";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 
 // 试用期目标状态（对应后端 ProbationObjectiveStatus：draft/pending_review/approved/locked）
@@ -118,6 +121,11 @@ export default function ProbationDetail() {
   const [hrStatus, setHrStatus] = useState<string | undefined>(undefined);
   const [hrEndDate, setHrEndDate] = useState<string | undefined>(undefined);
   const [hrNote, setHrNote] = useState("");
+
+  // 驳回目标弹窗
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
 
   async function load() {
     if (!userId) return;
@@ -241,13 +249,28 @@ export default function ProbationDetail() {
 
   async function rejectObjectives(reason: string) {
     if (!userId) return;
+    setRejecting(true);
     try {
       await api.post(`/v1/probation/${userId}/objectives/reject`, { reject_reason: reason });
       message.success("已驳回目标");
+      setRejectOpen(false);
+      setRejectReason("");
       load();
     } catch (e) {
       message.error(formatError(e, "操作失败"));
+    } finally {
+      setRejecting(false);
     }
+  }
+
+  // 驳回必须填写原因（与 Calibration 驳回弹窗同一模式）
+  function onConfirmReject() {
+    const reason = rejectReason.trim();
+    if (!reason) {
+      message.warning("驳回必须填写原因");
+      return;
+    }
+    rejectObjectives(reason);
   }
 
   async function submitEvaluation() {
@@ -306,7 +329,7 @@ export default function ProbationDetail() {
   const statusCfg = STATUS_LABEL[plan.status] ?? { text: plan.status_text, color: "default" };
 
   return (
-    <div>
+    <div className={isMobile && canEditObjectives() ? "has-bottom-actions" : undefined}>
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
           返回
@@ -379,12 +402,17 @@ export default function ProbationDetail() {
                 <Button icon={<PlusOutlined />} size="small" onClick={addObjective}>
                   添加目标
                 </Button>
-                <Button type="primary" loading={submitting} onClick={() => saveObjectives(false)} disabled={!objectiveFormChanged}>
-                  保存草稿
-                </Button>
-                <Button type="primary" loading={submitting} onClick={() => saveObjectives(true)}>
-                  提交上级审批
-                </Button>
+                {/* 提交=primary，保存草稿=default；移动端这两个按钮移入底部固定栏 */}
+                {!isMobile && (
+                  <>
+                    <Button loading={submitting} onClick={() => saveObjectives(false)} disabled={!objectiveFormChanged}>
+                      保存草稿
+                    </Button>
+                    <Button type="primary" loading={submitting} onClick={() => saveObjectives(true)}>
+                      提交上级审批
+                    </Button>
+                  </>
+                )}
               </Space>
             )}
 
@@ -410,13 +438,7 @@ export default function ProbationDetail() {
                   <Button type="primary" onClick={approveObjectives}>
                     批准目标
                   </Button>
-                  <Button
-                    danger
-                    onClick={() => {
-                      const reason = window.prompt("请输入驳回原因");
-                      if (reason) rejectObjectives(reason);
-                    }}
-                  >
+                  <Button danger onClick={() => setRejectOpen(true)}>
                     驳回目标
                   </Button>
                 </Space>
@@ -479,13 +501,48 @@ export default function ProbationDetail() {
             />
           </Form.Item>
           <Form.Item label="结束日期">
-            <Input type="date" value={hrEndDate} onChange={(e) => setHrEndDate(e.target.value)} />
+            <DatePicker
+              style={{ width: "100%" }}
+              value={hrEndDate ? dayjs(hrEndDate) : null}
+              onChange={(d) => setHrEndDate(d ? d.format("YYYY-MM-DD") : undefined)}
+            />
           </Form.Item>
           <Form.Item label="说明">
             <Input.TextArea rows={3} value={hrNote} onChange={(e) => setHrNote(e.target.value)} placeholder="如延期原因" />
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 驳回原因弹窗（必填，与 Calibration 驳回弹窗同一模式） */}
+      <Modal
+        open={rejectOpen}
+        title="填写驳回原因"
+        onCancel={() => setRejectOpen(false)}
+        onOk={onConfirmReject}
+        confirmLoading={rejecting}
+        okText="确认驳回"
+        okButtonProps={{ danger: true }}
+        destroyOnClose
+      >
+        <Input.TextArea
+          rows={3}
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
+          placeholder="必填：请说明驳回原因"
+        />
+      </Modal>
+
+      {/* 移动端：保存/提交固定在底部操作栏 */}
+      {isMobile && canEditObjectives() && (
+        <BottomActions>
+          <Button loading={submitting} onClick={() => saveObjectives(false)} disabled={!objectiveFormChanged}>
+            保存草稿
+          </Button>
+          <Button type="primary" loading={submitting} onClick={() => saveObjectives(true)}>
+            提交上级审批
+          </Button>
+        </BottomActions>
+      )}
     </div>
   );
 }
