@@ -7,14 +7,15 @@ import {
   Col,
   DatePicker,
   Descriptions,
+  Empty,
   Form,
   Input,
   message,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
-  Table,
   Tag,
   Typography,
 } from "antd";
@@ -40,6 +41,16 @@ const OBJECTIVE_STATUS_TYPE: Record<string, StatusType> = {
   pending_review: "warning",
   approved: "success",
   locked: "info",
+};
+
+// 每个计划最多 10 条目标（与后端校验一致）
+const MAX_OBJECTIVES = 10;
+
+// 目标卡片字段的小标签样式（与 MyObjectives 对齐，跟随 tokens.css 文本层级色）
+const FIELD_LABEL_STYLE: React.CSSProperties = {
+  color: "var(--color-text-secondary)",
+  fontSize: 13,
+  marginBottom: 4,
 };
 
 
@@ -193,6 +204,10 @@ export default function ProbationDetail() {
   }
 
   function addObjective() {
+    if (editingObjectives.length >= MAX_OBJECTIVES) {
+      message.warning(`最多添加 ${MAX_OBJECTIVES} 条目标`);
+      return;
+    }
     setEditingObjectives([...editingObjectives, emptyObjective(editingObjectives.length)]);
     setObjectiveFormChanged(true);
   }
@@ -366,75 +381,115 @@ export default function ProbationDetail() {
           </Card>
 
           <Card loading={loading} title="试用期目标" style={{ marginTop: 16 }}>
-            {editingObjectives.map((o, idx) => (
-              <div key={idx} style={{ marginBottom: 16, padding: 12, border: "1px solid var(--color-border)", borderRadius: 8 }}>
-                <Space direction="vertical" style={{ width: "100%" }} size="small">
-                  <Input
-                    placeholder="目标项"
-                    value={o.title}
-                    onChange={(e) => updateObjective(idx, "title", e.target.value)}
-                    disabled={!canEditObjectives()}
-                  />
-                  <Input.TextArea
-                    placeholder="目标描述"
-                    rows={2}
-                    value={o.description}
-                    onChange={(e) => updateObjective(idx, "description", e.target.value)}
-                    disabled={!canEditObjectives()}
-                  />
-                  <Input.TextArea
-                    placeholder="衡量标准（4分及5分需写出分项考核标准）"
-                    rows={2}
-                    value={o.measure_criteria}
-                    onChange={(e) => updateObjective(idx, "measure_criteria", e.target.value)}
-                    disabled={!canEditObjectives()}
-                  />
-                  {canEditObjectives() && editingObjectives.length > 1 && (
-                    <Button type="link" danger icon={<DeleteOutlined />} size="small" onClick={() => removeObjective(idx)}>
-                      删除
-                    </Button>
+            {canEditObjectives() ? (
+              <>
+                {/* 编辑态：每目标一张卡片，风格对齐 MyObjectives */}
+                <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                  {editingObjectives.map((o, idx) => (
+                    <Card
+                      key={idx}
+                      size="small"
+                      type="inner"
+                      title={`目标 ${idx + 1}`}
+                      extra={
+                        editingObjectives.length > 1 && (
+                          <Popconfirm
+                            title="确定删除该目标？"
+                            okText="删除"
+                            cancelText="取消"
+                            onConfirm={() => removeObjective(idx)}
+                          >
+                            <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                              删除
+                            </Button>
+                          </Popconfirm>
+                        )
+                      }
+                    >
+                      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>目标标题</div>
+                          <Input
+                            placeholder="例：独立完成 XX 模块的开发与上线"
+                            value={o.title}
+                            onChange={(e) => updateObjective(idx, "title", e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                          <Input.TextArea
+                            autoSize={{ minRows: 2 }}
+                            placeholder="目标的背景、范围与关键交付物"
+                            value={o.description}
+                            onChange={(e) => updateObjective(idx, "description", e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                          <Input.TextArea
+                            autoSize={{ minRows: 2 }}
+                            placeholder="如何算达成（4分及5分需写出分项考核标准）"
+                            value={o.measure_criteria}
+                            onChange={(e) => updateObjective(idx, "measure_criteria", e.target.value)}
+                          />
+                        </div>
+                      </Space>
+                    </Card>
+                  ))}
+                  <Button
+                    type="dashed"
+                    block
+                    icon={<PlusOutlined />}
+                    onClick={addObjective}
+                    disabled={editingObjectives.length >= MAX_OBJECTIVES}
+                  >
+                    添加目标
+                  </Button>
+                  {editingObjectives.length >= MAX_OBJECTIVES && (
+                    <Typography.Text type="secondary">最多添加 {MAX_OBJECTIVES} 条目标</Typography.Text>
                   )}
                 </Space>
-              </div>
-            ))}
-            {canEditObjectives() && (
-              <Space style={{ marginTop: 8 }}>
-                <Button icon={<PlusOutlined />} size="small" onClick={addObjective}>
-                  添加目标
-                </Button>
                 {/* 提交=primary，保存草稿=default；移动端这两个按钮移入底部固定栏 */}
                 {!isMobile && (
-                  <>
+                  <Space style={{ marginTop: 16 }}>
                     <Button loading={submitting} onClick={() => saveObjectives(false)} disabled={!objectiveFormChanged}>
                       保存草稿
                     </Button>
                     <Button type="primary" loading={submitting} onClick={() => saveObjectives(true)}>
                       提交上级审批
                     </Button>
-                  </>
+                  </Space>
                 )}
-              </Space>
-            )}
-
-            {!canEditObjectives() && plan.objectives.length > 0 && (
-              <Table
-                rowKey="id"
-                dataSource={plan.objectives}
-                size="small"
-                pagination={false}
-                tableLayout="fixed"
-                columns={[
-                  { title: "目标项", dataIndex: "title", key: "title", width: "22%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "描述", dataIndex: "description", key: "description", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "衡量标准", dataIndex: "measure_criteria", key: "measure_criteria", width: "35%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "状态", dataIndex: "status", key: "status", width: "8%", render: (v: string) => <StatusTag type={OBJECTIVE_STATUS_TYPE[v] ?? "default"}>{OBJECTIVE_STATUS_LABEL[v] ?? v}</StatusTag> },
-                ]}
-              />
+              </>
+            ) : plan.objectives.length === 0 ? (
+              <Empty description={isSelf ? "点击「编辑目标」开始填写" : "员工尚未填写目标"} />
+            ) : (
+              /* 查看态：目标卡片列表，风格对齐 MyObjectives */
+              plan.objectives.map((o, idx) => (
+                <Card key={o.id} size="small" style={{ marginBottom: 12 }}>
+                  <Typography.Text strong style={{ fontSize: 15 }}>
+                    {idx + 1}. {o.title}
+                  </Typography.Text>
+                  <div style={{ marginTop: 8 }}>
+                    <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                    <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                      {o.description || "-"}
+                    </Typography.Paragraph>
+                    <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                    <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
+                      {o.measure_criteria || "-"}
+                    </Typography.Paragraph>
+                  </div>
+                  <StatusTag type={OBJECTIVE_STATUS_TYPE[o.status] ?? "default"}>
+                    {OBJECTIVE_STATUS_LABEL[o.status] ?? o.status}
+                  </StatusTag>
+                </Card>
+              ))
             )}
 
             {canApproveObjectives() && (
               <Card size="small" title="目标审批" style={{ marginTop: 16 }}>
-                <Space>
+                <Space wrap>
                   <Button type="primary" onClick={approveObjectives}>
                     批准目标
                   </Button>
