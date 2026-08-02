@@ -19,7 +19,7 @@ import {
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
-import ValueGradeForm from "@/components/ValueGradeForm";
+import ValueGradeForm, { expandValueGrades } from "@/components/ValueGradeForm";
 import { useMobile } from "@/hooks/useMobile";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
@@ -37,15 +37,11 @@ interface PeerTask {
   submitted_at: string | null;
 }
 
-// 互评表单值（字段名与后端 PeerSubmit 契约一致）
+// 互评表单值（界面只采集 belief 一组，提交时 expandValueGrades 展开为后端三维度契约）
 interface PeerEvalFormValues {
   perf_score: number;
   value_belief_grade: string;
-  value_team_grade: string;
-  value_growth_grade: string;
   value_belief_example?: string;
-  value_team_example?: string;
-  value_growth_example?: string;
   comment?: string;
 }
 
@@ -86,7 +82,7 @@ export default function PeerTasks() {
     }
     setSaving(true);
     try {
-      await api.post(`/v1/peer/tasks/${editing.id}/submit`, v);
+      await api.post(`/v1/peer/tasks/${editing.id}/submit`, expandValueGrades(v));
       form.resetFields();
       const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
       setTasks(r.data);

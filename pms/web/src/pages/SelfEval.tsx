@@ -20,7 +20,7 @@ import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import type { AdjustmentView } from "@/services/api.types";
 
-import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
@@ -535,10 +535,10 @@ export default function SelfEval() {
   }
 
   async function onSubmit(values: EvalView) {
-    // 价值观甲事例校验交给后端三维度校验
+    // 界面只填单项价值观，提交时展开为后端三维度字段（甲事例校验由后端三维度校验处理）
     setSubmitting(true);
     try {
-      await api.post(`/v1/cycles/${cycleId}/self-evaluation`, values);
+      await api.post(`/v1/cycles/${cycleId}/self-evaluation`, expandValueGrades(values));
       message.success("自评已提交");
       localStorage.removeItem(draftKey);
       await reload();

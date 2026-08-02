@@ -25,7 +25,7 @@ import {
 import { api, formatError } from "@/services/api";
 import type { FormProps } from "antd";
 import type { AdjustmentView } from "@/services/api.types";
-import ValueGradeForm, { ValueGradeDisplay } from "@/components/ValueGradeForm";
+import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
@@ -307,13 +307,19 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
           valueStyle={{ color: "var(--color-primary)" }}
           suffix={sum.avg_perf_score ? `(${PERF_LEVEL_LABEL[perfLevel(sum.avg_perf_score)]})` : ""}
         />
-        {Object.entries(sum.value_grade_dist).map(([g, n]) => {
-          const [dim, grade] = g.split("_");
-          const DIM_LABEL: Record<string, string> = { belief: "信念", team: "团队", growth: "成长" };
-          return (
-            <Statistic key={g} title={`${DIM_LABEL[dim] ?? dim} ${VALUE_LABEL[grade]}`} value={`${n} 人`} />
+        {(() => {
+          // 价值观三维已合并为单项：取 belief 维度分布，老数据 belief 缺失时回退 team/growth
+          const dist = sum.value_grade_dist;
+          const dim = ["belief", "team", "growth"].find((d) =>
+            Object.keys(dist).some((k) => k.startsWith(`${d}_`))
           );
-        })}
+          if (!dim) return null;
+          return Object.entries(dist)
+            .filter(([k]) => k.startsWith(`${dim}_`))
+            .map(([k, n]) => (
+              <Statistic key={k} title={`价值观 ${VALUE_LABEL[k.slice(dim.length + 1)] ?? "-"}`} value={`${n} 人`} />
+            ));
+        })()}
       </Space>
       {sum.rater_bias && sum.rater_bias.length > 0 && (
         <Card type="inner" size="small" title="手松手紧提示" style={{ marginBottom: 12 }}>
@@ -338,13 +344,9 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
           dataSource={sum.comments}
           columns={[
             { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) },
-            { title: "价值观", render: (_, r) => (
-              <Space>
-                <span>信念 {VALUE_LABEL[r.value_belief_grade ?? ""] ?? "-"}</span>
-                <span>团队 {VALUE_LABEL[r.value_team_grade ?? ""] ?? "-"}</span>
-                <span>成长 {VALUE_LABEL[r.value_growth_grade ?? ""] ?? "-"}</span>
-              </Space>
-            ) },
+            { title: "价值观", render: (_, r) =>
+              VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? ""] ?? "-"
+            },
             {
               title: "评语",
               dataIndex: "comment",
@@ -378,13 +380,8 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
               { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) ?? "-" },
               {
                 title: "价值观",
-                render: (_, r) => (
-                  <Space>
-                    <span>信念 {VALUE_LABEL[r.value_belief_grade ?? ""] ?? "-"}</span>
-                    <span>团队 {VALUE_LABEL[r.value_team_grade ?? ""] ?? "-"}</span>
-                    <span>成长 {VALUE_LABEL[r.value_growth_grade ?? ""] ?? "-"}</span>
-                  </Space>
-                ),
+                render: (_, r) =>
+                  VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? ""] ?? "-",
               },
               {
                 title: "评语",
@@ -643,13 +640,13 @@ export default function LeaderEvalDetail() {
   }, [cycleId, userId]);
 
   async function onSubmit(values: EvalView) {
-    // 价值观甲事例校验由后端 validate_value_grades 处理
+    // 界面只填单项价值观，提交时展开为后端三维度字段（甲事例校验由后端 validate_value_grades 处理）
 
     setSubmitting(true);
     try {
       await api.post(
         `/v1/cycles/${cycleId}/users/${userId}/superior-evaluation`,
-        values
+        expandValueGrades(values)
       );
       message.success("上级评估已提交");
       await reload();
@@ -726,13 +723,8 @@ export default function LeaderEvalDetail() {
             { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
             {
               title: "价值观",
-              render: (_: unknown, r: HistoryPerf) => (
-                <Space>
-                  <span>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</span>
-                  <span>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</span>
-                  <span>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</span>
-                </Space>
-              ),
+              render: (_: unknown, r: HistoryPerf) =>
+                VALUE_LABEL[r.final_value_belief ?? r.final_value_team ?? r.final_value_growth ?? ""] ?? "-",
             },
           ]}
         />

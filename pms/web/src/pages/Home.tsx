@@ -216,9 +216,7 @@ export default function Home() {
         {item.final_perf_score?.toFixed(2)} 分）
       </StatusTag>
       <StatusTag type="info">
-        信念 {VALUE_LABEL[item.final_value_belief ?? ""] ?? "-"} / 团队{" "}
-        {VALUE_LABEL[item.final_value_team ?? ""] ?? "-"} / 成长{" "}
-        {VALUE_LABEL[item.final_value_growth ?? ""] ?? "-"}
+        价值观 {VALUE_LABEL[item.final_value_belief ?? item.final_value_team ?? item.final_value_growth ?? ""] ?? "-"}
       </StatusTag>
     </Space>
   );

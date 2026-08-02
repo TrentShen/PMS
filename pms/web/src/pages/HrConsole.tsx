@@ -360,9 +360,7 @@ export default function HrConsole() {
     {
       title: "价值观",
       render: (_, p) => (
-        <span>
-          信念 {p.final_value_belief ?? "-"} / 团队 {p.final_value_team ?? "-"} / 成长 {p.final_value_growth ?? "-"}
-        </span>
+        <span>{p.final_value_belief ?? p.final_value_team ?? p.final_value_growth ?? "-"}</span>
       ),
     },
     { title: "操作", render: (_, p) => renderParticipantActions(p) },
@@ -498,7 +496,7 @@ export default function HrConsole() {
               { title: "业绩", render: (p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
               {
                 title: "价值观",
-                render: (p) => `信念 ${p.final_value_belief ?? "-"} / 团队 ${p.final_value_team ?? "-"} / 成长 ${p.final_value_growth ?? "-"}`,
+                render: (p) => p.final_value_belief ?? p.final_value_team ?? p.final_value_growth ?? "-",
               },
             ]}
             renderActions={(p) => renderParticipantActions(p)}

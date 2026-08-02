@@ -23,7 +23,7 @@ import type { ColumnsType } from "antd/es/table";
 import { Column } from "@ant-design/charts";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
-import ValueGradeForm from "@/components/ValueGradeForm";
+import ValueGradeForm, { expandValueGrades } from "@/components/ValueGradeForm";
 import { useMobile } from "@/hooks/useMobile";
 import BottomActions from "@/components/ui/BottomActions";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -49,15 +49,11 @@ interface Dist { level: string; label: string; count: number; percent: number; t
 interface MatrixRow { group: string; excellent: number; exceed_part: number; meet: number; below_part: number; below: number; unset: number; total: number }
 interface MatrixData { by_dept: MatrixRow[]; by_level: MatrixRow[] }
 
-// 校准弹窗表单值（字段名与后端契约一致，example 字段由 ValueGradeForm 注入）
+// 校准弹窗表单值（界面只采集 belief 一组，提交时 expandValueGrades 展开为后端三维度契约）
 interface CalibrateFormValues {
   perf_score?: number | null;
   value_belief_grade?: string;
-  value_team_grade?: string;
-  value_growth_grade?: string;
   value_belief_example?: string;
-  value_team_example?: string;
-  value_growth_example?: string;
   reason: string;
 }
 
@@ -177,12 +173,12 @@ function isAdjusted(r: CalItem): boolean {
   );
 }
 
-// 价值观三维摘要：优先展示校准值，未校准时回退初评值
+// 价值观摘要：三维已合并，取 belief，老数据 belief 为空时回退 team/growth；优先校准值，未校准时回退初评值
 function valueSummary(r: CalItem): string {
-  const belief = r.calibrated_value_belief ?? r.initial_value_belief;
-  const team = r.calibrated_value_team ?? r.initial_value_team;
-  const growth = r.calibrated_value_growth ?? r.initial_value_growth;
-  return `信念 ${VALUE_LABEL[belief ?? ""] ?? "-"} / 团队 ${VALUE_LABEL[team ?? ""] ?? "-"} / 成长 ${VALUE_LABEL[growth ?? ""] ?? "-"}`;
+  const belief =
+    r.calibrated_value_belief ?? r.calibrated_value_team ?? r.calibrated_value_growth ??
+    r.initial_value_belief ?? r.initial_value_team ?? r.initial_value_growth;
+  return VALUE_LABEL[belief ?? ""] ?? "-";
 }
 
 // @ant-design/charts 需要具体色值字符串，运行时从设计令牌读取（fallback 与 tokens.css 保持一致）
@@ -259,9 +255,9 @@ export default function Calibration() {
     setEditingItem(r);
     form.setFieldsValue({
       perf_score: r.calibrated_perf_score,
-      value_belief_grade: r.calibrated_value_belief ?? undefined,
-      value_team_grade: r.calibrated_value_team ?? undefined,
-      value_growth_grade: r.calibrated_value_growth ?? undefined,
+      // 预填取 belief，兼容老数据：belief 为空时回退 team/growth
+      value_belief_grade:
+        r.calibrated_value_belief ?? r.calibrated_value_team ?? r.calibrated_value_growth ?? undefined,
       reason: "",
     });
   }
@@ -280,9 +276,8 @@ export default function Calibration() {
         items: [{
           user_id: editingItem.user_id,
           perf_score: v.perf_score,
-          value_belief_grade: v.value_belief_grade,
-          value_team_grade: v.value_team_grade,
-          value_growth_grade: v.value_growth_grade,
+          // 界面只填单项价值观，展开为后端三维度字段（校准 schema 无 example 字段，只展开等级）
+          ...expandValueGrades({ value_belief_grade: v.value_belief_grade ?? null }),
           reason: v.reason,
         }],
       });
@@ -337,13 +332,9 @@ export default function Calibration() {
     { title: "部门", dataIndex: "dept_name", render: (v: string | null) => v ?? "-" },
     { title: "初评分", dataIndex: "initial_perf_score", render: (v: number | null) => v?.toFixed(2) ?? "-" },
     { title: "初评等级", dataIndex: "initial_perf_level", render: (v: string | null) => PERF_LABEL[v ?? ""] ?? "-" },
-    { title: "初评价值观", render: (_: unknown, r: CalItem) => (
-      <Space>
-        <span>信念 {VALUE_LABEL[r.initial_value_belief ?? ""] ?? "-"}</span>
-        <span>团队 {VALUE_LABEL[r.initial_value_team ?? ""] ?? "-"}</span>
-        <span>成长 {VALUE_LABEL[r.initial_value_growth ?? ""] ?? "-"}</span>
-      </Space>
-    ) },
+    { title: "初评价值观", render: (_: unknown, r: CalItem) =>
+      VALUE_LABEL[r.initial_value_belief ?? r.initial_value_team ?? r.initial_value_growth ?? ""] ?? "-"
+    },
     { title: "校准分", dataIndex: "calibrated_perf_score", render: (v: number | null, r: CalItem) => (
       v != null ? (
         <>
@@ -355,13 +346,10 @@ export default function Calibration() {
     { title: "校准等级", dataIndex: "calibrated_perf_level", render: (v: string | null) => (
       v ? <StatusTag>{PERF_LABEL[v] ?? v}</StatusTag> : "-"
     ) },
-    { title: "校准价值观", render: (_: unknown, r: CalItem) => (
-      <Space>
-        {r.calibrated_value_belief ? <StatusTag>信念 {VALUE_LABEL[r.calibrated_value_belief]}</StatusTag> : "-"}
-        {r.calibrated_value_team ? <StatusTag>团队 {VALUE_LABEL[r.calibrated_value_team]}</StatusTag> : null}
-        {r.calibrated_value_growth ? <StatusTag>成长 {VALUE_LABEL[r.calibrated_value_growth]}</StatusTag> : null}
-      </Space>
-    ) },
+    { title: "校准价值观", render: (_: unknown, r: CalItem) => {
+      const g = r.calibrated_value_belief ?? r.calibrated_value_team ?? r.calibrated_value_growth;
+      return g ? <StatusTag>{VALUE_LABEL[g] ?? g}</StatusTag> : "-";
+    } },
     { title: "状态", dataIndex: "participant_status", render: (v: string) => (
       <StatusTag type={PARTICIPANT_STATUS_TYPE[v] ?? "default"}>
         {PARTICIPANT_STATUS_LABEL[v] ?? v}

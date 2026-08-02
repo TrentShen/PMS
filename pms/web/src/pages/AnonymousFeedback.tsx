@@ -64,9 +64,10 @@ export default function AnonymousFeedback() {
       await api.post(`/v1/cycles/${v.cycle_id}/anonymous-feedback`, {
         target_user_id: v.target_user_id,
         perf_score: v.perf_score || null,
+        // 界面只填单项价值观，提交时复制到后端三维度字段
         value_belief_grade: v.value_belief_grade || null,
-        value_team_grade: v.value_team_grade || null,
-        value_growth_grade: v.value_growth_grade || null,
+        value_team_grade: v.value_belief_grade || null,
+        value_growth_grade: v.value_belief_grade || null,
         comment: v.comment,
       });
       message.success("已提交（匿名）");
@@ -109,21 +110,11 @@ export default function AnonymousFeedback() {
         <Form.Item name="perf_score" label="业绩评分（可选，1-5，0.25 分段）">
           <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
         </Form.Item>
-        <Form.Item name="value_belief_grade" label="价值观-信念（可选）">
-          <Radio.Group optionType="button" buttonStyle="solid" size="large">
-            <Radio.Button value="jia">甲</Radio.Button>
-            <Radio.Button value="yi">乙</Radio.Button>
-            <Radio.Button value="bing">丙</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
-        <Form.Item name="value_team_grade" label="价值观-团队（可选）">
-          <Radio.Group optionType="button" buttonStyle="solid" size="large">
-            <Radio.Button value="jia">甲</Radio.Button>
-            <Radio.Button value="yi">乙</Radio.Button>
-            <Radio.Button value="bing">丙</Radio.Button>
-          </Radio.Group>
-        </Form.Item>
-        <Form.Item name="value_growth_grade" label="价值观-成长（可选）">
+        <Form.Item
+          name="value_belief_grade"
+          label="价值观（可选）"
+          extra="从信念、团队协作、学习成长三方面综合评价"
+        >
           <Radio.Group optionType="button" buttonStyle="solid" size="large">
             <Radio.Button value="jia">甲</Radio.Button>
             <Radio.Button value="yi">乙</Radio.Button>

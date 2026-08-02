@@ -82,13 +82,8 @@ export default function History() {
               },
               {
                 title: "价值观",
-                render: (_, r) => (
-                  <Space>
-                    <Tag>信念 {VALUE_LABEL[r.final_value_belief ?? ""] ?? "-"}</Tag>
-                    <Tag>团队 {VALUE_LABEL[r.final_value_team ?? ""] ?? "-"}</Tag>
-                    <Tag>成长 {VALUE_LABEL[r.final_value_growth ?? ""] ?? "-"}</Tag>
-                  </Space>
-                ),
+                render: (_, r) =>
+                  VALUE_LABEL[r.final_value_belief ?? r.final_value_team ?? r.final_value_growth ?? ""] ?? "-",
               },
               {
                 title: "操作",
@@ -125,13 +120,8 @@ export default function History() {
               },
               {
                 title: "价值观",
-                render: (_, r) => (
-                  <Space>
-                    <Tag>信念 {VALUE_LABEL[r.value_belief ?? ""] ?? "-"}</Tag>
-                    <Tag>团队 {VALUE_LABEL[r.value_team ?? ""] ?? "-"}</Tag>
-                    <Tag>成长 {VALUE_LABEL[r.value_growth ?? ""] ?? "-"}</Tag>
-                  </Space>
-                ),
+                render: (_, r) =>
+                  VALUE_LABEL[r.value_belief ?? r.value_team ?? r.value_growth ?? ""] ?? "-",
               },
               { title: "评语", dataIndex: "comment", render: (c) => c || "-" },
             ]}
