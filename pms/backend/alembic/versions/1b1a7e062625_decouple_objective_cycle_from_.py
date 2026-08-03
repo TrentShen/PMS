@@ -60,6 +60,19 @@ def _fk_name_for_column(conn, table: str, column: str) -> str | None:
     ).scalar()
 
 
+def _fk_names_for_column(conn, table: str, column: str) -> list[str]:
+    """返回该列上全部外键名（同一列可能因历史迁移重复建了多个 FK，需全部删除）"""
+    rows = conn.execute(
+        sa.text(
+            "SELECT constraint_name FROM information_schema.key_column_usage "
+            "WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column "
+            "AND referenced_table_name IS NOT NULL"
+        ),
+        {"table": table, "column": column},
+    ).all()
+    return [r[0] for r in rows]
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -135,16 +148,14 @@ def upgrade() -> None:
 
     # 7. 删除旧的 cycle_id 列、外键、索引
     if _column_exists(conn, 'objective', 'cycle_id'):
-        fk = _fk_name_for_column(conn, 'objective', 'cycle_id')
-        if fk:
+        for fk in _fk_names_for_column(conn, 'objective', 'cycle_id'):
             op.drop_constraint(fk, 'objective', type_='foreignkey')
         if _index_exists(conn, 'objective', 'ix_objective_cycle_id'):
             op.drop_index(op.f('ix_objective_cycle_id'), table_name='objective')
         op.drop_column('objective', 'cycle_id')
 
     if _column_exists(conn, 'objective_revision', 'cycle_id'):
-        fk = _fk_name_for_column(conn, 'objective_revision', 'cycle_id')
-        if fk:
+        for fk in _fk_names_for_column(conn, 'objective_revision', 'cycle_id'):
             op.drop_constraint(fk, 'objective_revision', type_='foreignkey')
         if _index_exists(conn, 'objective_revision', 'ix_objective_revision_cycle_id'):
             op.drop_index(op.f('ix_objective_revision_cycle_id'), table_name='objective_revision')

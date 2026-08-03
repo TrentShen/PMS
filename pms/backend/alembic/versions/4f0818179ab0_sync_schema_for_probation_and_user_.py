@@ -63,6 +63,19 @@ def _fk_exists(conn, table: str, fk: str) -> bool:
     return result.scalar() is not None
 
 
+def _fk_exists_for_column(conn, table: str, column: str) -> bool:
+    """按列判断是否存在外键（不依赖自动命名的约束名，避免重复建 FK）"""
+    result = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.key_column_usage "
+            "WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column "
+            "AND referenced_table_name IS NOT NULL LIMIT 1"
+        ),
+        {"table": table, "column": column},
+    )
+    return result.scalar() is not None
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -158,9 +171,9 @@ def upgrade() -> None:
             existing_nullable=True
         )
 
-    if not _fk_exists(conn, "objective_revision", "objective_revision_ibfk_2"):
+    if not _fk_exists_for_column(conn, "objective_revision", "user_id"):
         op.create_foreign_key(None, 'objective_revision', 'user', ['user_id'], ['id'])
-    if not _fk_exists(conn, "objective_revision", "objective_revision_ibfk_3"):
+    if not _fk_exists_for_column(conn, "objective_revision", "cycle_id"):
         op.create_foreign_key(None, 'objective_revision', 'performance_cycle', ['cycle_id'], ['id'])
 
     if not _column_exists(conn, 'user', 'confirm_date'):
