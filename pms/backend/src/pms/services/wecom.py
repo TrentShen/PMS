@@ -300,6 +300,11 @@ def batch_get_hr_staff_info(userids: list[str], max_workers: int = 5) -> dict[st
 
 # ---------- 应用消息 ----------
 
+def _default_agentid() -> int:
+    """默认应用 agentid；未配置时返回 0（上层 _wecom_configured 已拦截，此处容错防崩溃）"""
+    return int(settings.wecom_agentid) if settings.wecom_agentid else 0
+
+
 def send_text(user_ids: list[str], content: str, agentid: int | None = None) -> dict:
     """发送文本消息"""
     data = _post(
@@ -307,7 +312,7 @@ def send_text(user_ids: list[str], content: str, agentid: int | None = None) -> 
         json_body={
             "touser": "|".join(user_ids),
             "msgtype": "text",
-            "agentid": agentid or int(settings.wecom_agentid),
+            "agentid": agentid or _default_agentid(),
             "text": {"content": content},
         },
     )
@@ -334,7 +339,7 @@ def send_textcard(
         json_body={
             "touser": "|".join(user_ids),
             "msgtype": "textcard",
-            "agentid": agentid or int(settings.wecom_agentid),
+            "agentid": agentid or _default_agentid(),
             "textcard": {
                 "title": title,
                 "description": description,
@@ -354,7 +359,7 @@ def send_markdown(user_ids: list[str], content: str, agentid: int | None = None)
         json_body={
             "touser": "|".join(user_ids),
             "msgtype": "markdown",
-            "agentid": agentid or int(settings.wecom_agentid),
+            "agentid": agentid or _default_agentid(),
             "markdown": {"content": content},
         },
     )
