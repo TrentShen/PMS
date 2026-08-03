@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, require_fte
+from pms.services.auth import SUPERIOR_ROLES, get_current_user, has_any_role, require_fte
 from pms.services.scope import visible_user_ids
 
 router = APIRouter(
@@ -78,7 +78,13 @@ def user_history(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    """查看某位员工的历史绩效趋势（多周期）"""
+    """查看某位员工的历史绩效趋势（多周期）
+
+    仅上级/HR 可见（含员工本人也不可查自己）；scope 校验保留，
+    leader 只能看自己 + 管辖下属。
+    """
+    if not has_any_role(current, *SUPERIOR_ROLES):
+        raise HTTPException(status_code=403, detail="无权限")
     from pms.services.scope import ensure_can_view_user
     ensure_can_view_user(session, current, user_id)
 

@@ -12,8 +12,8 @@ from sqlmodel import Session, select
 from pms.database.models.historical_objective import HistoricalObjective
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, require_role
-from pms.services.scope import visible_user_ids
+from pms.services.auth import SUPERIOR_ROLES, get_current_user, has_any_role, require_role
+from pms.services.scope import ensure_can_view_user, visible_user_ids
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/import/historical-objectives", tags=["import"])
@@ -183,17 +183,19 @@ def list_historical_objectives(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # 查询口径与 historical_import.py GET 一致：
-    # hrbp/super_admin 按数据可见范围过滤，其余角色只看自己
+    # 历史目标属历史绩效范畴：仅上级/HR 可见（员工本人也不可查）。
+    # leader 不带 user_id 时按数据可见范围过滤；带 user_id 时做 scope 校验，
+    # 查管辖范围外的人直接 403（与 history/trend 口径一致）。
+    if not has_any_role(current, *SUPERIOR_ROLES):
+        raise HTTPException(status_code=403, detail="无权限")
     q = select(HistoricalObjective, User).join(User, User.id == HistoricalObjective.user_id)
-    if current.role in ("hrbp", "super_admin"):
+    if user_id:
+        ensure_can_view_user(session, current, user_id)
+        q = q.where(HistoricalObjective.user_id == user_id)
+    else:
         scope = visible_user_ids(session, current)
         if scope is not None:
             q = q.where(HistoricalObjective.user_id.in_(scope))
-    else:
-        q = q.where(HistoricalObjective.user_id == current.id)
-    if user_id:
-        q = q.where(HistoricalObjective.user_id == user_id)
     rows = session.exec(
         q.order_by(HistoricalObjective.cycle_name, HistoricalObjective.order_num)
     ).all()

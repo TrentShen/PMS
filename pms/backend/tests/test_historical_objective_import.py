@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """历史（线下）绩效目标留档测试。
 
-覆盖：导入 + 幂等重复导入不翻倍、员工只能查自己、HR 按 scope 可见、模板接口 200。
+覆盖：导入 + 幂等重复导入不翻倍、员工不可见（403）、HR 按 scope 可见、模板接口 200。
 """
 
 import io
@@ -112,33 +112,26 @@ def test_import_and_idempotent_reimport(client: TestClient) -> None:
     assert _count(alice_id, "2024H1") == 2
 
 
-def test_employee_can_only_see_self(client: TestClient) -> None:
+def test_employee_forbidden(client: TestClient) -> None:
     hr_token = _login(client, "mock-hr")
     excel = _make_excel([
         ["mock-alice", "张 Alice", "2024H1", "目标一", "描述一", "标准一", "100"],
-        ["mock-bob", "李 Bob", "2024H1", "Bob 目标", "Bob 描述", "Bob 标准", "100"],
     ])
     resp = _upload(client, hr_token, excel)
     assert resp.status_code == 200, resp.text
 
     alice_token = _login(client, "mock-alice")
     alice_id = _user_id("mock-alice")
-    bob_id = _user_id("mock-bob")
 
-    # 不带参数：只能看到自己的
+    # 普通员工不可见历史目标（含自己的）
     resp = client.get("/api/v1/import/historical-objectives", headers=_headers(alice_token))
-    assert resp.status_code == 200, resp.text
-    items = resp.json()
-    assert len(items) == 1
-    assert all(i["user_id"] == alice_id for i in items)
+    assert resp.status_code == 403, resp.text
 
-    # 显式查别人：被强制收窄到自己，返回空
     resp = client.get(
-        f"/api/v1/import/historical-objectives?user_id={bob_id}",
+        f"/api/v1/import/historical-objectives?user_id={alice_id}",
         headers=_headers(alice_token),
     )
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == []
+    assert resp.status_code == 403, resp.text
 
 
 def test_hr_can_see_by_scope(client: TestClient) -> None:

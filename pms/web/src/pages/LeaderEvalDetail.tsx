@@ -1,6 +1,6 @@
 // Leader 端单人评估页：看员工目标 + 自评 + 互评名单审核 + 互评汇总 + 填上级评估
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Alert,
   Avatar,
@@ -19,12 +19,13 @@ import {
   Spin,
   Statistic,
   Table,
+  Tag,
   Typography,
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
 import type { FormProps } from "antd";
-import type { AdjustmentView } from "@/services/api.types";
+import type { AdjustmentView, HistoricalObjective } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
@@ -412,6 +413,65 @@ function perfLevel(s: number): string {
   return "below";
 }
 
+// ========== 历史目标（线下导入，只读快照） ==========
+// 增量信息：无数据不渲染，加载失败静默（不影响主流程）
+function HistoricalObjectivesSection({ userId }: { userId: number }) {
+  const [objectives, setObjectives] = useState<HistoricalObjective[]>([]);
+
+  useEffect(() => {
+    api
+      .get<HistoricalObjective[]>("/v1/import/historical-objectives", {
+        params: { user_id: userId },
+      })
+      .then((r) => setObjectives(r.data))
+      .catch(() => setObjectives([]));
+  }, [userId]);
+
+  if (objectives.length === 0) return null;
+
+  // 按周期分组（保持接口返回顺序，组内按 order_num 排序）
+  const groups: [string, HistoricalObjective[]][] = [];
+  for (const o of objectives) {
+    const group = groups.find(([name]) => name === o.cycle_name);
+    if (group) {
+      group[1].push(o);
+    } else {
+      groups.push([o.cycle_name, [o]]);
+    }
+  }
+  for (const [, objs] of groups) {
+    objs.sort((a, b) => a.order_num - b.order_num);
+  }
+
+  return (
+    <Card title="历史目标（线下）" size="small">
+      {groups.map(([cycleName, objs]) => (
+        <div key={cycleName} style={{ marginBottom: 16 }}>
+          <Typography.Title level={5} style={{ marginTop: 0 }}>{cycleName}</Typography.Title>
+          {objs.map((o) => (
+            <Card key={o.id} size="small" style={{ marginBottom: 8 }}>
+              <Space size={8}>
+                <Typography.Text strong>{o.title}</Typography.Text>
+                {o.weight > 0 && <Tag>权重 {o.weight}</Tag>}
+              </Space>
+              {o.description && (
+                <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 4, whiteSpace: "pre-wrap" }}>
+                  {o.description}
+                </Typography.Paragraph>
+              )}
+              {o.measure_criteria && (
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                  衡量标准：{o.measure_criteria}
+                </Typography.Paragraph>
+              )}
+            </Card>
+          ))}
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 // ========== 目标审批 ==========
 const OBJ_STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
   draft: { text: "草稿", type: "default" },
@@ -711,7 +771,11 @@ export default function LeaderEvalDetail() {
 
   const historyCard =
     detail.history_perf && detail.history_perf.length > 0 ? (
-      <Card title="历史绩效" size="small">
+      <Card
+        title="历史绩效"
+        size="small"
+        extra={<Link to={`/trend/${userId}`}>查看趋势</Link>}
+      >
         <Table
           rowKey="cycle_id"
           size="small"
@@ -755,6 +819,8 @@ export default function LeaderEvalDetail() {
   );
 
   const peerSummarySection = <PeerSummarySection cycleId={Number(cycleId)} userId={Number(userId)} />;
+
+  const historicalObjectivesSection = <HistoricalObjectivesSection userId={Number(userId)} />;
 
   const selfEvalCard = (
     <Card title="员工自评">
@@ -843,6 +909,7 @@ export default function LeaderEvalDetail() {
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   {infoCard}
                   {historyCard}
+                  {historicalObjectivesSection}
                   {objectiveCycleCard}
                 </Space>
               ),
@@ -867,6 +934,7 @@ export default function LeaderEvalDetail() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           {infoCard}
           {historyCard}
+          {historicalObjectivesSection}
           {objectiveCycleCard}
           {objectivesSection}
           {peerReviewSection}

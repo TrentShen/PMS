@@ -80,7 +80,7 @@ export default function AppLayout() {
   // 构造菜单项；按角色过滤
   const menuItems = [
     { key: "/", label: "首页" },
-    { key: "/history", label: "历史绩效" },
+    hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/history", label: "历史绩效" },
     { key: "/notifications", label: "通知" },
     { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },

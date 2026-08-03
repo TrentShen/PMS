@@ -49,11 +49,15 @@ export default function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/peer" element={<PeerTasks />} />
           <Route path="/anonymous" element={<AnonymousFeedbackPage />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/trend" element={<Trend />} />
-          <Route path="/trend/:userId" element={<Trend />} />
           {/* 反馈：员工看自己 /feedback/:cycleId 全员开放 */}
           <Route path="/feedback/:cycleId" element={<Feedback />} />
+
+          {/* 历史绩效/趋势：仅 Leader/HR 可见（普通员工含自己的也不可见） */}
+          <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" allowHrPermission />}>
+            <Route path="/history" element={<History />} />
+            <Route path="/trend" element={<Trend />} />
+            <Route path="/trend/:userId" element={<Trend />} />
+          </Route>
 
           {/* 上级写别人 /feedback/:cycleId/:userId：仅 Leader/HR（含 HR 部门 Leader） */}
           <Route element={<RequireRole roles={[...ROLE.LEADER]} fallback="forbid" allowHrPermission />}>
