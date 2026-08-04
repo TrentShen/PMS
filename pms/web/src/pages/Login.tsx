@@ -78,7 +78,7 @@ export default function Login() {
 
   return (
     <div style={{ maxWidth: 600, margin: "48px auto", padding: 16 }}>
-      <Card title="绩效管理系统 · 登录（开发 Mock）">
+      <Card title="MO绩效 · 登录（开发 Mock）">
         <Typography.Paragraph type="secondary">
           企微 OAuth 尚未接入，选择一个身份即可进入系统进行功能测试。
         </Typography.Paragraph>

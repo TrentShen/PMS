@@ -32,9 +32,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="PMS - Performance Management System",
+    title="MO绩效",
     version="0.9.0",
-    description="企业绩效管理系统（企业微信 H5）",
+    description="MO绩效 · 企业绩效管理系统（企业微信 H5）",
     lifespan=lifespan,
 )
 

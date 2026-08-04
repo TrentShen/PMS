@@ -7,7 +7,7 @@
 ## 1. 项目身份卡
 
 ```yaml
-name: PMS · 绩效管理系统
+name: MO绩效 · 绩效管理系统
 version: V0.9
 scale: 100 人内小团队
 stack_backend: FastAPI + SQLModel + Alembic + MySQL + Redis

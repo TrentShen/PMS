@@ -8,7 +8,7 @@ set timeout 300
 # ---------- 服务器配置 ----------
 set server "root@10.222.4.38"
 set remote_dir "/opt/pms"
-set project_root "/Users/trentshen/Documents/Kimi code - 工作区/hr/pms"
+set project_root "/Users/trentshen/Documents/Kimi code - 工作区/MO绩效/pms"
 set local_tar "/tmp/pms-deploy.tar.gz"
 
 # ---------- 1. 获取 SSH 密码 ----------

@@ -98,7 +98,7 @@ export default function AppLayout() {
   const pageTitle =
     PATH_TITLE.find(([prefix]) => location.pathname.startsWith(prefix))?.[1] ??
     menuItems.find((m) => m.key === activeKey)?.label ??
-    "绩效管理";
+    "MO绩效";
   // 路径段数 >1 视为详情/深层页面（如 /self/1、/leader/2/users/3），顶栏左侧显示返回按钮
   const isDetailPage = location.pathname.split("/").filter(Boolean).length > 1;
 
@@ -166,7 +166,7 @@ export default function AppLayout() {
       {/* 桌面端左侧边栏（≤1023px 由 CSS 隐藏，改用抽屉） */}
       <AntLayout.Sider className="pms-sider" width={240} breakpoint="lg" collapsedWidth={0} trigger={null}>
         <div className="pms-sider-logo">
-          <h4>绩效管理</h4>
+          <h4>MO绩效</h4>
         </div>
         <Menu
           mode="inline"

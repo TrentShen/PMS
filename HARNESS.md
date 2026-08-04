@@ -1,7 +1,7 @@
 # Harness · AI 辅助研发架构
 
 > 版本：v2.1  
-> 适用：PMS 绩效管理系统（FastAPI + React）  
+> 适用：MO绩效 · 绩效管理系统（FastAPI + React）  
 > 工具：Kimi（主 AI 助手）  
 > 配套：agents.md、.harness/rules/、.harness/errors.md  
 > 最后更新：2026-06-24
