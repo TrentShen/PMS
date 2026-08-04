@@ -287,11 +287,14 @@ def test_probation_import_overwrite(client: TestClient) -> None:
 
 
 def test_probation_import_skip_when_plan_not_exists(client: TestClient) -> None:
-    # mock-bob 没有试用期计划
+    # mock-bob 没有试用期计划（先删子表目标再删计划，避免外键拦截）
     with Session(engine) as s:
         bob = s.exec(select(User).where(User.wecom_userid == "mock-bob")).first()
         assert bob
-        for p in s.exec(select(ProbationPlan).where(ProbationPlan.user_id == bob.id)).all():
+        plans = s.exec(select(ProbationPlan).where(ProbationPlan.user_id == bob.id)).all()
+        for p in plans:
+            for o in s.exec(select(ProbationObjective).where(ProbationObjective.plan_id == p.id)).all():
+                s.delete(o)
             s.delete(p)
         s.commit()
 

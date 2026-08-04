@@ -99,6 +99,7 @@ class ProbationObjectiveItem(BaseModel):
     title: str
     description: str
     measure_criteria: str
+    weight: int = 0  # 权重（百分制整数）；历史宽容，不强制合计 100
     order_num: int = 0
 
 
@@ -127,6 +128,7 @@ class ProbationObjectiveView(BaseModel):
     title: str
     description: str
     measure_criteria: str
+    weight: int
     order_num: int
     status: str
     reviewed_by: str | None
@@ -499,6 +501,7 @@ def save_probation_objectives(
             title=item.title.strip(),
             description=item.description.strip(),
             measure_criteria=item.measure_criteria.strip(),
+            weight=item.weight,
             order_num=i,
             status=objective_status,
         ))

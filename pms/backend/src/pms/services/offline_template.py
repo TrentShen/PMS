@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+from sqlmodel import Session, select
+
+from pms.database.models.user import User
 
 SHEET_NAME = "目标设定表"
 
@@ -112,3 +115,30 @@ def parse_offline_objective_sheet(file_bytes: bytes) -> ParsedObjectiveSheet:
             result.warnings.append(f"权重合计为 {total}%，应为 100%")
 
     return result
+
+
+def match_user_by_id_or_name(
+    session: Session, wecom_userid: str, name: str
+) -> tuple[User | None, str | None]:
+    """线下表格用户匹配：工号非空按工号，否则按姓名匹配 active 用户。
+
+    返回 (user, None) 表示匹配成功；(None, reason) 表示失败，reason 为 skip 原因。
+    excel_import / probation_import 两个线下导入接口共用，避免逻辑分叉。
+    """
+    if wecom_userid:
+        user = session.exec(
+            select(User).where(User.wecom_userid == wecom_userid)
+        ).first()
+        if not user:
+            return None, f"员工ID {wecom_userid} 不存在"
+        return user, None
+    if not name:
+        return None, "未解析到工号和姓名，无法匹配员工"
+    candidates = session.exec(
+        select(User).where(User.name == name, User.status == "active")
+    ).all()
+    if len(candidates) == 1:
+        return candidates[0], None
+    if not candidates:
+        return None, "姓名未匹配"
+    return None, "姓名重名，请在表格中补充工号"

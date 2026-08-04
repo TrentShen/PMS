@@ -16,7 +16,7 @@ from pms.database.models.objective_cycle_participant import ObjectiveCyclePartic
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import require_role
-from pms.services.offline_template import parse_offline_objective_sheet
+from pms.services.offline_template import match_user_by_id_or_name, parse_offline_objective_sheet
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/objective-cycles", tags=["objective-cycles"])
@@ -271,21 +271,16 @@ def import_offline_objectives(
             continue
         warnings.extend(f"{label}: {w}" for w in sheet.warnings)
 
-        if not sheet.wecom_userid:
-            skipped.append({"wecom_userid": "", "name": sheet.name or label,
-                            "reason": "未解析到工号"})
-            continue
         if not sheet.objectives:
             skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,
                             "reason": "未解析到目标"})
             continue
 
-        user = session.exec(
-            select(User).where(User.wecom_userid == sheet.wecom_userid)
-        ).first()
+        # 工号非空按工号，否则按姓名匹配 active 用户（共用 match_user_by_id_or_name）
+        user, reason = match_user_by_id_or_name(session, sheet.wecom_userid, sheet.name)
         if not user:
-            skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,
-                            "reason": "员工ID 不存在"})
+            skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name or label,
+                            "reason": reason})
             continue
         if scope is not None and user.id not in scope:
             skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,

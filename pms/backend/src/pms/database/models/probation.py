@@ -51,6 +51,7 @@ class ProbationObjective(SQLModel, table=True):
     title: str = Field(max_length=256)
     description: str | None = Field(default=None, sa_column=Column(Text))
     measure_criteria: str | None = Field(default=None, sa_column=Column(Text))
+    weight: int = Field(default=0)  # 权重（百分制整数）；历史数据为 0，不强制合计 100
     order_num: int = Field(default=0)
 
     # 目标状态：draft → pending_review → approved → locked

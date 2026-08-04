@@ -15,7 +15,7 @@ from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import require_role
-from pms.services.offline_template import parse_offline_objective_sheet
+from pms.services.offline_template import match_user_by_id_or_name, parse_offline_objective_sheet
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/probation", tags=["probation"])
@@ -202,17 +202,14 @@ def import_offline_probation_objectives(
         skip_reason: str | None = None
         user = None
         plan = None
-        if not sheet.wecom_userid:
-            skip_reason = "未解析到工号"
-        elif not sheet.objectives:
+        if not sheet.objectives:
             skip_reason = "未解析到目标"
         else:
-            user = session.exec(
-                select(User).where(User.wecom_userid == sheet.wecom_userid)
-            ).first()
-            if not user:
-                skip_reason = "员工ID 不存在"
-            else:
+            # 工号非空按工号，否则按姓名匹配 active 用户（共用 match_user_by_id_or_name）
+            user, skip_reason = match_user_by_id_or_name(
+                session, sheet.wecom_userid, sheet.name
+            )
+            if user:
                 plan = session.exec(
                     select(ProbationPlan).where(ProbationPlan.user_id == user.id)
                 ).first()
@@ -248,6 +245,7 @@ def import_offline_probation_objectives(
                 title=o.title,
                 description=o.measure_criteria,
                 measure_criteria=o.measure_criteria,
+                weight=o.weight,
                 order_num=i,
                 status=ProbationObjectiveStatus.DRAFT,
             ))

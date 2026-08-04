@@ -10,6 +10,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   message,
   Modal,
   Popconfirm,
@@ -59,6 +60,7 @@ interface ProbationObjective {
   title: string;
   description: string;
   measure_criteria: string;
+  weight: number;
   order_num: number;
   status: string;
   reviewed_by: string | null;
@@ -166,6 +168,7 @@ export default function ProbationDetail() {
       title: "",
       description: "",
       measure_criteria: "",
+      weight: 0,
       order_num: idx,
       status: "draft",
       reviewed_by: null,
@@ -196,7 +199,7 @@ export default function ProbationDetail() {
     return canActOnPlan(plan) && ["in_progress", "pending_evaluation", "extended"].includes(plan.status);
   }
 
-  function updateObjective(idx: number, field: keyof ProbationObjective, value: string) {
+  function updateObjective(idx: number, field: keyof ProbationObjective, value: string | number) {
     const next = [...editingObjectives];
     next[idx] = { ...next[idx], [field]: value };
     setEditingObjectives(next);
@@ -237,6 +240,7 @@ export default function ProbationDetail() {
           title: o.title,
           description: o.description,
           measure_criteria: o.measure_criteria,
+          weight: o.weight || 0,
           order_num: i,
         })),
         submit,
@@ -342,6 +346,8 @@ export default function ProbationDetail() {
   if (!plan) return null;
 
   const statusCfg = STATUS_LABEL[plan.status] ?? { text: plan.status_text, color: "default" };
+  // 编辑态权重合计：等于 100 显示 success，否则 warning（仅提示，不拦截保存）
+  const totalWeight = editingObjectives.reduce((s, o) => s + (o.weight || 0), 0);
 
   return (
     <div className={isMobile && canEditObjectives() ? "has-bottom-actions" : undefined}>
@@ -380,7 +386,16 @@ export default function ProbationDetail() {
             )}
           </Card>
 
-          <Card loading={loading} title="试用期目标" style={{ marginTop: 16 }}>
+          <Card
+            loading={loading}
+            title="试用期目标"
+            style={{ marginTop: 16 }}
+            extra={
+              canEditObjectives() ? (
+                <StatusTag type={totalWeight === 100 ? "success" : "warning"}>权重合计 {totalWeight}%</StatusTag>
+              ) : undefined
+            }
+          >
             {canEditObjectives() ? (
               <>
                 {/* 编辑态：每目标一张卡片，风格对齐 MyObjectives */}
@@ -433,6 +448,19 @@ export default function ProbationDetail() {
                             onChange={(e) => updateObjective(idx, "measure_criteria", e.target.value)}
                           />
                         </div>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>权重</div>
+                          <InputNumber
+                            min={0}
+                            max={100}
+                            addonAfter="%"
+                            inputMode="decimal"
+                            style={{ width: 130 }}
+                            placeholder="权重"
+                            value={o.weight || undefined}
+                            onChange={(v) => updateObjective(idx, "weight", v ?? 0)}
+                          />
+                        </div>
                       </Space>
                     </Card>
                   ))}
@@ -467,9 +495,16 @@ export default function ProbationDetail() {
               /* 查看态：目标卡片列表，风格对齐 MyObjectives */
               plan.objectives.map((o, idx) => (
                 <Card key={o.id} size="small" style={{ marginBottom: 12 }}>
-                  <Typography.Text strong style={{ fontSize: 15 }}>
-                    {idx + 1}. {o.title}
-                  </Typography.Text>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <Typography.Text strong style={{ fontSize: 15 }}>
+                      {idx + 1}. {o.title}
+                    </Typography.Text>
+                    {o.weight > 0 && (
+                      <Typography.Text strong style={{ fontSize: 18, color: "var(--color-primary)", flexShrink: 0 }}>
+                        {o.weight}%
+                      </Typography.Text>
+                    )}
+                  </div>
                   <div style={{ marginTop: 8 }}>
                     <div style={FIELD_LABEL_STYLE}>目标描述</div>
                     <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
