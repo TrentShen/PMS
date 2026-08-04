@@ -190,6 +190,15 @@ def _dept_name_map(session: Session, dept_ids: set[int]) -> dict[int, str]:
     return {d.id: d.name for d in depts}
 
 
+def _leader_name_map(session: Session, leader_userids: set[str]) -> dict[str, str]:
+    if not leader_userids:
+        return {}
+    leaders = session.exec(
+        select(User.wecom_userid, User.name).where(User.wecom_userid.in_(leader_userids))
+    ).all()
+    return {u.wecom_userid: u.name for u in leaders}
+
+
 def _build_plan_view(
     session: Session,
     plan: ProbationPlan,
@@ -242,17 +251,16 @@ def _build_plan_view(
 
 
 def _build_list_item(
-    session: Session,
     plan: ProbationPlan,
     user_map: dict[int, User],
     name_map: dict[int, str],
     dept_map: dict[int, str],
+    leader_name_map: dict[str, str],
 ) -> ProbationListItem:
     user = user_map.get(plan.user_id)
     leader_name = None
     if user and user.leader_userid:
-        leader = session.exec(select(User).where(User.wecom_userid == user.leader_userid)).first()
-        leader_name = leader.name if leader else user.leader_userid
+        leader_name = leader_name_map.get(user.leader_userid, user.leader_userid)
 
     today = date.today()
     remaining_days = (plan.end_date - today).days
@@ -363,12 +371,14 @@ def list_probation_plans(
 
     user_ids = {r.User.id for r in results if r.User.id}
     dept_ids = {r.User.department_id for r in results if r.User.department_id}
+    leader_userids = {r.User.leader_userid for r in results if r.User.leader_userid}
     name_map = _user_name_map(session, user_ids)
     dept_map = _dept_name_map(session, dept_ids)
+    leader_name_map = _leader_name_map(session, leader_userids)
     user_map = {r.User.id: r.User for r in results if r.User.id}
 
     return [
-        _build_list_item(session, r.ProbationPlan, user_map, name_map, dept_map)
+        _build_list_item(r.ProbationPlan, user_map, name_map, dept_map, leader_name_map)
         for r in results
     ]
 

@@ -243,7 +243,12 @@ def publish_cycle(
     ).all()
     unfinished = [p for p in participants if p.final_perf_score is None]
     if unfinished:
-        names = [session.get(User, p.user_id).name for p in unfinished]
+        name_map = dict(
+            session.exec(
+                select(User.id, User.name).where(User.id.in_([p.user_id for p in unfinished]))
+            ).all()
+        )
+        names = [name_map.get(p.user_id, str(p.user_id)) for p in unfinished]
         raise HTTPException(
             status_code=400,
             detail=f"尚有 {len(unfinished)} 人未确定最终评分：{', '.join(names)}",
@@ -264,7 +269,12 @@ def publish_cycle(
             if p.user_id not in feedback_map or feedback_map[p.user_id].confirm_status == "pending"
         ]
         if pending_feedback:
-            names = [session.get(User, p.user_id).name for p in pending_feedback]
+            fb_name_map = dict(
+                session.exec(
+                    select(User.id, User.name).where(User.id.in_([p.user_id for p in pending_feedback]))
+                ).all()
+            )
+            names = [fb_name_map.get(p.user_id, str(p.user_id)) for p in pending_feedback]
             raise HTTPException(
                 status_code=400,
                 detail=f"尚有 {len(pending_feedback)} 人未完成绩效反馈确认：{', '.join(names)}",

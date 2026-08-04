@@ -371,14 +371,17 @@ def objective_status_summary(
     pending_review = 0
     approved = 0
 
+    # 批量加载本周期所有目标，避免循环内逐人查询（N+1）
+    all_objs = session.exec(
+        select(Objective).where(Objective.objective_cycle_id == objective_cycle_id)
+    ).all()
+    objs_by_user: dict[int, list[Objective]] = {}
+    for o in all_objs:
+        objs_by_user.setdefault(o.user_id, []).append(o)
+
     for p in participants:
         # 以该员工最新目标状态作为进度
-        objs = session.exec(
-            select(Objective).where(
-                Objective.objective_cycle_id == objective_cycle_id,
-                Objective.user_id == p.user_id,
-            )
-        ).all()
+        objs = objs_by_user.get(p.user_id, [])
         if not objs:
             pending += 1
         elif any(o.status == "pending_review" for o in objs):

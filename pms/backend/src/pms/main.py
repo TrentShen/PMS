@@ -31,11 +31,16 @@ async def lifespan(app: FastAPI):
     logger.info("PMS shutting down")
 
 
+_is_prod = settings.app_env == "prod"
+
 app = FastAPI(
     title="MO绩效",
     version="0.9.0",
     description="MO绩效 · 企业绩效管理系统（企业微信 H5）",
     lifespan=lifespan,
+    # 生产环境关闭接口文档，避免暴露 API 结构
+    docs_url=None if _is_prod else "/docs",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 # 本地开发允许前端跨域；生产通过同域 Nginx 不需要 CORS
@@ -52,4 +57,4 @@ app.include_router(api_v1_router, prefix="/api")
 
 @app.get("/")
 def root() -> dict:
-    return {"app": "pms", "version": "0.9.0", "docs": "/docs"}
+    return {"app": "pms", "version": "0.9.0", "docs": None if _is_prod else "/docs"}

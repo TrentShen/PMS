@@ -4,7 +4,7 @@ from __future__ import annotations
 # 所有配置统一从 settings 单例读取，禁止在业务代码里直接 os.getenv
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +52,13 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _check_prod_secret(self) -> Settings:
+        # 生产环境禁止使用默认密钥，防止 JWT 被伪造
+        if self.app_env == "prod" and self.app_secret == "change-me":
+            raise ValueError("APP_ENV=prod 时必须设置非默认的 APP_SECRET")
+        return self
 
     @property
     def mysql_dsn(self) -> str:
