@@ -214,7 +214,8 @@ export default function AppLayout() {
         </AntLayout.Header>
 
         <AntLayout.Content>
-          <div className="pms-content">
+          {/* key=当前生效角色：切换角色后强制重挂载当前页面，触发各页面 useEffect 重新拉取数据 */}
+          <div className="pms-content" key={user?.role ?? ""}>
             <Outlet />
           </div>
         </AntLayout.Content>

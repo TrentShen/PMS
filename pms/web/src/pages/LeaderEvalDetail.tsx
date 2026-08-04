@@ -274,6 +274,8 @@ interface PeerSummary {
   anonymous_feedback:
     | {
         perf_score: number | null;
+        // 三维合并前的老数据只有 value_grade；新数据三维字段一致，渲染时优先新字段
+        value_grade: string | null;
         value_belief_grade: string | null;
         value_team_grade: string | null;
         value_growth_grade: string | null;
@@ -382,7 +384,7 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
               {
                 title: "价值观",
                 render: (_, r) =>
-                  VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? ""] ?? "-",
+                  VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? r.value_grade ?? ""] ?? "-",
               },
               {
                 title: "评语",
