@@ -15,6 +15,7 @@ from pms.database.models.probation import ProbationObjective, ProbationPlan
 from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import require_role
+from pms.services.offline_template import parse_offline_objective_sheet
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/probation", tags=["probation"])
@@ -175,4 +176,107 @@ def import_probation_objectives(
         "imported_users": len(to_import),
         "imported_objectives": imported_objectives,
         "skipped": skipped,
+    }
+
+
+@router.post("/import-offline-objectives")
+def import_offline_probation_objectives(
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+):
+    # 线下"绩效设定表"多文件导入：每文件 = 一名员工，覆盖写入试用期目标
+    skipped: list[dict] = []
+    warnings: list[str] = []
+    to_import: list[dict] = []  # {"user", "plan", "objectives"}
+
+    for f in files:
+        label = f.filename or "未命名文件"
+        try:
+            sheet = parse_offline_objective_sheet(f.file.read())
+        except ValueError as e:
+            skipped.append({"wecom_userid": "", "name": label, "reason": str(e)})
+            continue
+        warnings.extend(f"{label}: {w}" for w in sheet.warnings)
+
+        skip_reason: str | None = None
+        user = None
+        plan = None
+        if not sheet.wecom_userid:
+            skip_reason = "未解析到工号"
+        elif not sheet.objectives:
+            skip_reason = "未解析到目标"
+        else:
+            user = session.exec(
+                select(User).where(User.wecom_userid == sheet.wecom_userid)
+            ).first()
+            if not user:
+                skip_reason = "员工ID 不存在"
+            else:
+                plan = session.exec(
+                    select(ProbationPlan).where(ProbationPlan.user_id == user.id)
+                ).first()
+                if not plan:
+                    skip_reason = "试用期计划不存在"
+                elif plan.status not in _IMPORTABLE_STATUSES:
+                    skip_reason = f"计划状态 {plan.status} 不允许导入目标"
+
+        if skip_reason:
+            skipped.append({
+                "wecom_userid": sheet.wecom_userid,
+                "name": sheet.name or label,
+                "reason": skip_reason,
+            })
+            continue
+        to_import.append({"user": user, "plan": plan, "objectives": sheet.objectives})
+
+    # 覆盖写入：先删旧目标再插入（一个事务）
+    now = datetime.now(timezone.utc)
+    imported_objectives = 0
+    for item in to_import:
+        plan = item["plan"]
+        old = session.exec(
+            select(ProbationObjective).where(ProbationObjective.plan_id == plan.id)
+        ).all()
+        for o in old:
+            session.delete(o)
+        session.flush()
+
+        for i, o in enumerate(item["objectives"]):
+            session.add(ProbationObjective(
+                plan_id=plan.id,
+                title=o.title,
+                description=o.measure_criteria,
+                measure_criteria=o.measure_criteria,
+                order_num=i,
+                status=ProbationObjectiveStatus.DRAFT,
+            ))
+        imported_objectives += len(item["objectives"])
+
+        if plan.status == ProbationPlanStatus.DRAFT:
+            plan.status = ProbationPlanStatus.OBJECTIVE_DRAFT
+        plan.updated_at = now
+        session.add(plan)
+
+    if to_import:
+        write_audit(
+            session,
+            operator_userid=hr.wecom_userid,
+            operator_name=hr.name,
+            action="import_offline_probation_objectives",
+            resource_type="probation_plan",
+            resource_id="-",
+            after={
+                "imported_users": len(to_import),
+                "imported_objectives": imported_objectives,
+                "skipped_count": len(skipped),
+            },
+        )
+    session.commit()
+
+    return {
+        "imported_users": len(to_import),
+        "imported_objectives": imported_objectives,
+        "skipped": skipped,
+        "warnings": warnings,
     }

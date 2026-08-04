@@ -119,6 +119,12 @@ export interface ObjectiveImportResult {
   skipped: ObjectiveImportSkip[];
 }
 
+// 线下《目标设定及考核表》多文件导入的响应
+// POST /v1/objective-cycles/{id}/excel/import-offline 与 POST /v1/probation/import-offline-objectives
+export interface OfflineObjectiveImportResult extends ObjectiveImportResult {
+  warnings: string[];
+}
+
 // GET /v1/import/historical-objectives 的单条历史目标
 export interface HistoricalObjective {
   id: number;
@@ -130,6 +136,50 @@ export interface HistoricalObjective {
   measure_criteria: string | null;
   weight: number;
   order_num: number;
+}
+
+// POST /v1/import/historical-evaluations/summary 与 POST /v1/import/historical-evaluations/detail 的响应
+export interface HistoricalEvaluationImportResult {
+  imported: number;
+  skipped: ObjectiveImportSkip[];
+}
+
+// GET /v1/history/users/{user_id}/evaluations 的汇总部分（敏感数据，严格权限）
+export interface HistoricalEvaluationSummaryView {
+  superior_score: number | null;
+  superior_level: string | null;
+  superior_value_grade: string | null;
+  peer_avg_score: number | null;
+  peer_level: string | null;
+  peer_value_grade: string | null;
+  self_score: number | null;
+  self_level: string | null;
+  self_value_grade: string | null;
+  is_calibrated: boolean;
+  calibration_suggestion: string | null;
+  calibrated_score: number | null;
+  calibrated_result: string | null;
+  comment: string | null;
+}
+
+// GET /v1/history/users/{user_id}/evaluations 的明细部分
+export interface HistoricalEvaluationDetailView {
+  self_score: number | null;
+  self_value_grade: string | null;
+  self_output: string | null;
+  self_comment: string | null;
+  superior_score: number | null;
+  superior_value_grade: string | null;
+  superior_comment: string | null;
+  // 互评明细：后端匿名化，仅给序号
+  peers: { index: number; score: number | null; comment: string | null }[];
+}
+
+// GET /v1/history/users/{user_id}/evaluations 的单条周期记录
+export interface HistoricalEvaluationView {
+  cycle_name: string;
+  summary: HistoricalEvaluationSummaryView | null;
+  detail: HistoricalEvaluationDetailView | null;
 }
 
 // 通用 API 错误结构（axios 错误响应）

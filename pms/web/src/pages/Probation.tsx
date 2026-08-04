@@ -1,16 +1,16 @@
 // 试用期管理主页面：列表视图
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnsType } from "antd/es/table";
-import { Button, Card, Input, message, Select, Space, Table, Tag, Typography, Upload } from "antd";
+import { Button, Card, Input, message, Select, Space, Table, Tag, Tooltip, Typography, Upload } from "antd";
 import { DownloadOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
 import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
-import { showObjectiveImportResult } from "@/components/ui/showImportResult";
-import type { ObjectiveImportResult } from "@/services/api.types";
+import { showObjectiveImportResult, showOfflineObjectiveImportResult } from "@/components/ui/showImportResult";
+import type { ObjectiveImportResult, OfflineObjectiveImportResult } from "@/services/api.types";
 
 
 interface ProbationListItem {
@@ -89,6 +89,36 @@ export default function Probation() {
     } catch (e) {
       message.error(formatError(e, "导入失败"));
     }
+    return false; // 阻止 antd 默认上传
+  }
+
+  // === 线下《目标设定及考核表》多文件导入 ===
+  // antd Upload multiple 时 beforeUpload 会按文件逐个同步触发，先收集再合并为一次请求
+  const offlineFilesRef = useRef<File[]>([]);
+
+  async function uploadOfflineObjectives(files: File[]) {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    try {
+      const r = await api.post<OfflineObjectiveImportResult>(
+        "/v1/probation/import-offline-objectives",
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      showOfflineObjectiveImportResult(r.data);
+      load();
+    } catch (e) {
+      message.error(formatError(e, "导入失败"));
+    }
+  }
+
+  function onSelectOfflineFiles(file: File) {
+    offlineFilesRef.current.push(file);
+    setTimeout(() => {
+      const batch = offlineFilesRef.current;
+      offlineFilesRef.current = [];
+      if (batch.length > 0) void uploadOfflineObjectives(batch);
+    }, 0);
     return false; // 阻止 antd 默认上传
   }
 
@@ -213,6 +243,16 @@ export default function Probation() {
               <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadObjectives(f)}>
                 <Button icon={<UploadOutlined />}>导入试用期目标</Button>
               </Upload>
+              <Tooltip title="支持线下《目标设定及考核表》原表上传，每人一个文件，按工号匹配">
+                <Upload
+                  accept=".xlsx"
+                  multiple
+                  showUploadList={false}
+                  beforeUpload={(f) => onSelectOfflineFiles(f)}
+                >
+                  <Button icon={<UploadOutlined />}>导入线下目标表</Button>
+                </Upload>
+              </Tooltip>
             </>
           )}
         </Space>

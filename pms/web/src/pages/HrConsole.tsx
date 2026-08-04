@@ -27,11 +27,12 @@ import { api, formatError } from "@/services/api";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
-import { showObjectiveImportResult } from "@/components/ui/showImportResult";
+import { showHistoricalEvaluationImportResult, showObjectiveImportResult } from "@/components/ui/showImportResult";
 import type {
   Cycle,
   DeptBrief,
   ExclusionRules,
+  HistoricalEvaluationImportResult,
   ObjectiveCycle,
   ObjectiveImportResult,
   Paginated,
@@ -250,6 +251,21 @@ export default function HrConsole() {
     return false;
   }
 
+  // === 历史考核导入（汇总 / 明细，响应结构 {imported, skipped}） ===
+  async function onUploadHistoricalEvaluations(url: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post<HistoricalEvaluationImportResult>(url, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      showHistoricalEvaluationImportResult(r.data);
+    } catch (e) {
+      message.error(formatError(e, "导入失败"));
+    }
+    return false;
+  }
+
   // === Excel 导出 ===
   async function onExport() {
     if (!selectedCycle) return;
@@ -446,6 +462,14 @@ export default function HrConsole() {
             <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
               <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
             </Upload>
+            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/summary/template">下载考核汇总模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/summary", f)}>
+              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核汇总</Button>
+            </Upload>
+            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/detail/template">下载考核详情模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/detail", f)}>
+              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核详情</Button>
+            </Upload>
             <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
           </Space>
         </ResponsiveShow>
@@ -458,6 +482,14 @@ export default function HrConsole() {
             <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-objectives/template">下载历史目标模板</Button>
             <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
               <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
+            </Upload>
+            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/summary/template">下载考核汇总模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/summary", f)}>
+              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核汇总</Button>
+            </Upload>
+            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/detail/template">下载考核详情模板</Button>
+            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/detail", f)}>
+              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核详情</Button>
             </Upload>
             <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
           </div>

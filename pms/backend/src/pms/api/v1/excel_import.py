@@ -16,6 +16,7 @@ from pms.database.models.objective_cycle_participant import ObjectiveCyclePartic
 from pms.database.models.user import Department, User
 from pms.database.session import get_session
 from pms.services.auth import require_role
+from pms.services.offline_template import parse_offline_objective_sheet
 from pms.utils.audit import write_audit
 
 router = APIRouter(prefix="/objective-cycles", tags=["objective-cycles"])
@@ -233,4 +234,146 @@ def import_objectives(
         "imported_rows": len(parsed),
         "affected_users": len(user_ids),
         "skipped_users": skipped_users,
+    }
+
+
+@router.post("/{objective_cycle_id}/excel/import-offline")
+def import_offline_objectives(
+    objective_cycle_id: int,
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session),
+    hr: User = Depends(require_role("hrbp", "super_admin")),
+):
+    # 线下"绩效设定表"多文件导入：每文件 = 一名员工
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
+    if not cycle:
+        raise HTTPException(status_code=404, detail="目标周期不存在")
+    if cycle.status not in ("draft", "active"):
+        raise HTTPException(status_code=400, detail="当前目标周期状态不允许导入目标")
+
+    # 与 import_objectives 对齐：受限 HRBP 只能导入管辖范围内员工
+    scope: set[int] | None = None
+    if hr.role == "hrbp" and hr.hrbp_scope_dept_ids:
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, hr)
+
+    skipped: list[dict] = []
+    warnings: list[str] = []
+    to_import: list[dict] = []  # {"user": User, "objectives": list[ParsedObjective]}
+
+    for f in files:
+        label = f.filename or "未命名文件"
+        try:
+            sheet = parse_offline_objective_sheet(f.file.read())
+        except ValueError as e:
+            skipped.append({"wecom_userid": "", "name": label, "reason": str(e)})
+            continue
+        warnings.extend(f"{label}: {w}" for w in sheet.warnings)
+
+        if not sheet.wecom_userid:
+            skipped.append({"wecom_userid": "", "name": sheet.name or label,
+                            "reason": "未解析到工号"})
+            continue
+        if not sheet.objectives:
+            skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,
+                            "reason": "未解析到目标"})
+            continue
+
+        user = session.exec(
+            select(User).where(User.wecom_userid == sheet.wecom_userid)
+        ).first()
+        if not user:
+            skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,
+                            "reason": "员工ID 不存在"})
+            continue
+        if scope is not None and user.id not in scope:
+            skipped.append({"wecom_userid": sheet.wecom_userid, "name": sheet.name,
+                            "reason": "超出你的管辖范围"})
+            continue
+        to_import.append({"user": user, "objectives": sheet.objectives})
+
+    if to_import:
+        user_ids = [item["user"].id for item in to_import]
+        existing = session.exec(
+            select(Objective).where(
+                Objective.objective_cycle_id == objective_cycle_id,
+                Objective.user_id.in_(user_ids),
+            )
+        ).all()
+
+        # 目标已被上级确认（approved/locked）的员工跳过导入（与 import_objectives 口径一致）
+        locked_user_ids = {obj.user_id for obj in existing if obj.status in ("approved", "locked")}
+        if locked_user_ids:
+            still_import = []
+            for item in to_import:
+                if item["user"].id in locked_user_ids:
+                    skipped.append({
+                        "wecom_userid": item["user"].wecom_userid,
+                        "name": item["user"].name,
+                        "reason": "目标已被上级确认，跳过导入",
+                    })
+                else:
+                    still_import.append(item)
+            to_import = still_import
+            existing = [obj for obj in existing if obj.user_id not in locked_user_ids]
+
+        for obj in existing:
+            session.delete(obj)
+        session.flush()
+
+    imported_objectives = 0
+    for item in to_import:
+        user = item["user"]
+
+        # 不在参与人里则自动加入（与上方 import_objectives 的自动加参与人口径一致）
+        participant = session.exec(
+            select(ObjectiveCycleParticipant).where(
+                ObjectiveCycleParticipant.objective_cycle_id == objective_cycle_id,
+                ObjectiveCycleParticipant.user_id == user.id,
+            )
+        ).first()
+        if not participant:
+            dept = session.get(Department, user.department_id) if user.department_id else None
+            session.add(ObjectiveCycleParticipant(
+                objective_cycle_id=objective_cycle_id,
+                user_id=user.id,
+                leader_userid_snapshot=user.leader_userid,
+                dept_name_snapshot=dept.name if dept else None,
+                status="approved",
+            ))
+
+        for idx, o in enumerate(item["objectives"]):
+            session.add(Objective(
+                objective_cycle_id=objective_cycle_id,
+                user_id=user.id,
+                title=o.title,
+                description=o.measure_criteria,
+                measure_criteria=o.measure_criteria,
+                weight=o.weight,
+                order_num=idx,
+                status="draft",
+            ))
+        imported_objectives += len(item["objectives"])
+
+    write_audit(
+        session,
+        operator_userid=hr.wecom_userid,
+        operator_name=hr.name,
+        action="import_offline_objectives",
+        resource_type="objective_cycle",
+        resource_id=str(objective_cycle_id),
+        after={
+            "imported_users": len(to_import),
+            "imported_objectives": imported_objectives,
+            "skipped_count": len(skipped),
+        },
+    )
+    session.commit()
+
+    return {
+        "imported_users": len(to_import),
+        "imported_objectives": imported_objectives,
+        "skipped": skipped,
+        "warnings": warnings,
     }

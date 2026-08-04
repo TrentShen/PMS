@@ -25,7 +25,7 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import type { FormProps } from "antd";
-import type { AdjustmentView, HistoricalObjective } from "@/services/api.types";
+import type { AdjustmentView, HistoricalEvaluationView, HistoricalObjective } from "@/services/api.types";
 import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
@@ -472,6 +472,169 @@ function HistoricalObjectivesSection({ userId }: { userId: number }) {
   );
 }
 
+// ========== 历史考核详情（敏感数据，严格权限） ==========
+// 仅 HR 与直属上级可见；后端越权返回 403 时静默不渲染；无数据不渲染
+function HistoricalEvaluationsSection({ userId, isMobile }: { userId: number; isMobile: boolean }) {
+  const [evals, setEvals] = useState<HistoricalEvaluationView[]>([]);
+
+  useEffect(() => {
+    api
+      .get<HistoricalEvaluationView[]>(`/v1/history/users/${userId}/evaluations`)
+      .then((r) => setEvals(r.data))
+      .catch(() => setEvals([])); // 403（无权限）或其他失败均静默，不影响主流程
+  }, [userId]);
+
+  if (evals.length === 0) return null;
+
+  // 得分 + 等级展示，形如 "3.75（符合预期，价值观 乙）"；字段缺失时返回 null（由调用方决定是否渲染该项）
+  function scoreText(score: number | null, level: string | null, valueGrade: string | null): string | null {
+    const extras: string[] = [];
+    if (level) extras.push(PERF_LEVEL_LABEL[level] ?? level);
+    if (valueGrade) extras.push(`价值观 ${VALUE_LABEL[valueGrade] ?? valueGrade}`);
+    const suffix = extras.length > 0 ? `（${extras.join("，")}）` : "";
+    if (score != null) return `${score.toFixed(2)}${suffix}`;
+    return suffix || null;
+  }
+
+  return (
+    <Card title="历史考核详情" size="small">
+      {evals.map((ev) => (
+        <Card key={ev.cycle_name} type="inner" size="small" title={ev.cycle_name} style={{ marginBottom: 12 }}>
+          {ev.summary && (
+            <Descriptions column={isMobile ? 1 : 3} size="small" style={{ marginBottom: 8 }}>
+              {scoreText(ev.summary.self_score, ev.summary.self_level, ev.summary.self_value_grade) && (
+                <Descriptions.Item label="自评">
+                  {scoreText(ev.summary.self_score, ev.summary.self_level, ev.summary.self_value_grade)}
+                </Descriptions.Item>
+              )}
+              {scoreText(ev.summary.superior_score, ev.summary.superior_level, ev.summary.superior_value_grade) && (
+                <Descriptions.Item label="上级评估">
+                  {scoreText(ev.summary.superior_score, ev.summary.superior_level, ev.summary.superior_value_grade)}
+                </Descriptions.Item>
+              )}
+              {scoreText(ev.summary.peer_avg_score, ev.summary.peer_level, ev.summary.peer_value_grade) && (
+                <Descriptions.Item label="互评平均">
+                  {scoreText(ev.summary.peer_avg_score, ev.summary.peer_level, ev.summary.peer_value_grade)}
+                </Descriptions.Item>
+              )}
+              {ev.summary.is_calibrated && (
+                <>
+                  {ev.summary.calibrated_score != null && (
+                    <Descriptions.Item label="校准后得分">{ev.summary.calibrated_score.toFixed(2)}</Descriptions.Item>
+                  )}
+                  {ev.summary.calibrated_result && (
+                    <Descriptions.Item label="校准后结果">{ev.summary.calibrated_result}</Descriptions.Item>
+                  )}
+                  {ev.summary.calibration_suggestion && (
+                    <Descriptions.Item label="校准建议">{ev.summary.calibration_suggestion}</Descriptions.Item>
+                  )}
+                </>
+              )}
+              {ev.summary.comment && (
+                <Descriptions.Item label="备注" span={isMobile ? 1 : 3}>
+                  {ev.summary.comment}
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+          )}
+          {ev.detail && (
+            <Collapse
+              size="small"
+              items={[
+                {
+                  key: "detail",
+                  label: "详情（自评 / 上级评估 / 互评）",
+                  children: (
+                    <>
+                      {(ev.detail.self_score != null ||
+                        ev.detail.self_value_grade ||
+                        ev.detail.self_output ||
+                        ev.detail.self_comment) && (
+                        <div style={{ marginBottom: 12 }}>
+                          <Typography.Title level={5} style={{ marginTop: 0 }}>自评</Typography.Title>
+                          <Descriptions column={isMobile ? 1 : 2} size="small">
+                            {ev.detail.self_score != null && (
+                              <Descriptions.Item label="得分">{ev.detail.self_score.toFixed(2)}</Descriptions.Item>
+                            )}
+                            {ev.detail.self_value_grade && (
+                              <Descriptions.Item label="价值观等级">
+                                {VALUE_LABEL[ev.detail.self_value_grade] ?? ev.detail.self_value_grade}
+                              </Descriptions.Item>
+                            )}
+                            {ev.detail.self_output && (
+                              <Descriptions.Item label="产出" span={isMobile ? 1 : 2}>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{ev.detail.self_output}</span>
+                              </Descriptions.Item>
+                            )}
+                            {ev.detail.self_comment && (
+                              <Descriptions.Item label="整体评价" span={isMobile ? 1 : 2}>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{ev.detail.self_comment}</span>
+                              </Descriptions.Item>
+                            )}
+                          </Descriptions>
+                        </div>
+                      )}
+                      {(ev.detail.superior_score != null ||
+                        ev.detail.superior_value_grade ||
+                        ev.detail.superior_comment) && (
+                        <div style={{ marginBottom: 12 }}>
+                          <Typography.Title level={5} style={{ marginTop: 0 }}>上级评估</Typography.Title>
+                          <Descriptions column={isMobile ? 1 : 2} size="small">
+                            {ev.detail.superior_score != null && (
+                              <Descriptions.Item label="得分">{ev.detail.superior_score.toFixed(2)}</Descriptions.Item>
+                            )}
+                            {ev.detail.superior_value_grade && (
+                              <Descriptions.Item label="价值观等级">
+                                {VALUE_LABEL[ev.detail.superior_value_grade] ?? ev.detail.superior_value_grade}
+                              </Descriptions.Item>
+                            )}
+                            {ev.detail.superior_comment && (
+                              <Descriptions.Item label="评价汇总" span={isMobile ? 1 : 2}>
+                                <span style={{ whiteSpace: "pre-wrap" }}>{ev.detail.superior_comment}</span>
+                              </Descriptions.Item>
+                            )}
+                          </Descriptions>
+                        </div>
+                      )}
+                      {ev.detail.peers.length > 0 && (
+                        <div>
+                          <Typography.Title level={5} style={{ marginTop: 0 }}>互评（评价人匿名）</Typography.Title>
+                          <Table
+                            size="small"
+                            rowKey="index"
+                            pagination={false}
+                            dataSource={ev.detail.peers}
+                            columns={[
+                              { title: "互评", dataIndex: "index", width: 64, render: (v: number) => `互评${v}` },
+                              {
+                                title: "分数",
+                                dataIndex: "score",
+                                width: 80,
+                                render: (v: number | null) => (v != null ? v.toFixed(2) : "-"),
+                              },
+                              {
+                                title: "评语",
+                                dataIndex: "comment",
+                                render: (v: string | null) => (
+                                  <span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>
+                                ),
+                              },
+                            ]}
+                          />
+                        </div>
+                      )}
+                    </>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </Card>
+      ))}
+    </Card>
+  );
+}
+
 // ========== 目标审批 ==========
 const OBJ_STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
   draft: { text: "草稿", type: "default" },
@@ -822,6 +985,10 @@ export default function LeaderEvalDetail() {
 
   const historicalObjectivesSection = <HistoricalObjectivesSection userId={Number(userId)} />;
 
+  const historicalEvaluationsSection = (
+    <HistoricalEvaluationsSection userId={Number(userId)} isMobile={isMobile} />
+  );
+
   const selfEvalCard = (
     <Card title="员工自评">
       {selfEva ? (
@@ -910,6 +1077,7 @@ export default function LeaderEvalDetail() {
                   {infoCard}
                   {historyCard}
                   {historicalObjectivesSection}
+                  {historicalEvaluationsSection}
                   {objectiveCycleCard}
                 </Space>
               ),
@@ -935,6 +1103,7 @@ export default function LeaderEvalDetail() {
           {infoCard}
           {historyCard}
           {historicalObjectivesSection}
+          {historicalEvaluationsSection}
           {objectiveCycleCard}
           {objectivesSection}
           {peerReviewSection}

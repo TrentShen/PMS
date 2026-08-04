@@ -1,5 +1,5 @@
 // HR 目标周期详情页：参与人管理、全员目标状态、Excel 导入、催办
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Alert,
@@ -12,12 +12,14 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   Upload,
   message,
 } from "antd";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
-import type { Participant, UserBrief } from "@/services/api.types";
+import type { OfflineObjectiveImportResult, Participant, UserBrief } from "@/services/api.types";
+import { showOfflineObjectiveImportResult } from "@/components/ui/showImportResult";
 
 
 interface ObjectiveCycle {
@@ -130,6 +132,37 @@ export default function ObjectiveCycleDetail() {
     return false;
   }
 
+  // === 线下《目标设定及考核表》多文件导入 ===
+  // antd Upload multiple 时 beforeUpload 会按文件逐个同步触发，先收集再合并为一次请求
+  const offlineFilesRef = useRef<File[]>([]);
+
+  async function uploadOfflineObjectives(files: File[]) {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    try {
+      const r = await api.post<OfflineObjectiveImportResult>(
+        `/v1/objective-cycles/${id}/excel/import-offline`,
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      showOfflineObjectiveImportResult(r.data);
+      await loadParticipants();
+      await loadSummary();
+    } catch (e) {
+      message.error(formatError(e, "导入失败"));
+    }
+  }
+
+  function onSelectOfflineFiles(file: File) {
+    offlineFilesRef.current.push(file);
+    setTimeout(() => {
+      const batch = offlineFilesRef.current;
+      offlineFilesRef.current = [];
+      if (batch.length > 0) void uploadOfflineObjectives(batch);
+    }, 0);
+    return false; // 阻止 antd 默认上传
+  }
+
   async function onUrge() {
     if (urgeIds.length === 0) return;
     try {
@@ -188,6 +221,16 @@ export default function ObjectiveCycleDetail() {
             <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadExcel(f)}>
               <Button size="small" icon={<UploadOutlined />}>Excel 导入目标</Button>
             </Upload>
+            <Tooltip title="支持线下《目标设定及考核表》原表上传，每人一个文件，按工号匹配">
+              <Upload
+                accept=".xlsx"
+                multiple
+                showUploadList={false}
+                beforeUpload={(f) => onSelectOfflineFiles(f)}
+              >
+                <Button size="small" icon={<UploadOutlined />}>导入线下目标表</Button>
+              </Upload>
+            </Tooltip>
             {cycle.status !== "completed" && (
               <Button
                 size="small"
