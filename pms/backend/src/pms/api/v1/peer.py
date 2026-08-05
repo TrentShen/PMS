@@ -528,7 +528,14 @@ def get_peer_summary(
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
+    allowed = can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES)
+    if not allowed and current.role == "dept_leader":
+        # dept_leader 可看本部门（含隔级）成员的互评汇总，口径与校准视图一致
+        from pms.services.scope import visible_user_ids
+
+        scope = visible_user_ids(session, current)
+        allowed = scope is None or user_id in scope
+    if not allowed:
         raise HTTPException(status_code=403, detail="被评人本人不可见自己收到的互评")
 
     rows = session.exec(

@@ -4,12 +4,13 @@ from __future__ import annotations
 # 独立于绩效周期，与 User.hired_at / probation / employee_status 联动
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
 class ProbationPlan(SQLModel, table=True):
     __tablename__ = "probation_plan"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_probation_plan_user"),)
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)

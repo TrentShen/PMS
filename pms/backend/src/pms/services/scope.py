@@ -26,7 +26,7 @@ def _descendant_dept_ids(session: Session, root_dept_id: int) -> set[int]:
     return visited
 
 
-def _get_hr_dept_ids(session: Session) -> set[int]:
+def get_hr_dept_ids(session: Session) -> set[int]:
     """找到所有"HR 部门"的 id（部门中有 hrbp 角色成员的部门 + 其子部门）"""
     # HR 部门 = 有 hrbp 角色用户所在的部门
     hr_dept_ids_raw = session.exec(
@@ -46,7 +46,7 @@ def _get_hr_dept_ids(session: Session) -> set[int]:
 
 def _hr_dept_member_ids(session: Session) -> set[int]:
     """HR 部门的所有成员 user.id"""
-    hr_depts = _get_hr_dept_ids(session)
+    hr_depts = get_hr_dept_ids(session)
     if not hr_depts:
         return set()
     members = session.exec(
@@ -99,7 +99,7 @@ def _compute_visible_user_ids(session: Session, current: User) -> set[int] | Non
         return None
 
     hr_member_ids = _hr_dept_member_ids(session)
-    hr_dept_ids = _get_hr_dept_ids(session)
+    hr_dept_ids = get_hr_dept_ids(session)
 
     is_in_hr_dept = current.department_id is not None and current.department_id in hr_dept_ids
     is_hr_dept_leader = (

@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Spin,
@@ -393,6 +394,25 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
 
   const hasApproved = candidates.some((c) => c.status === "approved");
 
+  // 新增直接生效；删除需二次确认（Popconfirm 无法挂在 Select 的 tag 关闭按钮上，用 Modal.confirm 与页面其他确认交互保持一致）
+  function onSelectChange(v: number[]) {
+    if (v.length >= selected.length) {
+      setSelected(v.slice(0, 5));
+      return;
+    }
+    const removedIds = selected.filter((id) => !v.includes(id));
+    const names = removedIds
+      .map((id) => allUsers.find((u) => u.id === id)?.name ?? String(id))
+      .join("、");
+    Modal.confirm({
+      title: "确认移除互评人？",
+      content: `将从互评名单中移除：${names}`,
+      okText: "确认移除",
+      cancelText: "取消",
+      onOk: () => setSelected(v),
+    });
+  }
+
   async function onSubmit() {
     setSaving(true);
     try {
@@ -429,7 +449,7 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
           mode="multiple"
           disabled={disabled || hasApproved}
           value={selected}
-          onChange={(v) => setSelected(v.slice(0, 5))}
+          onChange={onSelectChange}
           style={{ width: "100%" }}
           placeholder="最多选 5 人"
           showSearch

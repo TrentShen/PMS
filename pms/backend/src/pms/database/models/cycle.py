@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -41,7 +41,10 @@ class PerformanceCycle(SQLModel, table=True):
 class CycleParticipant(SQLModel, table=True):
     # 冻结快照：即使周期中途组织调整，也按这里记录的上级做审批链
     __tablename__ = "cycle_participant"
-    __table_args__ = {"comment": "参与人维度进度跟踪"}
+    __table_args__ = (
+        UniqueConstraint("cycle_id", "user_id", name="uq_cycle_participant_cycle_user"),
+        {"comment": "参与人维度进度跟踪"},
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     cycle_id: int = Field(foreign_key="performance_cycle.id", index=True)

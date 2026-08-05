@@ -28,6 +28,8 @@ class AdminUserView(BaseModel):
     department_id: int | None
     hrbp_scope_dept_ids: list[int] | None
     status: str
+    # 担任 Leader 角色但没有任何下属（疑似历史遗留），仅用于前端标注提示
+    role_mismatch: bool = False
 
 
 class AdminUserPatch(BaseModel):
@@ -62,7 +64,20 @@ def list_users(
     _admin: User = Depends(require_role("super_admin", "hrbp")),
 ) -> list[AdminUserView]:
     users = session.exec(select(User).order_by(User.id)).all()
-    return [AdminUserView.model_validate(u, from_attributes=True) for u in users]
+    leader_ids = set(
+        session.exec(
+            select(User.leader_userid).where(User.leader_userid.is_not(None))  # type: ignore[union-attr]
+        ).all()
+    )
+    return [
+        AdminUserView.model_validate(u, from_attributes=True).model_copy(
+            update={
+                "role_mismatch": u.role in ("direct_leader", "dept_leader")
+                and u.wecom_userid not in leader_ids
+            }
+        )
+        for u in users
+    ]
 
 
 @router.patch("/users/{user_id}", response_model=AdminUserView)

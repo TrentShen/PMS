@@ -19,7 +19,9 @@ export default function AuthCallback() {
       setMessage("未收到企微 code");
       return;
     }
-    api.get("/v1/auth/callback", { params: { code } })
+    // state 由后端 /auth/entry 签发，回调时原样带回用于一次性校验
+    const state = params.get("state") ?? "";
+    api.get("/v1/auth/callback", { params: { code, state } })
       .then((res) => {
         const { token, user } = res.data;
         setAuth(token, user);

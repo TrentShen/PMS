@@ -110,6 +110,9 @@ def _reset_plan(wecom_userid: str, status: str = ProbationPlanStatus.DRAFT) -> i
             ).all():
                 s.delete(o)
             s.delete(p)
+        # 同一 flush 内 SQLAlchemy 先 INSERT 后 DELETE，
+        # 会撞 uq_probation_plan_user，先 flush 把删除落库再建新计划
+        s.flush()
         plan = ProbationPlan(
             user_id=user.id,
             start_date=date.today() - timedelta(days=30),

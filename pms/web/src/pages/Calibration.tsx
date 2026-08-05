@@ -16,6 +16,7 @@ import {
   Statistic,
   Table,
   Tabs,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -206,6 +207,8 @@ export default function Calibration() {
 
   const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
   const isLeader = user.role === "dept_leader";
+  // 校准由 HR 统一提交：dept_leader（且不带 HR 角色）能看到按钮但后端提交必被 400 卡住，前端直接置灰
+  const submitByHrOnly = isLeader && !isHr;
 
   useEffect(() => {
     api.get<Cycle[]>("/v1/cycles").then((r) => {
@@ -515,11 +518,15 @@ export default function Calibration() {
         <BottomActions>
           {(isLeader || isHr) && canCalibrate && (
             <>
-              <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit}>
-                <Button type="primary" disabled={!canSubmit}>
-                  提交校准（进入 HR 审批）
-                </Button>
-              </Popconfirm>
+              <Tooltip title={submitByHrOnly ? "校准由 HR 统一提交" : undefined}>
+                <span>
+                  <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit || submitByHrOnly}>
+                    <Button type="primary" disabled={!canSubmit || submitByHrOnly}>
+                      提交校准（进入 HR 审批）
+                    </Button>
+                  </Popconfirm>
+                </span>
+              </Tooltip>
               {!canSubmit && (
                 <Typography.Text type="secondary">
                   还差 {uncalibratedCount} 人未校准

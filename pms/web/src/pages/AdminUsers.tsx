@@ -11,6 +11,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -27,6 +28,8 @@ interface AdminUser {
   department_id: number | null;
   hrbp_scope_dept_ids: number[] | null;
   status: string;
+  // 后端标记：角色含 Leader 但无任何下属（可选字段，后端未上线时缺失则不渲染提示）
+  role_mismatch?: boolean;
 }
 
 interface Dept {
@@ -158,7 +161,16 @@ export default function AdminUsers() {
           {
             title: "角色",
             dataIndex: "role",
-            render: (r) => <Tag color={ROLE_COLOR[r]}>{ROLE_LABEL[r] ?? r}</Tag>,
+            render: (r: string, u: AdminUser) => (
+              <Space size={4}>
+                <Tag color={ROLE_COLOR[r]}>{ROLE_LABEL[r] ?? r}</Tag>
+                {u.role_mismatch === true && (
+                  <Tooltip title="担任 Leader 角色但无下属，请确认是否为历史遗留">
+                    <Tag color="warning">角色待核查</Tag>
+                  </Tooltip>
+                )}
+              </Space>
+            ),
           },
           {
             title: "部门",

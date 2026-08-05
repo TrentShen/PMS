@@ -112,16 +112,23 @@ def list_cycles(
 ) -> list[CycleBrief]:
     # 可见规则：
     #   - 有 HR 权限（hrbp/super_admin/HR 部门 Leader）：看到所有周期（含草稿）
-    #   - 其他人：只看自己作为参与人的周期
+    #   - 其他人：看自己作为参与人的周期；Leader 还可看到有直系下属参与的周期
     from pms.services.auth import is_hr_dept_leader
 
     q = select(PerformanceCycle).order_by(PerformanceCycle.id.desc())
 
     has_hr = has_any_role(current, "hrbp", "super_admin") or is_hr_dept_leader(current, session)
     if not has_hr:
-        # 普通员工/Leader：只看有自己参与的周期
+        # 普通员工：只看自己参与的周期；
+        # Leader：还可看到有直系下属（leader_userid = 自己）参与的周期
+        subordinate_ids = session.exec(
+            select(User.id).where(User.leader_userid == current.wecom_userid)
+        ).all()
+        member_ids = {uid for uid in (current.id, *subordinate_ids) if uid is not None}
         my_cycle_ids = session.exec(
-            select(CycleParticipant.cycle_id).where(CycleParticipant.user_id == current.id).distinct()
+            select(CycleParticipant.cycle_id)
+            .where(CycleParticipant.user_id.in_(member_ids))
+            .distinct()
         ).all()
         if not my_cycle_ids:
             return []

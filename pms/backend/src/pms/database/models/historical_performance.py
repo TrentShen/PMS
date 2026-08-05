@@ -4,11 +4,14 @@ from __future__ import annotations
 # 用于导入历史考核结果，不参与当前绩效流程
 from datetime import datetime, timezone
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 
 class HistoricalPerformanceResult(SQLModel, table=True):
     __tablename__ = "historical_performance_result"
+    __table_args__ = (
+        UniqueConstraint("user_id", "cycle_name", name="uq_historical_perf_user_cycle"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)

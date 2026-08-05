@@ -58,6 +58,18 @@ def probation_users(client: TestClient):
         dept = s.exec(select(Department).where(Department.wecom_dept_id == 1)).first()
         assert employee and leader and hr and dept, "seed 数据不完整"
 
+        # 前置清理：其他测试文件（如导入测试）可能已为 alice 建过 plan，
+        # 不清理则 /mine 不会自动创建、计划创建通知也不会触发，用例受执行顺序污染
+        old_plan_ids = [p.id for p in s.exec(select(ProbationPlan).where(ProbationPlan.user_id == employee.id)).all()]
+        if old_plan_ids:
+            s.query(ProbationObjective).filter(ProbationObjective.plan_id.in_(old_plan_ids)).delete(synchronize_session=False)
+            s.query(ProbationPlan).filter(ProbationPlan.user_id == employee.id).delete(synchronize_session=False)
+        s.query(NotificationLog).filter(
+            NotificationLog.target_userid.in_(
+                [u.wecom_userid for u in (employee, leader, hr) if u]
+            )
+        ).delete(synchronize_session=False)
+
         # 把 alice 调整为试用期员工
         employee.hired_at = date.today() - timedelta(days=30)
         employee.probation = 6

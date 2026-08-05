@@ -47,7 +47,7 @@ class NotificationLog(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     target_userid: str = Field(max_length=64, index=True)
-    channel: str = Field(default="wecom", max_length=16)  # wecom / email
+    channel: str = Field(default="wecom", max_length=16)  # wecom_text / wecom_textcard / wecom_markdown
     title: str = Field(max_length=256)
     content: str = ""
     payload: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))

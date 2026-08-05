@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # 认证接口：mock 登录（开发用）+ 企微 OAuth 免登（生产）
+import secrets
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,11 +14,13 @@ from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.objective import Objective
 from pms.database.models.objective_cycle import ObjectiveCycle
 from pms.database.models.user import User
-from pms.database.session import get_session
+from pms.database.session import get_session, redis_client
 from pms.services.auth import get_current_user, is_hr_dept_leader, sign_token
 from pms.services.wecom import get_user_detail, get_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+OAUTH_STATE_TTL = 600  # OAuth state 10 分钟有效，一次性使用
 
 
 class MockLoginRequest(BaseModel):
@@ -103,12 +106,15 @@ def auth_entry(is_wecom: bool = Query(default=True)):
     """前端判断环境后调用：在企微内重定向到 OAuth 授权页，否则跳 mock 登录页"""
     if not is_wecom:
         return {"redirect": "/login", "note": "非企微环境，走 mock 登录"}
+    # 生成一次性 state 防 CSRF，回调时校验并销毁
+    state = secrets.token_urlsafe(16)
+    redis_client.setex(f"pms:oauth:state:{state}", OAUTH_STATE_TTL, "1")
     params = {
         "appid": settings.wecom_corpid,
         "redirect_uri": settings.wecom_redirect_uri,
         "response_type": "code",
         "scope": "snsapi_base",
-        "state": "login",
+        "state": state,
     }
     oauth_url = f"https://open.weixin.qq.com/connect/oauth2/authorize?{urlencode(params)}#wechat_redirect"
     return {"redirect": oauth_url}
@@ -117,10 +123,16 @@ def auth_entry(is_wecom: bool = Query(default=True)):
 # ---------- 企微 OAuth 回调 ----------
 
 @router.get("/callback")
-def wecom_callback(code: str, session: Session = Depends(get_session)):
-    """企微 OAuth 回调：code 换 userid → 匹配本地用户 → 签发 JWT → 返回 token"""
+def wecom_callback(code: str, state: str = "", session: Session = Depends(get_session)):
+    """企微 OAuth 回调：校验 state → code 换 userid → 匹配本地用户 → 签发 JWT → 返回 token"""
     if not code:
         raise HTTPException(status_code=400, detail="missing code")
+
+    # state 校验：必须是 /auth/entry 签发的未使用 state，校验后立即销毁（一次性）
+    state_key = f"pms:oauth:state:{state}"
+    if not state or not redis_client.get(state_key):
+        raise HTTPException(status_code=401, detail="OAuth state 校验失败，请重新发起登录")
+    redis_client.delete(state_key)
 
     # code 换企微 userid
     try:

@@ -10,9 +10,10 @@ from sqlmodel import Session, select
 from pms.configs import settings
 from pms.database.models.user import User
 from pms.database.session import get_session, redis_client
+from pms.services.scope import get_hr_dept_ids
 
 JWT_ALGO = "HS256"
-JWT_TTL = timedelta(days=7)
+JWT_TTL = timedelta(days=1)  # 企微 H5 静默授权自动续登，1 天有效期用户无感
 USER_CACHE_TTL = 300  # 5 minutes
 
 
@@ -89,24 +90,15 @@ def get_current_user(
     return user
 
 
-def _effective_role(user: User) -> str:
-    """返回用户当前生效角色（优先 base_role，不存在则回退 role）"""
-    return getattr(user, "base_role", None) or user.role
-
-
 def is_hr_dept_leader(user: User, session: Session) -> bool:
-    """判断用户是否为 HR 部门的 Leader（等同于 hrbp 权限）"""
-    if _effective_role(user) != "dept_leader" or user.department_id is None:
+    """判断用户是否为 HR 部门的 Leader（等同于 hrbp 权限）。
+
+    口径与 services/scope.py 的可见范围计算一致：按当前生效角色（user.role，
+    角色切换后随之变化）+ HR 部门判定（含 hrbp 所在部门的子部门）。
+    """
+    if user.role != "dept_leader" or user.department_id is None:
         return False
-    from pms.database.models.user import Department
-    dept = session.get(Department, user.department_id)
-    if not dept:
-        return False
-    # HR 部门的判定：该部门中有 hrbp 角色的用户
-    has_hrbp = session.exec(
-        select(User.id).where(User.department_id == user.department_id, User.role == "hrbp").limit(1)
-    ).first()
-    return has_hrbp is not None
+    return user.department_id in get_hr_dept_ids(session)
 
 
 def is_fte(user: User) -> bool:

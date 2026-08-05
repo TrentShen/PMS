@@ -1,23 +1,20 @@
 from __future__ import annotations
 
-"""通知发送链路回归测试：企微假成功、EMAIL 通道、反馈列表批量加载。"""
+"""通知发送链路回归测试：企微假成功、反馈列表批量加载。"""
 
 from collections.abc import Callable
 from datetime import date
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from pms.database.models.audit import NotificationLog
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
 from pms.database.models.feedback import FeedbackRecord
 from pms.database.models.user import User
 from pms.database.session import engine
 from pms.services import wecom
-from pms.services.notification import NotificationChannel, send_notification
 
 
 def _login(client: TestClient, wecom_userid: str) -> str:
@@ -28,14 +25,6 @@ def _login(client: TestClient, wecom_userid: str) -> str:
 
 def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
-
-
-def _delete_logs_by_title(title: str) -> None:
-    with Session(engine) as session:
-        rows = session.exec(select(NotificationLog).where(NotificationLog.title == title)).all()
-        for row in rows:
-            session.delete(row)
-        session.commit()
 
 
 # ---------- 修复1：企微 errcode != 0 时发送函数必须 raise ----------
@@ -68,67 +57,6 @@ def test_wecom_send_ok_on_errcode_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(wecom, "_post", lambda *args, **kwargs: {"errcode": 0, "errmsg": "ok"})
     data = wecom.send_text(["u1"], "hi")
     assert data["errcode"] == 0
-
-
-# ---------- 修复2：EMAIL 通道不受企微配置影响，SMTP 失败标 failed ----------
-
-@pytest.fixture
-def alice_with_email():
-    with Session(engine) as session:
-        alice = session.exec(select(User).where(User.wecom_userid == "mock-alice")).first()
-        assert alice
-        original_email = alice.email
-        alice.email = "alice-notify-test@example.com"
-        session.add(alice)
-        session.commit()
-    yield
-    with Session(engine) as session:
-        alice = session.exec(select(User).where(User.wecom_userid == "mock-alice")).first()
-        if alice:
-            alice.email = original_email
-            session.add(alice)
-            session.commit()
-
-
-def test_email_channel_marks_failed_when_send_email_false(alice_with_email: None) -> None:
-    title = "邮件失败回归"
-    try:
-        with patch("pms.services.email.send_email", return_value=False):
-            send_notification(
-                target_userids=["mock-alice"],
-                title=title,
-                content="内容",
-                channel=NotificationChannel.EMAIL,
-            )
-        with Session(engine) as session:
-            rows = session.exec(select(NotificationLog).where(NotificationLog.title == title)).all()
-        assert len(rows) == 1
-        assert rows[0].status == "failed"
-        assert rows[0].error_msg
-    finally:
-        _delete_logs_by_title(title)
-
-
-def test_email_channel_not_blocked_by_wecom_config(alice_with_email: None) -> None:
-    """企微配置缺失不应影响 EMAIL 通道发送。"""
-    title = "邮件不受企微配置影响回归"
-    try:
-        with (
-            patch("pms.services.notification._wecom_configured", return_value=False),
-            patch("pms.services.email.send_email", return_value=True),
-        ):
-            send_notification(
-                target_userids=["mock-alice"],
-                title=title,
-                content="内容",
-                channel=NotificationChannel.EMAIL,
-            )
-        with Session(engine) as session:
-            rows = session.exec(select(NotificationLog).where(NotificationLog.title == title)).all()
-        assert len(rows) == 1
-        assert rows[0].status == "sent"
-    finally:
-        _delete_logs_by_title(title)
 
 
 # ---------- 修复4：list_feedback_status 批量加载后结果保持正确 ----------

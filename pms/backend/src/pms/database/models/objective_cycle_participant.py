@@ -4,11 +4,16 @@ from __future__ import annotations
 # HR 在目标周期中添加参与人后，员工才能在该周期下填写/提交目标
 from datetime import datetime, timezone
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 
 class ObjectiveCycleParticipant(SQLModel, table=True):
     __tablename__ = "objective_cycle_participant"
+    __table_args__ = (
+        UniqueConstraint(
+            "objective_cycle_id", "user_id", name="uq_objective_cycle_participant_cycle_user"
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     objective_cycle_id: int = Field(foreign_key="objective_cycle.id", index=True)
