@@ -17,7 +17,6 @@ import {
   Row,
   Select,
   Space,
-  Tag,
   Typography,
 } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -92,15 +91,20 @@ interface ProbationPlan {
   evaluation: ProbationEvaluation | null;
 }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "计划已创建", color: "default" },
-  objective_draft: { text: "填写目标中", color: "blue" },
-  objective_pending_review: { text: "目标待审批", color: "orange" },
-  in_progress: { text: "试用期进行中", color: "processing" },
-  pending_evaluation: { text: "临转正，待评估", color: "warning" },
-  completed: { text: "已完成", color: "success" },
-  extended: { text: "已延期", color: "purple" },
+// extended 原为 purple，StatusTag 无对应语义色，取中性 default
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "计划已创建", type: "default" },
+  objective_draft: { text: "填写目标中", type: "primary" },
+  objective_pending_review: { text: "目标待审批", type: "warning" },
+  in_progress: { text: "试用期进行中", type: "info" },
+  pending_evaluation: { text: "临转正，待评估", type: "warning" },
+  completed: { text: "已完成", type: "success" },
+  extended: { text: "已延期", type: "default" },
 };
+
+// HR 修改计划状态的白名单（与后端 probation.py HR_EDITABLE_PLAN_STATUSES 一致）：
+// 回退态（draft/objective_draft/objective_pending_review）由流程驱动，HR 不可直接设置
+const HR_EDITABLE_STATUSES = ["in_progress", "pending_evaluation", "completed", "extended"];
 
 const RESULT_OPTIONS = [
   { value: "regular", label: "建议转正" },
@@ -120,6 +124,9 @@ export default function ProbationDetail() {
   const [plan, setPlan] = useState<ProbationPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 批准目标 / HR 修改计划 防重复提交
+  const [approving, setApproving] = useState(false);
+  const [hrSaving, setHrSaving] = useState(false);
 
   // 目标编辑
   const [editingObjectives, setEditingObjectives] = useState<ProbationObjective[]>([]);
@@ -223,13 +230,36 @@ export default function ProbationDetail() {
 
   async function saveObjectives(submit: boolean) {
     if (!plan || !userId) return;
-    const valid = editingObjectives.filter((o) => o.title.trim() && o.description.trim() && o.measure_criteria.trim());
+    // 逐条校验：完全空白（三个字段都空）的行忽略；部分填写的行必须补全或删除，否则中止保存
+    const TEXT_FIELDS: [keyof ProbationObjective, string][] = [
+      ["title", "重点工作"],
+      ["description", "关键成果"],
+      ["measure_criteria", "衡量标准"],
+    ];
+    const valid: ProbationObjective[] = [];
+    for (let i = 0; i < editingObjectives.length; i++) {
+      const o = editingObjectives[i];
+      const filledCount = TEXT_FIELDS.filter(([f]) => String(o[f]).trim()).length;
+      if (filledCount === 0) continue;
+      if (filledCount < TEXT_FIELDS.length) {
+        const missing = TEXT_FIELDS.find(([f]) => !String(o[f]).trim())!;
+        message.error(`目标 ${i + 1} 的${missing[1]}未填写，请补充或删除该条`);
+        return;
+      }
+      valid.push(o);
+    }
     if (valid.length === 0) {
       message.error("请至少填写一条完整的目标");
       return;
     }
     if (valid.length > 10) {
       message.error("目标不能超过 10 条");
+      return;
+    }
+    // 权重合计必须等于 100（与 MyObjectives 保存校验同款，后端同步强校验）
+    const weightTotal = valid.reduce((s, o) => s + (o.weight || 0), 0);
+    if (weightTotal !== 100) {
+      message.error(`权重总和必须为 100，当前为 ${weightTotal}`);
       return;
     }
     setSubmitting(true);
@@ -257,12 +287,15 @@ export default function ProbationDetail() {
 
   async function approveObjectives() {
     if (!userId) return;
+    setApproving(true);
     try {
       await api.post(`/v1/probation/${userId}/objectives/approve`);
       message.success("已批准目标");
       load();
     } catch (e) {
       message.error(formatError(e, "操作失败"));
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -316,6 +349,7 @@ export default function ProbationDetail() {
       message.error("请选择要修改的内容");
       return;
     }
+    setHrSaving(true);
     try {
       await api.patch(`/v1/probation/${userId}`, {
         status: hrStatus,
@@ -327,6 +361,8 @@ export default function ProbationDetail() {
       load();
     } catch (e) {
       message.error(formatError(e, "更新失败"));
+    } finally {
+      setHrSaving(false);
     }
   }
 
@@ -345,12 +381,12 @@ export default function ProbationDetail() {
 
   if (!plan) return null;
 
-  const statusCfg = STATUS_LABEL[plan.status] ?? { text: plan.status_text, color: "default" };
-  // 编辑态权重合计：等于 100 显示 success，否则 warning（仅提示，不拦截保存）
+  const statusCfg = STATUS_LABEL[plan.status] ?? { text: plan.status_text, type: "default" as StatusType };
+  // 编辑态权重合计：等于 100 显示 success，否则 warning；保存/提交时强校验拦截
   const totalWeight = editingObjectives.reduce((s, o) => s + (o.weight || 0), 0);
 
   return (
-    <div className={isMobile && canEditObjectives() ? "has-bottom-actions" : undefined}>
+    <div className={isMobile && (canEditObjectives() || (!plan.evaluation && canEvaluate())) ? "has-bottom-actions" : undefined}>
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
           返回
@@ -374,7 +410,7 @@ export default function ProbationDetail() {
                 {plan.remaining_days < 0 ? `已逾期 ${Math.abs(plan.remaining_days)} 天` : `${plan.remaining_days} 天`}
               </Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Tag color={statusCfg.color}>{statusCfg.text}</Tag>
+                <StatusTag type={statusCfg.type}>{statusCfg.text}</StatusTag>
               </Descriptions.Item>
             </Descriptions>
             {isHr && (
@@ -392,7 +428,7 @@ export default function ProbationDetail() {
             style={{ marginTop: 16 }}
             extra={
               canEditObjectives() ? (
-                <StatusTag type={totalWeight === 100 ? "success" : "warning"}>权重合计 {totalWeight}%</StatusTag>
+                <StatusTag type={totalWeight === 100 ? "success" : "warning"}>权重合计 {totalWeight}%（需等于 100%）</StatusTag>
               ) : undefined
             }
           >
@@ -423,29 +459,11 @@ export default function ProbationDetail() {
                     >
                       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                         <div>
-                          <div style={FIELD_LABEL_STYLE}>目标标题</div>
+                          <div style={FIELD_LABEL_STYLE}>重点工作</div>
                           <Input
                             placeholder="例：独立完成 XX 模块的开发与上线"
                             value={o.title}
                             onChange={(e) => updateObjective(idx, "title", e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <div style={FIELD_LABEL_STYLE}>目标描述</div>
-                          <Input.TextArea
-                            autoSize={{ minRows: 2 }}
-                            placeholder="目标的背景、范围与关键交付物"
-                            value={o.description}
-                            onChange={(e) => updateObjective(idx, "description", e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <div style={FIELD_LABEL_STYLE}>衡量标准</div>
-                          <Input.TextArea
-                            autoSize={{ minRows: 2 }}
-                            placeholder="如何算达成（4分及5分需写出分项考核标准）"
-                            value={o.measure_criteria}
-                            onChange={(e) => updateObjective(idx, "measure_criteria", e.target.value)}
                           />
                         </div>
                         <div>
@@ -459,6 +477,24 @@ export default function ProbationDetail() {
                             placeholder="权重"
                             value={o.weight || undefined}
                             onChange={(v) => updateObjective(idx, "weight", v ?? 0)}
+                          />
+                        </div>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>关键成果</div>
+                          <Input.TextArea
+                            rows={2}
+                            placeholder="本目标要交付的关键成果/交付物，可逐条列出"
+                            value={o.description}
+                            onChange={(e) => updateObjective(idx, "description", e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                          <Input.TextArea
+                            rows={2}
+                            placeholder="如何算达成（4分及5分需写出分项考核标准）"
+                            value={o.measure_criteria}
+                            onChange={(e) => updateObjective(idx, "measure_criteria", e.target.value)}
                           />
                         </div>
                       </Space>
@@ -506,7 +542,7 @@ export default function ProbationDetail() {
                     )}
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                    <div style={FIELD_LABEL_STYLE}>关键成果</div>
                     <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
                       {o.description || "-"}
                     </Typography.Paragraph>
@@ -525,7 +561,7 @@ export default function ProbationDetail() {
             {canApproveObjectives() && (
               <Card size="small" title="目标审批" style={{ marginTop: 16 }}>
                 <Space wrap>
-                  <Button type="primary" onClick={approveObjectives}>
+                  <Button type="primary" onClick={approveObjectives} loading={approving}>
                     批准目标
                   </Button>
                   <Button danger onClick={() => setRejectOpen(true)}>
@@ -563,9 +599,12 @@ export default function ProbationDetail() {
                   value={evalComment}
                   onChange={(e) => setEvalComment(e.target.value)}
                 />
-                <Button type="primary" loading={submitting} onClick={submitEvaluation}>
-                  提交评估
-                </Button>
+                {/* 移动端提交按钮放底部固定栏，避免被软键盘遮挡 */}
+                {!isMobile && (
+                  <Button type="primary" loading={submitting} onClick={submitEvaluation}>
+                    提交评估
+                  </Button>
+                )}
               </Space>
             ) : (
               <Typography.Text type="secondary">暂不可评估</Typography.Text>
@@ -579,6 +618,7 @@ export default function ProbationDetail() {
         open={hrModalOpen}
         onOk={hrUpdatePlan}
         onCancel={() => setHrModalOpen(false)}
+        confirmLoading={hrSaving}
       >
         <Form layout="vertical">
           <Form.Item label="计划状态">
@@ -587,7 +627,7 @@ export default function ProbationDetail() {
               allowClear
               value={hrStatus}
               onChange={setHrStatus}
-              options={Object.entries(STATUS_LABEL).map(([k, v]) => ({ value: k, label: v.text }))}
+              options={HR_EDITABLE_STATUSES.map((k) => ({ value: k, label: STATUS_LABEL[k].text }))}
             />
           </Form.Item>
           <Form.Item label="结束日期">
@@ -630,6 +670,15 @@ export default function ProbationDetail() {
           </Button>
           <Button type="primary" loading={submitting} onClick={() => saveObjectives(true)}>
             提交上级审批
+          </Button>
+        </BottomActions>
+      )}
+
+      {/* 移动端：评估提交固定在底部操作栏，避免被软键盘遮挡 */}
+      {isMobile && !plan.evaluation && canEvaluate() && (
+        <BottomActions>
+          <Button type="primary" block loading={submitting} onClick={submitEvaluation}>
+            提交评估
           </Button>
         </BottomActions>
       )}

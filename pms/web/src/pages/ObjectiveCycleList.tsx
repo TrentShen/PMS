@@ -11,11 +11,12 @@ import {
   Modal,
   Popconfirm,
   Space,
-  Tag,
   message,
 } from "antd";
 import dayjs from "dayjs";
 import { api, formatError } from "@/services/api";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
 
 
 interface ObjectiveCycleCreateForm {
@@ -33,16 +34,19 @@ interface ObjectiveCycle {
   created_at: string;
 }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "制定中", color: "default" },
-  active: { text: "执行中", color: "blue" },
-  completed: { text: "已结束", color: "green" },
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "制定中", type: "default" },
+  active: { text: "执行中", type: "primary" },
+  completed: { text: "已结束", type: "success" },
 };
 
 export default function ObjectiveCycleList() {
   const navigate = useNavigate();
   const [cycles, setCycles] = useState<ObjectiveCycle[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  // 启动/完成/删除在途保护：记录正在操作的周期 id，防止 Popconfirm 确认按钮重复点击
+  const [actingId, setActingId] = useState<number | null>(null);
   const [form] = Form.useForm();
 
   async function load() {
@@ -50,9 +54,10 @@ export default function ObjectiveCycleList() {
     setCycles(r.data);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load().catch((e) => message.error(formatError(e, "加载失败"))); }, []);
 
   async function onCreate(values: ObjectiveCycleCreateForm) {
+    setCreating(true);
     try {
       await api.post("/v1/objective-cycles", {
         name: values.name,
@@ -65,36 +70,47 @@ export default function ObjectiveCycleList() {
       load();
     } catch (e) {
       message.error(formatError(e, "创建失败"));
+    } finally {
+      setCreating(false);
     }
   }
 
   async function onStart(c: ObjectiveCycle) {
+    setActingId(c.id);
     try {
       await api.post(`/v1/objective-cycles/${c.id}/start`);
       message.success("目标周期已启动");
       load();
     } catch (e) {
       message.error(formatError(e, "启动失败"));
+    } finally {
+      setActingId(null);
     }
   }
 
   async function onComplete(c: ObjectiveCycle) {
+    setActingId(c.id);
     try {
       await api.post(`/v1/objective-cycles/${c.id}/complete`);
       message.success("目标周期已标记完成");
       load();
     } catch (e) {
       message.error(formatError(e, "操作失败"));
+    } finally {
+      setActingId(null);
     }
   }
 
   async function onDelete(c: ObjectiveCycle) {
+    setActingId(c.id);
     try {
       await api.delete(`/v1/objective-cycles/${c.id}`);
       message.success("目标周期已删除");
       load();
     } catch (e) {
       message.error(formatError(e, "删除失败"));
+    } finally {
+      setActingId(null);
     }
   }
 
@@ -109,17 +125,17 @@ export default function ObjectiveCycleList() {
             <List.Item actions={[
               <a key="detail" onClick={() => navigate(`/objective-cycles/${c.id}`)}>详情</a>,
               c.status === "draft" && (
-                <Popconfirm key="start" title="启动后员工可开始执行目标，确认？" onConfirm={() => onStart(c)}>
+                <Popconfirm key="start" title="启动后员工可开始执行目标，确认？" onConfirm={() => onStart(c)} okButtonProps={{ loading: actingId === c.id }}>
                   <a>启动</a>
                 </Popconfirm>
               ),
               c.status === "active" && (
-                <Popconfirm key="complete" title="完成后员工不能再调整目标，确认？" onConfirm={() => onComplete(c)}>
+                <Popconfirm key="complete" title="完成后员工不能再调整目标，确认？" onConfirm={() => onComplete(c)} okButtonProps={{ loading: actingId === c.id }}>
                   <a style={{ color: "var(--color-success)" }}>完成</a>
                 </Popconfirm>
               ),
               c.status === "draft" && (
-                <Popconfirm key="del" title="删除后不可恢复，确认？" onConfirm={() => onDelete(c)}>
+                <Popconfirm key="del" title="删除后不可恢复，确认？" onConfirm={() => onDelete(c)} okButtonProps={{ loading: actingId === c.id }}>
                   <a style={{ color: "var(--color-danger)" }}>删除</a>
                 </Popconfirm>
               ),
@@ -128,7 +144,7 @@ export default function ObjectiveCycleList() {
                 title={
                   <Space>
                     {c.name}
-                    <Tag color={STATUS_LABEL[c.status]?.color}>{STATUS_LABEL[c.status]?.text}</Tag>
+                    <StatusTag type={STATUS_LABEL[c.status]?.type}>{STATUS_LABEL[c.status]?.text}</StatusTag>
                   </Space>
                 }
                 description={`${c.start_date} ~ ${c.end_date}`}
@@ -138,7 +154,7 @@ export default function ObjectiveCycleList() {
         />
       </Card>
 
-      <Modal title="新建目标周期" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => form.submit()}>
+      <Modal title="新建目标周期" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => form.submit()} confirmLoading={creating}>
         <Form form={form} layout="vertical" onFinish={onCreate}>
           <Form.Item name="name" label="周期名" initialValue="2025 下半年目标" rules={[{ required: true }]}>
             <Input />

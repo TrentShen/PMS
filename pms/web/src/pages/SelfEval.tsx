@@ -388,7 +388,7 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
     setAllUsers(u.data.filter((x) => x.id !== me.id));
   }
   useEffect(() => {
-    load();
+    load().catch((e) => message.error(formatError(e, "加载互评人信息失败")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId]);
 
@@ -512,7 +512,13 @@ export default function SelfEval() {
       form.setFieldsValue(r.data.self_evaluation);
     } else if (!draftRestored.current) {
       draftRestored.current = true;
-      const raw = localStorage.getItem(draftKey);
+      // 隐私模式下 localStorage 抛 SecurityError，兜底跳过草稿恢复（同 stores/auth.ts safeGet）
+      let raw: string | null = null;
+      try {
+        raw = localStorage.getItem(draftKey);
+      } catch {
+        raw = null;
+      }
       if (raw) {
         try {
           form.setFieldsValue(JSON.parse(raw) as Partial<EvalView>);

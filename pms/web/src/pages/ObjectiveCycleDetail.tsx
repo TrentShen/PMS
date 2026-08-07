@@ -11,15 +11,19 @@ import {
   Space,
   Spin,
   Table,
-  Tag,
   Tooltip,
+  Typography,
   Upload,
   message,
 } from "antd";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
-import type { OfflineObjectiveImportResult, Participant, UserBrief } from "@/services/api.types";
+import type { OfflineObjectiveImportResult, ObjectiveCycleParticipant, UserBrief } from "@/services/api.types";
 import { showOfflineObjectiveImportResult } from "@/components/ui/showImportResult";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
+import TableCardList from "@/components/ui/TableCardList";
+import type { CardColumn } from "@/components/ui/TableCardList";
 
 
 interface ObjectiveCycle {
@@ -37,35 +41,46 @@ interface Summary {
   approved: number;
 }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "制定中", color: "default" },
-  active: { text: "执行中", color: "blue" },
-  completed: { text: "已结束", color: "green" },
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "制定中", type: "default" },
+  active: { text: "执行中", type: "primary" },
+  completed: { text: "已结束", type: "success" },
 };
 
-const PSTATUS_LABEL: Record<string, { text: string; color: string }> = {
-  pending: { text: "未提交", color: "default" },
-  pending_review: { text: "待审批", color: "orange" },
-  approved: { text: "已确认", color: "green" },
+const PSTATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  pending: { text: "未提交", type: "default" },
+  pending_review: { text: "待审批", type: "warning" },
+  approved: { text: "已确认", type: "success" },
 };
 
 export default function ObjectiveCycleDetail() {
   const { id } = useParams();
   const [cycle, setCycle] = useState<ObjectiveCycle | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState<ObjectiveCycleParticipant[]>([]);
   const [users, setUsers] = useState<UserBrief[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [addingIds, setAddingIds] = useState<number[]>([]);
   const [urgeOpen, setUrgeOpen] = useState(false);
   const [urgeIds, setUrgeIds] = useState<number[]>([]);
+  // 防重复提交：添加/移除参与人、催办在途标记
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [urging, setUrging] = useState(false);
+
+  // 加载失败提示 + loadError 让页面停在错误态而非永久 Spin
+  const [loadError, setLoadError] = useState("");
 
   async function loadCycle() {
-    const r = await api.get<ObjectiveCycle>(`/v1/objective-cycles/${id}`);
-    setCycle(r.data);
+    try {
+      const r = await api.get<ObjectiveCycle>(`/v1/objective-cycles/${id}`);
+      setCycle(r.data);
+    } catch (e) {
+      setLoadError(formatError(e, "加载失败"));
+    }
   }
 
   async function loadParticipants() {
-    const r = await api.get<{ items: Participant[]; total: number }>(`/v1/objective-cycles/${id}/participants?page_size=9999`);
+    const r = await api.get<{ items: ObjectiveCycleParticipant[]; total: number }>(`/v1/objective-cycles/${id}/participants?page_size=9999`);
     setParticipants(r.data.items);
   }
 
@@ -81,13 +96,14 @@ export default function ObjectiveCycleDetail() {
 
   useEffect(() => {
     loadCycle();
-    loadParticipants();
-    loadUsers();
-    loadSummary();
+    loadParticipants().catch((e) => message.error(formatError(e, "加载参与人失败")));
+    loadUsers().catch((e) => message.error(formatError(e, "加载用户失败")));
+    loadSummary().catch((e) => message.error(formatError(e, "加载目标状态失败")));
   }, [id]);
 
   async function onAddParticipants() {
     if (addingIds.length === 0) return;
+    setAdding(true);
     try {
       await api.post(`/v1/objective-cycles/${id}/participants`, { user_ids: addingIds });
       message.success(`已添加 ${addingIds.length} 位参与人`);
@@ -96,10 +112,13 @@ export default function ObjectiveCycleDetail() {
       await loadSummary();
     } catch (e) {
       message.error(formatError(e, "添加失败"));
+    } finally {
+      setAdding(false);
     }
   }
 
   async function onRemoveParticipant(participantId: number) {
+    setRemovingId(participantId);
     try {
       await api.delete(`/v1/objective-cycles/${id}/participants/${participantId}`);
       message.success("已移除");
@@ -107,6 +126,8 @@ export default function ObjectiveCycleDetail() {
       await loadSummary();
     } catch (e) {
       message.error(formatError(e, "移除失败"));
+    } finally {
+      setRemovingId(null);
     }
   }
 
@@ -116,6 +137,7 @@ export default function ObjectiveCycleDetail() {
     try {
       const r = await api.post(`/v1/objective-cycles/${id}/excel/import`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 60000, // Excel 导入解析较慢，覆盖默认 10s 超时
       });
       message.success(`导入成功：${r.data.imported_rows} 行，${r.data.affected_users} 位员工`);
       await loadParticipants();
@@ -124,7 +146,17 @@ export default function ObjectiveCycleDetail() {
       const err = e as { response?: { data?: { detail?: string | { errors?: string[] } } } };
       const detail = err.response?.data?.detail;
       if (typeof detail === "object" && detail?.errors) {
-        Modal.error({ title: "导入校验失败", content: detail.errors.join("\n"), width: 600 });
+        Modal.error({
+          title: "导入校验失败",
+          width: 600,
+          content: (
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              {detail.errors.map((msg, i) => (
+                <li key={i}>{msg}</li>
+              ))}
+            </ul>
+          ),
+        });
       } else {
         message.error(typeof detail === "string" ? detail : "导入失败");
       }
@@ -143,7 +175,10 @@ export default function ObjectiveCycleDetail() {
       const r = await api.post<OfflineObjectiveImportResult>(
         `/v1/objective-cycles/${id}/excel/import-offline`,
         fd,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 60000, // Excel 导入解析较慢，覆盖默认 10s 超时
+        }
       );
       showOfflineObjectiveImportResult(r.data);
       await loadParticipants();
@@ -165,6 +200,7 @@ export default function ObjectiveCycleDetail() {
 
   async function onUrge() {
     if (urgeIds.length === 0) return;
+    setUrging(true);
     try {
       // 复用评估周期的催办接口（企微通知）
       const r = await api.post("/v1/notify/urge-objectives", { objective_cycle_id: Number(id), user_ids: urgeIds });
@@ -173,6 +209,8 @@ export default function ObjectiveCycleDetail() {
       setUrgeIds([]);
     } catch (e) {
       message.error(formatError(e, "催办失败"));
+    } finally {
+      setUrging(false);
     }
   }
 
@@ -181,7 +219,27 @@ export default function ObjectiveCycleDetail() {
   );
   const pendingParticipants = participants.filter((p) => p.status === "pending");
 
+  // 移动端卡片列：姓名 / 职位 / 部门 / 目标状态
+  const participantCardColumns: CardColumn<ObjectiveCycleParticipant>[] = [
+    { title: "姓名", dataIndex: "user_name" },
+    { title: "职位", render: (p) => p.user_position ?? "-" },
+    { title: "部门", render: (p) => p.dept_name_snapshot ?? "-" },
+    {
+      title: "目标状态",
+      render: (p) => (
+        <StatusTag type={PSTATUS_LABEL[p.status]?.type}>{PSTATUS_LABEL[p.status]?.text}</StatusTag>
+      ),
+    },
+  ];
+
   if (!cycle) {
+    if (loadError) {
+      return (
+        <div style={{ textAlign: "center", padding: 64 }}>
+          <Typography.Text type="danger">{loadError}</Typography.Text>
+        </div>
+      );
+    }
     return (
       <div style={{ textAlign: "center", padding: 64 }}>
         <Spin size="large" />
@@ -194,7 +252,7 @@ export default function ObjectiveCycleDetail() {
       <Card title={cycle.name}>
         <Descriptions column={3} size="small">
           <Descriptions.Item label="状态">
-            <Tag color={STATUS_LABEL[cycle.status]?.color}>{STATUS_LABEL[cycle.status]?.text}</Tag>
+            <StatusTag type={STATUS_LABEL[cycle.status]?.type}>{STATUS_LABEL[cycle.status]?.text}</StatusTag>
           </Descriptions.Item>
           <Descriptions.Item label="周期">{cycle.start_date} ~ {cycle.end_date}</Descriptions.Item>
         </Descriptions>
@@ -252,38 +310,61 @@ export default function ObjectiveCycleDetail() {
               onChange={setAddingIds}
               options={availableUsers.map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }))}
             />
-            <Button type="primary" onClick={onAddParticipants}>添加参与人</Button>
+            <Button type="primary" onClick={onAddParticipants} loading={adding}>添加参与人</Button>
           </Space>
         )}
 
         {participants.length === 0 && <Alert type="info" message="尚未添加参与人" />}
 
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
+        {/* 桌面端：表格；移动端：卡片列表（.table-card-list 由 CSS 在 ≤767px 自动显示） */}
+        <div className="pms-responsive-table">
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={participants}
+            columns={[
+              { title: "姓名", dataIndex: "user_name" },
+              { title: "职位", dataIndex: "user_position" },
+              { title: "部门", dataIndex: "dept_name_snapshot" },
+              {
+                title: "目标状态",
+                dataIndex: "status",
+                render: (v) => <StatusTag type={PSTATUS_LABEL[v]?.type}>{PSTATUS_LABEL[v]?.text}</StatusTag>,
+              },
+              {
+                title: "操作",
+                render: (_, r) =>
+                  cycle.status === "draft" ? (
+                    <a
+                      style={{ color: "var(--color-danger)" }}
+                      onClick={() => { if (removingId == null) onRemoveParticipant(r.id); }}
+                    >
+                      移除
+                    </a>
+                  ) : null,
+              },
+            ]}
+          />
+        </div>
+        <TableCardList<ObjectiveCycleParticipant>
+          columns={participantCardColumns}
           dataSource={participants}
-          columns={[
-            { title: "姓名", dataIndex: "user_name" },
-            { title: "职位", dataIndex: "user_position" },
-            { title: "部门", dataIndex: "dept_name_snapshot" },
-            {
-              title: "目标状态",
-              dataIndex: "status",
-              render: (v) => <Tag color={PSTATUS_LABEL[v]?.color}>{PSTATUS_LABEL[v]?.text}</Tag>,
-            },
-            {
-              title: "操作",
-              render: (_, r) =>
-                cycle.status === "draft" ? (
-                  <a style={{ color: "#ff4d4f" }} onClick={() => onRemoveParticipant(r.id)}>移除</a>
-                ) : null,
-            },
-          ]}
+          rowKey={(p) => p.id}
+          renderActions={(p) =>
+            cycle.status === "draft" ? (
+              <a
+                style={{ color: "var(--color-danger)" }}
+                onClick={() => { if (removingId == null) onRemoveParticipant(p.id); }}
+              >
+                移除
+              </a>
+            ) : null
+          }
         />
       </Card>
 
-      <Modal title="催办未提交目标人员" open={urgeOpen} onCancel={() => setUrgeOpen(false)} onOk={onUrge}>
+      <Modal title="催办未提交目标人员" open={urgeOpen} onCancel={() => setUrgeOpen(false)} onOk={onUrge} confirmLoading={urging}>
         <p>将向以下 {urgeIds.length} 人发送催办通知：</p>
         <Select
           mode="multiple"

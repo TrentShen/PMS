@@ -2,12 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnsType } from "antd/es/table";
-import { Button, Card, Input, message, Select, Space, Table, Tag, Tooltip, Typography, Upload } from "antd";
+import { Button, Card, Input, message, Select, Space, Table, Tooltip, Typography, Upload } from "antd";
 import { DownloadOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
 import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
 import { showObjectiveImportResult, showOfflineObjectiveImportResult } from "@/components/ui/showImportResult";
 import type { ObjectiveImportResult, OfflineObjectiveImportResult } from "@/services/api.types";
@@ -27,14 +29,15 @@ interface ProbationListItem {
   has_evaluation: boolean;
 }
 
-const STATUS_LABEL: Record<string, { text: string; color: string }> = {
-  draft: { text: "计划已创建", color: "default" },
-  objective_draft: { text: "填写目标中", color: "blue" },
-  objective_pending_review: { text: "目标待审批", color: "orange" },
-  in_progress: { text: "试用期进行中", color: "processing" },
-  pending_evaluation: { text: "临转正，待评估", color: "warning" },
-  completed: { text: "已完成", color: "success" },
-  extended: { text: "已延期", color: "purple" },
+// extended 原为 purple，StatusTag 无对应语义色，取中性 default
+const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
+  draft: { text: "计划已创建", type: "default" },
+  objective_draft: { text: "填写目标中", type: "primary" },
+  objective_pending_review: { text: "目标待审批", type: "warning" },
+  in_progress: { text: "试用期进行中", type: "info" },
+  pending_evaluation: { text: "临转正，待评估", type: "warning" },
+  completed: { text: "已完成", type: "success" },
+  extended: { text: "已延期", type: "default" },
 };
 
 export default function Probation() {
@@ -83,6 +86,7 @@ export default function Probation() {
     try {
       const r = await api.post<ObjectiveImportResult>("/v1/probation/import-objectives", fd, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 60000, // Excel 导入解析较慢，覆盖默认 10s 超时
       });
       showObjectiveImportResult(r.data);
       load();
@@ -103,7 +107,10 @@ export default function Probation() {
       const r = await api.post<OfflineObjectiveImportResult>(
         "/v1/probation/import-offline-objectives",
         fd,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          timeout: 60000, // Excel 导入解析较慢，覆盖默认 10s 超时
+        }
       );
       showOfflineObjectiveImportResult(r.data);
       load();
@@ -172,8 +179,8 @@ export default function Probation() {
       key: "status",
       width: 160,
       render: (status: string, record: ProbationListItem) => {
-        const cfg = STATUS_LABEL[status] ?? { text: record.status_text, color: "default" };
-        return <Tag color={cfg.color}>{cfg.text}</Tag>;
+        const cfg = STATUS_LABEL[status] ?? { text: record.status_text, type: "default" as StatusType };
+        return <StatusTag type={cfg.type}>{cfg.text}</StatusTag>;
       },
     },
     {
@@ -195,8 +202,8 @@ export default function Probation() {
     {
       title: "状态",
       render: (record) => {
-        const cfg = STATUS_LABEL[record.status] ?? { text: record.status_text, color: "default" };
-        return <Tag color={cfg.color}>{cfg.text}</Tag>;
+        const cfg = STATUS_LABEL[record.status] ?? { text: record.status_text, type: "default" as StatusType };
+        return <StatusTag type={cfg.type}>{cfg.text}</StatusTag>;
       },
     },
     {

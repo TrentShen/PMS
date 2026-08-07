@@ -73,7 +73,7 @@ export default function AppLayout() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [location.pathname]);
+  }, [location.pathname, user?.role]);
 
   // 菜单/入口权限基于当前生效角色（role），切换角色后菜单同步变化
 

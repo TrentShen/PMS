@@ -1,7 +1,8 @@
 // 统一 axios 实例
 // 请求拦截：自动附 Bearer token
-// 响应拦截：401 时清空本地登录并跳登录页
+// 响应拦截：401 时清空本地登录并跳登录页（带 redirect 保留上下文）
 import axios from "axios";
+import { message } from "antd";
 import { useAuth } from "@/stores/auth";
 
 export const api = axios.create({
@@ -22,8 +23,15 @@ api.interceptors.response.use(
   (err) => {
     if (err?.response?.status === 401) {
       useAuth.getState().clear();
-      if (location.pathname !== "/login") {
-        location.href = "/login";
+      const path = location.pathname;
+      if (path !== "/login") {
+        void message.info("登录已过期，请重新登录");
+        // /auth/callback 是 OAuth 中转页，带回它会造成循环，不拼 redirect
+        const target =
+          path === "/auth/callback"
+            ? "/login"
+            : `/login?redirect=${encodeURIComponent(path + location.search)}`;
+        location.href = target;
       }
     }
     return Promise.reject(err);
@@ -36,7 +44,8 @@ export function formatError(e: unknown, fallback: string): string {
   const detail = err.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
   if (typeof detail === "object" && detail !== null && "errors" in detail && Array.isArray(detail.errors)) {
-    return detail.errors.join("\n");
+    // toast 场景 \n 会被 HTML 折叠成空格，用顿号分隔保证可读
+    return detail.errors.join("；");
   }
   return err.message ?? fallback;
 }

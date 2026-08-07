@@ -185,7 +185,8 @@ export default function Home() {
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
   const isLeader = hasAnyRole(user.role, [...ROLE.LEADER]);
-  const isHr = hasAnyRole(user.role, [...ROLE.HR]);
+  // 与 Layout 菜单口径一致：HR 角色或 has_hr_permission 都视为 HR
+  const isHr = hasAnyRole(user.role, [...ROLE.HR]) || !!user.has_hr_permission;
   const canSeeProbationMenu = isHr || isLeader || user?.has_hr_permission;
 
   const renderCycleStatus = (status: string): ReactNode => (
@@ -209,17 +210,24 @@ export default function Home() {
     return <StatusTag type="default">剩 {days} 天</StatusTag>;
   };
 
-  const renderFinalResult = (item: MyCycleItem): ReactNode => (
-    <Space size={4} wrap>
-      <StatusTag type="warning">
-        业绩 {PERF_LEVEL_LABEL[item.final_perf_level ?? ""]}（
-        {item.final_perf_score?.toFixed(2)} 分）
-      </StatusTag>
-      <StatusTag type="info">
-        价值观 {VALUE_LABEL[item.final_value_belief ?? item.final_value_team ?? item.final_value_growth ?? ""] ?? "-"}
-      </StatusTag>
-    </Space>
-  );
+  const renderFinalResult = (item: MyCycleItem): ReactNode => {
+    // 未开反馈的周期后端会把最终结果 mask 为 null（有意设计：不开反馈就不发结果），
+    // 此时不渲染分数，只给中性文案
+    if (item.final_perf_level == null || item.final_perf_score == null) {
+      return <Typography.Text type="secondary">结果待发布</Typography.Text>;
+    }
+    return (
+      <Space size={4} wrap>
+        <StatusTag type="warning">
+          业绩 {PERF_LEVEL_LABEL[item.final_perf_level] ?? item.final_perf_level}（
+          {item.final_perf_score.toFixed(2)} 分）
+        </StatusTag>
+        <StatusTag type="info">
+          价值观 {VALUE_LABEL[item.final_value_belief ?? item.final_value_team ?? item.final_value_growth ?? ""] ?? "-"}
+        </StatusTag>
+      </Space>
+    );
+  };
 
   // 周期操作按钮：桌面卡片与移动端卡片共用，跳转逻辑保持一致
   const renderCycleActions = (item: MyCycleItem): ReactNode => (
@@ -315,7 +323,7 @@ export default function Home() {
             )}
           </Space>
         ) : (
-          <Typography.Text type="secondary">当前没有待办事项 ✅</Typography.Text>
+          <Typography.Text type="secondary">当前没有待办事项</Typography.Text>
         )}
       </Card>
 

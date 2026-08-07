@@ -153,8 +153,8 @@ class TestProbationLifecycle:
             headers=_headers(token),
             json={
                 "objectives": [
-                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "order_num": 0},
-                    {"title": "完成首个任务", "description": "独立交付一个功能", "measure_criteria": "代码合并并通过测试", "order_num": 1},
+                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "weight": 60, "order_num": 0},
+                    {"title": "完成首个任务", "description": "独立交付一个功能", "measure_criteria": "代码合并并通过测试", "weight": 40, "order_num": 1},
                 ],
                 "submit": False,
             },
@@ -168,8 +168,8 @@ class TestProbationLifecycle:
             headers=_headers(token),
             json={
                 "objectives": [
-                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "order_num": 0},
-                    {"title": "完成首个任务", "description": "独立交付一个功能", "measure_criteria": "代码合并并通过测试", "order_num": 1},
+                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "weight": 60, "order_num": 0},
+                    {"title": "完成首个任务", "description": "独立交付一个功能", "measure_criteria": "代码合并并通过测试", "weight": 40, "order_num": 1},
                 ],
                 "submit": True,
             },
@@ -184,6 +184,40 @@ class TestProbationLifecycle:
         # 验证上级收到待审批通知
         assert "试用期目标待审批" in _notification_titles(leader.wecom_userid)
 
+    def test_save_objectives_weight_sum_must_be_100(self, client: TestClient, probation_users: dict):
+        emp = probation_users["employee"]
+        token = _login(client, emp.wecom_userid)
+
+        client.get("/api/v1/probation/mine", headers=_headers(token))
+
+        # 权重合计 != 100 时拒绝保存
+        resp = client.post(
+            f"/api/v1/probation/{emp.id}/objectives",
+            headers=_headers(token),
+            json={
+                "objectives": [
+                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "weight": 50, "order_num": 0},
+                    {"title": "完成首个任务", "description": "独立交付一个功能", "measure_criteria": "代码合并并通过测试", "weight": 30, "order_num": 1},
+                ],
+                "submit": False,
+            },
+        )
+        assert resp.status_code == 400
+        assert "权重总和必须为 100" in resp.json()["detail"]
+
+        # 缺省 weight（视为 0）同样被拦截
+        resp = client.post(
+            f"/api/v1/probation/{emp.id}/objectives",
+            headers=_headers(token),
+            json={
+                "objectives": [
+                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "order_num": 0},
+                ],
+                "submit": False,
+            },
+        )
+        assert resp.status_code == 400
+
     def test_leader_approve_and_evaluate(self, client: TestClient, probation_users: dict):
         emp = probation_users["employee"]
         leader = probation_users["leader"]
@@ -197,7 +231,7 @@ class TestProbationLifecycle:
             headers=_headers(emp_token),
             json={
                 "objectives": [
-                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "order_num": 0},
+                    {"title": "熟悉业务", "description": "深入了解产品", "measure_criteria": "完成业务文档学习", "weight": 100, "order_num": 0},
                 ],
                 "submit": True,
             },
@@ -253,7 +287,7 @@ class TestProbationLifecycle:
             f"/api/v1/probation/{emp.id}/objectives",
             headers=_headers(emp_token),
             json={
-                "objectives": [{"title": "测试目标", "description": "描述", "measure_criteria": "标准", "order_num": 0}],
+                "objectives": [{"title": "测试目标", "description": "描述", "measure_criteria": "标准", "weight": 100, "order_num": 0}],
                 "submit": True,
             },
         )
@@ -299,3 +333,63 @@ class TestProbationLifecycle:
         resp = client.get("/api/v1/probation", headers=_headers(hr_token))
         assert resp.status_code == 200, resp.text
         assert any(i["user_id"] == emp.id for i in resp.json())
+
+
+class TestProbationPlanUpdate:
+    """HR PATCH 试用期计划：status 白名单校验（仅允许前进态/正常态）。"""
+
+    def _create_plan(self, client: TestClient, emp) -> None:
+        emp_token = _login(client, emp.wecom_userid)
+        resp = client.get("/api/v1/probation/mine", headers=_headers(emp_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json() is not None
+
+    def test_patch_rollback_status_rejected(self, client: TestClient, probation_users: dict):
+        emp = probation_users["employee"]
+        self._create_plan(client, emp)
+        hr_token = _login(client, probation_users["hr"].wecom_userid)
+
+        # 回退态（目标流程驱动，不允许 HR 直接设置）
+        for status in (
+            ProbationPlanStatus.DRAFT,
+            ProbationPlanStatus.OBJECTIVE_DRAFT,
+            ProbationPlanStatus.OBJECTIVE_PENDING_REVIEW,
+        ):
+            resp = client.patch(
+                f"/api/v1/probation/{emp.id}",
+                headers=_headers(hr_token),
+                json={"status": status},
+            )
+            assert resp.status_code == 400, resp.text
+            assert "不允许将计划状态修改" in resp.json()["detail"]
+
+    def test_patch_unknown_status_rejected(self, client: TestClient, probation_users: dict):
+        emp = probation_users["employee"]
+        self._create_plan(client, emp)
+        hr_token = _login(client, probation_users["hr"].wecom_userid)
+
+        resp = client.patch(
+            f"/api/v1/probation/{emp.id}",
+            headers=_headers(hr_token),
+            json={"status": "not_a_status"},
+        )
+        assert resp.status_code == 400, resp.text
+        assert "不允许将计划状态修改" in resp.json()["detail"]
+
+    def test_patch_allowed_status_accepted(self, client: TestClient, probation_users: dict):
+        emp = probation_users["employee"]
+        self._create_plan(client, emp)
+        hr_token = _login(client, probation_users["hr"].wecom_userid)
+
+        resp = client.patch(
+            f"/api/v1/probation/{emp.id}",
+            headers=_headers(hr_token),
+            json={"status": ProbationPlanStatus.EXTENDED, "extension_note": "业务需要，延期 1 个月"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        with Session(engine) as s:
+            plan = s.exec(select(ProbationPlan).where(ProbationPlan.user_id == emp.id)).first()
+            assert plan.status == ProbationPlanStatus.EXTENDED
+            assert plan.extension_note == "业务需要，延期 1 个月"
+            assert plan.extended_by == probation_users["hr"].wecom_userid

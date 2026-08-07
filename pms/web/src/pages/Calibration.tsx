@@ -203,6 +203,8 @@ export default function Calibration() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [approvalSaving, setApprovalSaving] = useState(false);
+  // 提交校准防重：重复提交会产生重复审批流
+  const [submittingCal, setSubmittingCal] = useState(false);
   const isMobile = useMobile();
 
   const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
@@ -215,7 +217,7 @@ export default function Calibration() {
       const inp = r.data.filter((c) => c.status === "in_progress");
       setCycles(inp);
       if (inp.length > 0) setSelectedCid(inp[0].id);
-    });
+    }).catch((e) => message.error(formatError(e, "加载周期列表失败")));
   }, []);
 
   async function loadView() {
@@ -294,11 +296,14 @@ export default function Calibration() {
   }
 
   async function onSubmitCalibration() {
+    if (submittingCal) return;
+    setSubmittingCal(true);
     try {
       await api.post(`/v1/calibration/cycles/${selectedCid}/submit-calibration`);
       message.success("已提交校准，等待 HR 审批");
       await loadView();
     } catch (e) { message.error(formatError(e, "提交失败")); }
+    finally { setSubmittingCal(false); }
   }
 
   async function onApproval(action: "approve" | "reject", comment: string | null) {
@@ -320,7 +325,8 @@ export default function Calibration() {
   }
 
   const canCalibrate = ["calibrating", "rejected_by_hr", "rejected_by_ceo"].includes(approvalStatus);
-  const canSubmit = canCalibrate && items.every((i) => i.calibrated_perf_score != null);
+  // items 为空（非 FTE 返回空结构）时 every() 为 true，需额外挡掉，避免可点的提交被后端 403
+  const canSubmit = canCalibrate && items.length > 0 && items.every((i) => i.calibrated_perf_score != null);
   // 未校准人数（校准分为空），用于提交按钮旁的进度提示
   const uncalibratedCount = items.filter((i) => i.calibrated_perf_score == null).length;
   const canApproveHr = isHr && approvalStatus === "pending_hr";
@@ -488,9 +494,20 @@ export default function Calibration() {
         </Card>
       )}
 
-      {/* 参与人列表：桌面表格 + 移动端卡片 */}
+      {/* 参与人列表：桌面表格 / 移动端卡片，按 useMobile 条件渲染只挂一份（避免百行数据双份 DOM） */}
       <Card title="校准明细">
-        <div className="pms-responsive-table">
+        {isMobile ? (
+          <TableCardList
+            columns={cardColumns}
+            dataSource={items}
+            rowKey={(r) => r.user_id}
+            renderActions={(r) =>
+              canCalibrate ? (
+                <Button size="small" onClick={() => openEdit(r)}>调整</Button>
+              ) : null
+            }
+          />
+        ) : (
           <Table
             rowKey="user_id"
             size="small"
@@ -500,17 +517,7 @@ export default function Calibration() {
             scroll={{ x: 1080 }}
             onRow={(r) => ({ className: isAdjusted(r) ? "pms-calibration-adjusted-row" : "" })}
           />
-        </div>
-        <TableCardList
-          columns={cardColumns}
-          dataSource={items}
-          rowKey={(r) => r.user_id}
-          renderActions={(r) =>
-            canCalibrate ? (
-              <Button size="small" onClick={() => openEdit(r)}>调整</Button>
-            ) : null
-          }
-        />
+        )}
       </Card>
 
       {/* 提交 / 审批 按钮：底部固定操作栏 */}
@@ -520,8 +527,8 @@ export default function Calibration() {
             <>
               <Tooltip title={submitByHrOnly ? "校准由 HR 统一提交" : undefined}>
                 <span>
-                  <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit || submitByHrOnly}>
-                    <Button type="primary" disabled={!canSubmit || submitByHrOnly}>
+                  <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit || submitByHrOnly} okButtonProps={{ loading: submittingCal }}>
+                    <Button type="primary" disabled={!canSubmit || submitByHrOnly} loading={submittingCal}>
                       提交校准（进入 HR 审批）
                     </Button>
                   </Popconfirm>

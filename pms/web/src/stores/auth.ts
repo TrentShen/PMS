@@ -39,7 +39,14 @@ function safeRemove(key: string) {
 
 function loadUser(): CurrentUser | null {
   const raw = safeGet(USER_KEY);
-  return raw ? (JSON.parse(raw) as CurrentUser) : null;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as CurrentUser;
+  } catch {
+    // localStorage 中的用户数据损坏（手动改坏/写入中断）：清掉避免整站白屏
+    safeRemove(USER_KEY);
+    return null;
+  }
 }
 
 export const useAuth = create<AuthState>((set) => ({

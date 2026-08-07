@@ -3,9 +3,18 @@
 //   <Route element={<RequireRole roles={["hrbp", "super_admin"]} />}>
 //     <Route path="/hr" element={<HrConsole />} />
 //   </Route>
-import { Navigate, Outlet } from "react-router-dom";
-import { Result } from "antd";
+import { Navigate, Outlet, useNavigate } from "react-router-dom";
+import { Button, Result } from "antd";
 import { useAuth } from "@/stores/auth";
+
+// 与 Layout 顶栏一致的角色中文名
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "超级管理员",
+  hrbp: "HR",
+  dept_leader: "部门 Leader",
+  direct_leader: "直属上级",
+  employee: "员工",
+};
 
 interface Props {
   roles: string[];
@@ -19,6 +28,7 @@ interface Props {
 
 export default function RequireRole({ roles, fallback = "redirect", allowHrPermission = false, allowHasSubordinates = false }: Props) {
   const user = useAuth((s) => s.user);
+  const navigate = useNavigate();
 
   if (!user) return <Navigate to="/login" replace />;
 
@@ -32,7 +42,12 @@ export default function RequireRole({ roles, fallback = "redirect", allowHrPermi
         <Result
           status="403"
           title="403"
-          subTitle={`你的角色是「${user.role}」，无权访问此页面`}
+          subTitle={`你的角色是「${ROLE_LABEL[user.role] ?? user.role}」，无权访问此页面`}
+          extra={
+            <Button type="primary" onClick={() => navigate("/")}>
+              返回首页
+            </Button>
+          }
         />
       );
     }

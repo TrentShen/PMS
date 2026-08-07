@@ -25,6 +25,16 @@ router = APIRouter(
 DEFAULT_PROBATION_MONTHS = 6
 PENDING_EVALUATION_DAYS = 7  # 临转正前 N 天进入待评估状态
 
+# HR 通过 PATCH 可调整的计划状态白名单：仅允许前进态/正常态。
+# draft / objective_draft / objective_pending_review 由目标填写与审批流程驱动，
+# 允许 HR 直接回退会产生脏数据（如评估完成后退回草稿）。
+HR_EDITABLE_PLAN_STATUSES = (
+    ProbationPlanStatus.IN_PROGRESS,
+    ProbationPlanStatus.PENDING_EVALUATION,
+    ProbationPlanStatus.COMPLETED,
+    ProbationPlanStatus.EXTENDED,
+)
+
 
 # ============ 工具函数 ============
 
@@ -99,7 +109,7 @@ class ProbationObjectiveItem(BaseModel):
     title: str
     description: str
     measure_criteria: str
-    weight: int = 0  # 权重（百分制整数）；历史宽容，不强制合计 100
+    weight: int = 0  # 权重（百分制整数），保存时校验合计 = 100
     order_num: int = 0
 
 
@@ -344,7 +354,7 @@ def sync_probation_plans(
 
 # ============ API：列表查询 ============
 
-@router.get("", response_model=list[ProbationListItem], dependencies=[Depends(require_fte)])
+@router.get("", response_model=list[ProbationListItem])
 def list_probation_plans(
     status: str | None = Query(None),
     keyword: str | None = Query(None),
@@ -352,6 +362,11 @@ def list_probation_plans(
     current: User = Depends(get_current_user),
 ):
     """查询试用期计划列表。HR/Leader 按可见范围查看，员工只看自己（理论上走 /mine）。"""
+    # 非 FTE 员工（实习生等）返回空列表而非 403，与 cycles 列表口径一致，
+    # 避免非 FTE 的 Leader 点菜单必见报错；写接口仍由 require_fte 拦截
+    if not is_fte(current):
+        return []
+
     visible_ids = visible_user_ids(session, current)
     if visible_ids is not None:
         visible_ids = set(visible_ids)
@@ -482,6 +497,9 @@ def save_probation_objectives(
         raise HTTPException(status_code=400, detail="至少需要 1 条目标")
     if len(payload.objectives) > 10:
         raise HTTPException(status_code=400, detail="目标不能超过 10 条")
+    total_weight = sum(item.weight for item in payload.objectives)
+    if total_weight != 100:
+        raise HTTPException(status_code=400, detail=f"权重总和必须为 100，当前为 {total_weight}")
 
     for i, item in enumerate(payload.objectives):
         if not item.title.strip():
@@ -783,6 +801,12 @@ def update_probation_plan(
         plan.end_date = payload.end_date
 
     if payload.status:
+        if payload.status not in HR_EDITABLE_PLAN_STATUSES:
+            allowed = "、".join(f"{_status_text(s)}（{s}）" for s in HR_EDITABLE_PLAN_STATUSES)
+            raise HTTPException(
+                status_code=400,
+                detail=f"不允许将计划状态修改为「{_status_text(payload.status)}」，HR 仅可调整为：{allowed}",
+            )
         if payload.status == ProbationPlanStatus.EXTENDED:
             plan.extended_by = current.wecom_userid
             plan.extended_at = now

@@ -15,7 +15,7 @@ from pms.database.models.enums import PerfLevel
 from pms.database.models.evaluation import Evaluation
 from pms.database.models.user import User
 from pms.database.session import get_session
-from pms.services.auth import get_current_user, has_any_role, is_hr_dept_leader, require_fte
+from pms.services.auth import get_current_user, has_any_role, is_fte, is_hr_dept_leader, require_fte
 from pms.services.notification import get_hrbp_userids, send_textcard_notification
 from pms.services.scope import visible_user_ids
 from pms.utils.audit import write_audit
@@ -24,7 +24,6 @@ from pms.utils.score import derive_perf_level, validate_perf_score
 router = APIRouter(
     prefix="/calibration",
     tags=["calibration"],
-    dependencies=[Depends(require_fte)],
 )
 
 
@@ -180,6 +179,21 @@ def get_calibration_view(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
+    # 非 FTE 员工（实习生等）返回空数据而非 403，与 cycles 列表口径一致，
+    # 避免非 FTE 的 Leader 点菜单必见报错；写接口仍由 require_fte 拦截
+    if not is_fte(current):
+        return {
+            "cycle": None,
+            "approval_status": "calibrating",
+            "reject_reason": None,
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "distribution": [],
+            "matrix": {"by_dept": [], "by_level": []},
+        }
+
     if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 
@@ -258,7 +272,7 @@ def get_calibration_view(
 
 # ============ 部门 Leader 校准：批量改分 ============
 
-@router.post("/cycles/{cycle_id}/calibrate")
+@router.post("/cycles/{cycle_id}/calibrate", dependencies=[Depends(require_fte)])
 def calibrate(
     cycle_id: int,
     payload: CalibrateRequest,
@@ -361,7 +375,7 @@ def calibrate(
 
 # ============ Leader 提交校准 → 进入审批 ============
 
-@router.post("/cycles/{cycle_id}/submit-calibration")
+@router.post("/cycles/{cycle_id}/submit-calibration", dependencies=[Depends(require_fte)])
 def submit_calibration(
     cycle_id: int,
     session: Session = Depends(get_session),
@@ -426,7 +440,7 @@ def submit_calibration(
 
 # ============ HR / CEO 审批 ============
 
-@router.post("/cycles/{cycle_id}/approval")
+@router.post("/cycles/{cycle_id}/approval", dependencies=[Depends(require_fte)])
 def process_approval(
     cycle_id: int,
     payload: ApprovalAction,
@@ -511,6 +525,10 @@ def get_calibration_history(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
+    # 非 FTE 员工返回空列表而非 403，与 view 接口口径一致
+    if not is_fte(current):
+        return []
+
     if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 

@@ -66,8 +66,21 @@ const STATUS_LABEL: Record<string, string> = {
   closed: "已归档",
 };
 
-// 图表色板（@ant-design/charts 配置只接受色值，顺序对应 --color-chart-1~6）
-const CHART_COLORS: string[] = ["#3370FF", "#14C9C9", "#F7BA1E", "#F53F3F", "#86909C", "#00B42A"];
+// @ant-design/charts 需要具体色值字符串，运行时从设计令牌读取（fallback 与 tokens.css 保持一致）
+function getChartColor(token: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+  return v || fallback;
+}
+
+// 图表色板（顺序对应 --color-chart-1~6）
+const CHART_COLOR_TOKENS: [string, string][] = [
+  ["--color-chart-1", "#3370FF"],
+  ["--color-chart-2", "#14C9C9"],
+  ["--color-chart-3", "#F7BA1E"],
+  ["--color-chart-4", "#F53F3F"],
+  ["--color-chart-5", "#86909C"],
+  ["--color-chart-6", "#00B42A"],
+];
 
 function percentOf(done: number, total: number): number {
   return total === 0 ? 0 : Math.round((done / total) * 100);
@@ -128,6 +141,7 @@ export default function HrDashboard() {
   const [cycles, setCycles] = useState<CycleBrief[]>([]);
   const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     api.get<CycleBrief[]>("/v1/cycles").then((r) => {
@@ -135,15 +149,19 @@ export default function HrDashboard() {
       if (r.data.length > 0 && !selectedCycleId) {
         setSelectedCycleId(r.data[0].id);
       }
-    });
+    }).catch((e) => message.error(formatError(e, "加载失败")));
   }, []);
 
   useEffect(() => {
     if (!selectedCycleId) return;
+    setLoading(true);
     api.get<DashboardData>(`/v1/cycles/${selectedCycleId}/dashboard`)
       .then((r) => setData(r.data))
-      .catch((e) => message.error(formatError(e, "加载失败")));
+      .catch((e) => message.error(formatError(e, "加载失败")))
+      .finally(() => setLoading(false));
   }, [selectedCycleId]);
+
+  const chartColors = CHART_COLOR_TOKENS.map(([token, fallback]) => getChartColor(token, fallback));
 
   const mergedDepts: MergedDeptProgress[] = data
     ? mergeDepartmentProgress(
@@ -183,7 +201,7 @@ export default function HrDashboard() {
       ]
     : [];
 
-  // 部门自评/互评完成率对比图数据（色板前两色：自评 #3370FF、互评 #14C9C9）
+  // 部门自评/互评完成率对比图数据（色板前两色：自评 --color-chart-1、互评 --color-chart-2）
   const deptChartData = mergedDepts.flatMap((d) => [
     {
       department: d.department_name,
@@ -223,8 +241,9 @@ export default function HrDashboard() {
         />
       </Card>
 
-      {data && (
-        <>
+      {!data && loading && <Card loading />}
+
+      {data && (        <>
           <Card title={data.cycle.name}>
             <ResponsiveShow on="desktop">
               <Row gutter={[16, 16]}>
@@ -266,21 +285,33 @@ export default function HrDashboard() {
 
           {mergedDepts.length > 0 && (
             <Card title="部门完成率对比">
-              <Column
-                data={deptChartData}
-                xField="department"
-                yField="percent"
-                seriesField="type"
-                color={CHART_COLORS}
-                height={280}
-                yAxis={{ max: 100 }}
-                tooltip={{
-                  formatter: (d: { type: string; percent: number }) => ({
-                    name: d.type,
-                    value: `${d.percent}%`,
-                  }),
-                }}
-              />
+              {/* 桌面：柱图；移动端：降级为完成率文本列表（375px 下分组柱图不可读） */}
+              <ResponsiveShow on="desktop">
+                <Column
+                  data={deptChartData}
+                  xField="department"
+                  yField="percent"
+                  seriesField="type"
+                  color={chartColors}
+                  height={280}
+                  yAxis={{ max: 100 }}
+                  tooltip={{
+                    formatter: (d: { type: string; percent: number }) => ({
+                      name: d.type,
+                      value: `${d.percent}%`,
+                    }),
+                  }}
+                />
+              </ResponsiveShow>
+              <ResponsiveShow on="mobile">
+                <Space direction="vertical" size={4}>
+                  {mergedDepts.map((d) => (
+                    <Typography.Text key={d.department_id}>
+                      {d.department_name}：自评 {percentOf(d.self_done, d.self_total)}%，互评 {percentOf(d.peer_done, d.peer_total)}%
+                    </Typography.Text>
+                  ))}
+                </Space>
+              </ResponsiveShow>
             </Card>
           )}
 

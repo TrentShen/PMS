@@ -1,11 +1,16 @@
 // 历史绩效查询（PRD 3.6.1 个人视角）
 // 员工看到自己所有已发布周期的结果；Leader/HR 可切员工看下属
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Empty, message, Space, Table, Tag, Typography } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import type { HistoricalObjective } from "@/services/api.types";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
+import TableCardList from "@/components/ui/TableCardList";
+import type { CardColumn } from "@/components/ui/TableCardList";
 
 interface MyCycleItem {
   cycle: { id: number; name: string; status: string; start_date: string; end_date: string };
@@ -36,8 +41,9 @@ const PERF_LABEL: Record<string, string> = {
   excellent: "优秀", exceed_part: "部分超出", meet: "符合预期", below_part: "部分不符", below: "不符合",
 };
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
-const PERF_COLOR: Record<string, string> = {
-  excellent: "gold", exceed_part: "blue", meet: "green", below_part: "orange", below: "red",
+// 业绩等级语义梯度：优秀→success …… 不符合→danger
+const PERF_TAG_TYPE: Record<string, StatusType> = {
+  excellent: "success", exceed_part: "primary", meet: "default", below_part: "warning", below: "danger",
 };
 
 export default function History() {
@@ -46,16 +52,24 @@ export default function History() {
   const [cycles, setCycles] = useState<MyCycleItem[]>([]);
   const [historical, setHistorical] = useState<HistoricalItem[]>([]);
   const [histObjectives, setHistObjectives] = useState<HistoricalObjective[]>([]);
+  const [cyclesLoading, setCyclesLoading] = useState(true);
+  const [histLoading, setHistLoading] = useState(true);
 
   useEffect(() => {
+    setCyclesLoading(true);
     api.get<MyCycleItem[]>("/v1/cycles/mine").then((r) => {
       // 只展示已发布的
       setCycles(r.data.filter((c) => c.cycle.status === "published"));
-    });
+    }).catch((e) => {
+      message.error(formatError(e, "加载我的周期失败"));
+    }).finally(() => setCyclesLoading(false));
     // 后端已按当前用户过滤，直接使用返回数据
+    setHistLoading(true);
     api.get<HistoricalItem[]>("/v1/import/historical-performance").then((r) => {
       setHistorical(r.data);
-    }).catch(() => setHistorical([]));
+    }).catch((e) => {
+      message.error(formatError(e, "历史考核记录加载失败"));
+    }).finally(() => setHistLoading(false));
     // 历史目标：当前页面只看自己（非 HR 后端也只允许查自己）
     if (user) {
       api.get<HistoricalObjective[]>("/v1/import/historical-objectives", {
@@ -84,76 +98,115 @@ export default function History() {
     objs.sort((a, b) => a.order_num - b.order_num);
   }
 
+  // 业绩/价值观渲染：桌面表格与移动端卡片共用
+  const renderPerf = (score: number | null, level: string | null): ReactNode =>
+    score != null ? (
+      <Space>
+        <StatusTag type={PERF_TAG_TYPE[level ?? ""] ?? "default"}>
+          {PERF_LABEL[level ?? ""] ?? "-"}
+        </StatusTag>
+        <Typography.Text>{score.toFixed(2)} 分</Typography.Text>
+      </Space>
+    ) : "-";
+  const renderValue = (...grades: (string | null)[]): ReactNode =>
+    VALUE_LABEL[grades.find((g) => g != null) ?? ""] ?? "-";
+
+  // 移动端卡片列（与桌面 Table 并存，≤767px 由 CSS 自动切换）
+  const cycleCardColumns: CardColumn<MyCycleItem>[] = [
+    { title: "周期", render: (r) => r.cycle.name },
+    { title: "考核期间", render: (r) => `${r.cycle.start_date} ~ ${r.cycle.end_date}` },
+    { title: "业绩", render: (r) => renderPerf(r.final_perf_score, r.final_perf_level) },
+    { title: "价值观", render: (r) => renderValue(r.final_value_belief, r.final_value_team, r.final_value_growth) },
+  ];
+  const historicalCardColumns: CardColumn<HistoricalItem>[] = [
+    { title: "周期", dataIndex: "cycle_name" },
+    { title: "业绩", render: (r) => renderPerf(r.perf_score, r.perf_level) },
+    { title: "价值观", render: (r) => renderValue(r.value_belief, r.value_team, r.value_growth) },
+    { title: "评语", render: (r) => r.comment || "-" },
+  ];
+
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card title="我的历史绩效" extra={<a onClick={() => navigate("/trend")}>查看趋势图</a>}>
-        {published.length === 0 ? (
+        {!cyclesLoading && published.length === 0 ? (
           <Empty description="暂无已公布的绩效结果" />
         ) : (
-          <Table
-            rowKey={(r) => r.cycle.id}
-            dataSource={published}
-            pagination={false}
-            columns={[
-              { title: "周期", dataIndex: ["cycle", "name"] },
-              { title: "考核期间", render: (_, r) => `${r.cycle.start_date} ~ ${r.cycle.end_date}` },
-              {
-                title: "业绩",
-                render: (_, r) => r.final_perf_score != null ? (
-                  <Space>
-                    <Tag color={PERF_COLOR[r.final_perf_level ?? ""]}>
-                      {PERF_LABEL[r.final_perf_level ?? ""] ?? "-"}
-                    </Tag>
-                    <Typography.Text>{r.final_perf_score.toFixed(2)} 分</Typography.Text>
-                  </Space>
-                ) : "-",
-              },
-              {
-                title: "价值观",
-                render: (_, r) =>
-                  VALUE_LABEL[r.final_value_belief ?? r.final_value_team ?? r.final_value_growth ?? ""] ?? "-",
-              },
-              {
-                title: "操作",
-                render: (_, r) => (
+          <>
+            <div className="pms-responsive-table">
+              <Table
+                rowKey={(r) => r.cycle.id}
+                dataSource={published}
+                pagination={false}
+                loading={cyclesLoading}
+                columns={[
+                  { title: "周期", dataIndex: ["cycle", "name"] },
+                  { title: "考核期间", render: (_, r) => `${r.cycle.start_date} ~ ${r.cycle.end_date}` },
+                  {
+                    title: "业绩",
+                    render: (_, r) => renderPerf(r.final_perf_score, r.final_perf_level),
+                  },
+                  {
+                    title: "价值观",
+                    render: (_, r) => renderValue(r.final_value_belief, r.final_value_team, r.final_value_growth),
+                  },
+                  {
+                    title: "操作",
+                    render: (_, r) => (
+                      <Space>
+                        <a onClick={() => navigate(`/self/${r.cycle.id}`)}>查看详情</a>
+                        <a onClick={() => navigate(`/feedback/${r.cycle.id}`)}>查看反馈</a>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+            {!cyclesLoading && (
+              <TableCardList<MyCycleItem>
+                columns={cycleCardColumns}
+                dataSource={published}
+                rowKey={(r) => r.cycle.id}
+                renderActions={(r) => (
                   <Space>
                     <a onClick={() => navigate(`/self/${r.cycle.id}`)}>查看详情</a>
                     <a onClick={() => navigate(`/feedback/${r.cycle.id}`)}>查看反馈</a>
                   </Space>
-                ),
-              },
-            ]}
-          />
+                )}
+              />
+            )}
+          </>
         )}
       </Card>
 
-      {historical.length > 0 && (
+      {(histLoading || historical.length > 0) && (
         <Card title="历史考核记录（只读）">
-          <Table
-            rowKey="id"
-            dataSource={historical}
-            pagination={false}
-            columns={[
-              { title: "周期", dataIndex: "cycle_name" },
-              {
-                title: "业绩",
-                render: (_, r) => r.perf_score != null ? (
-                  <Space>
-                    <Tag color={PERF_COLOR[r.perf_level ?? ""]}>
-                      {PERF_LABEL[r.perf_level ?? ""] ?? "-"}
-                    </Tag>
-                    <Typography.Text>{r.perf_score.toFixed(2)} 分</Typography.Text>
-                  </Space>
-                ) : "-",
-              },
-              {
-                title: "价值观",
-                render: (_, r) =>
-                  VALUE_LABEL[r.value_belief ?? r.value_team ?? r.value_growth ?? ""] ?? "-",
-              },
-              { title: "评语", dataIndex: "comment", render: (c) => c || "-" },
-            ]}
-          />
+          <div className="pms-responsive-table">
+            <Table
+              rowKey="id"
+              dataSource={historical}
+              pagination={false}
+              loading={histLoading}
+              columns={[
+                { title: "周期", dataIndex: "cycle_name" },
+                {
+                  title: "业绩",
+                  render: (_, r) => renderPerf(r.perf_score, r.perf_level),
+                },
+                {
+                  title: "价值观",
+                  render: (_, r) => renderValue(r.value_belief, r.value_team, r.value_growth),
+                },
+                { title: "评语", dataIndex: "comment", render: (c) => c || "-" },
+              ]}
+            />
+          </div>
+          {!histLoading && (
+            <TableCardList<HistoricalItem>
+              columns={historicalCardColumns}
+              dataSource={historical}
+              rowKey={(r) => r.id}
+            />
+          )}
         </Card>
       )}
 

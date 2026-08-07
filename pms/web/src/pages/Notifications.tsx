@@ -1,9 +1,9 @@
 // 通知中心页面（PRD 3.5）
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, List } from "antd";
+import { Card, Empty, List, message } from "antd";
 import { RightOutlined } from "@ant-design/icons";
-import { api } from "@/services/api";
+import { api, formatError } from "@/services/api";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 
 interface Notify {
@@ -48,16 +48,21 @@ function relativeTime(iso: string): string {
 export default function Notifications() {
   const navigate = useNavigate();
   const [list, setList] = useState<Notify[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    api.get<Notify[]>("/v1/notify/mine").then((r) => setList(r.data));
+    api.get<Notify[]>("/v1/notify/mine")
+      .then((r) => setList(r.data))
+      .catch((e) => message.error(formatError(e, "通知加载失败")))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <Card title="我的通知">
-      {list.length === 0 ? (
+      {!loading && list.length === 0 ? (
         <Empty description="暂无通知" />
       ) : (
         <List
+          loading={loading}
           dataSource={list}
           renderItem={(n) => {
             const link = n.url ?? n.link ?? null;
@@ -77,7 +82,7 @@ export default function Notifications() {
                   }
                   description={n.content}
                 />
-                <span style={{ color: "#999", fontSize: 12, whiteSpace: "nowrap" }}>
+                <span style={{ color: "var(--color-text-secondary)", fontSize: 12, whiteSpace: "nowrap" }}>
                   {relativeTime(n.created_at)}
                   {link && <RightOutlined style={{ marginLeft: 8 }} />}
                 </span>

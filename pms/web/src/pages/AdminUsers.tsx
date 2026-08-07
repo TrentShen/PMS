@@ -10,12 +10,12 @@ import {
   Space,
   Switch,
   Table,
-  Tag,
   Tooltip,
   Typography,
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
+import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 
 
 interface AdminUser {
@@ -61,13 +61,15 @@ function buildDeptPath(deptId: number | null, depts: Dept[]): string {
   return parts.join(" / ");
 }
 
-const ROLE_COLOR: Record<string, string> = {
-  super_admin: "purple",
-  hrbp: "magenta",
-  dept_leader: "geekblue",
-  direct_leader: "blue",
-  employee: "green",
+const ROLE_STATUS_TYPE: Record<string, StatusType> = {
+  super_admin: "danger",
+  hrbp: "warning",
+  dept_leader: "primary",
+  direct_leader: "info",
+  employee: "success",
 };
+
+const USER_STATUS_LABEL: Record<string, string> = { active: "在职", inactive: "离职" };
 
 export default function AdminUsers() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -75,18 +77,24 @@ export default function AdminUsers() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function load() {
-    const [u, d] = await Promise.all([
-      api.get<AdminUser[]>("/v1/admin/users"),
-      api.get<Dept[]>("/v1/admin/departments"),
-    ]);
-    setUsers(u.data);
-    setDepts(d.data);
+    setLoading(true);
+    try {
+      const [u, d] = await Promise.all([
+        api.get<AdminUser[]>("/v1/admin/users"),
+        api.get<Dept[]>("/v1/admin/departments"),
+      ]);
+      setUsers(u.data);
+      setDepts(d.data);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    load();
+    load().catch((e) => message.error(formatError(e, "加载失败")));
   }, []);
 
   function openEdit(u: AdminUser) {
@@ -109,7 +117,8 @@ export default function AdminUsers() {
     try {
       const payload: Record<string, unknown> = {
         role: values.role,
-        leader_userid: values.leader_userid,
+        // Select allowClear 后值为 undefined 会被 JSON 序列化丢弃，后端语义是"不修改"；清空需显式传空串
+        leader_userid: values.leader_userid ?? "",
         // 后端约定 department_id == 0 表示清空部门，None 表示不修改，原样透传保留 0
         department_id: values.department_id,
         status: values.status,
@@ -155,6 +164,8 @@ export default function AdminUsers() {
         dataSource={users}
         pagination={false}
         size="small"
+        loading={loading}
+        scroll={{ x: 1000 }}
         columns={[
           { title: "姓名", dataIndex: "name" },
           { title: "账号", dataIndex: "wecom_userid" },
@@ -163,10 +174,10 @@ export default function AdminUsers() {
             dataIndex: "role",
             render: (r: string, u: AdminUser) => (
               <Space size={4}>
-                <Tag color={ROLE_COLOR[r]}>{ROLE_LABEL[r] ?? r}</Tag>
+                <StatusTag type={ROLE_STATUS_TYPE[r] ?? "default"}>{ROLE_LABEL[r] ?? r}</StatusTag>
                 {u.role_mismatch === true && (
                   <Tooltip title="担任 Leader 角色但无下属，请确认是否为历史遗留">
-                    <Tag color="warning">角色待核查</Tag>
+                    <StatusTag type="warning">角色待核查</StatusTag>
                   </Tooltip>
                 )}
               </Space>
@@ -193,17 +204,19 @@ export default function AdminUsers() {
             render: (v: number[] | null | undefined, r: AdminUser) => {
               if (r.role !== "hrbp") return <Typography.Text type="secondary">-</Typography.Text>;
               if (v === null || v === undefined)
-                return <Tag color="gold">全局</Tag>;
+                return <StatusTag type="warning">全局</StatusTag>;
               if (v.length === 0)
-                return <Tag color="red">无</Tag>;
+                return <StatusTag type="danger">无</StatusTag>;
               const names = v.map((id) => depts.find((d) => d.id === id)?.name ?? id);
-              return <Space>{names.map((n, i) => <Tag key={i}>{n}</Tag>)}</Space>;
+              return <Space>{names.map((n, i) => <StatusTag key={i}>{n}</StatusTag>)}</Space>;
             },
           },
           {
             title: "状态",
             dataIndex: "status",
-            render: (s) => <Tag color={s === "active" ? "green" : "default"}>{s}</Tag>,
+            render: (s: string) => (
+              <StatusTag type={s === "active" ? "success" : "default"}>{USER_STATUS_LABEL[s] ?? s}</StatusTag>
+            ),
           },
           {
             title: "操作",

@@ -61,6 +61,19 @@ export interface Participant {
   final_value_growth: string | null;
 }
 
+// GET /v1/objective-cycles/{id}/participants 的单条参与人（后端 objective_cycles.py ParticipantDetail）
+// 与评估周期的 Participant 不是同一结构，勿混用
+export interface ObjectiveCycleParticipant {
+  id: number;
+  objective_cycle_id: number;
+  user_id: number;
+  user_name: string;
+  user_position: string | null;
+  leader_userid_snapshot: string | null;
+  dept_name_snapshot: string | null;
+  status: string;
+}
+
 export interface Paginated<T> {
   items: T[];
   total: number;

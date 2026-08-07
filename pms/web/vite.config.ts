@@ -24,8 +24,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // 首屏不加载图表库（校准分布图等按需 chunk），@antv 依赖随 charts 一起拆出
-          charts: ["@ant-design/charts"],
+          // 只固定首屏必载的 react/antd 两大块；图表库（@ant-design/charts 及其
+          // @ant-design/plots|graphs、@antv/* 依赖）不手动分包——它只被路由级
+          // React.lazy 页面引用，交给 Rollup 自动拆成按需 chunk 即可。
+          // 注意：不要给 charts 单独 manualChunks，其依赖树（plots/graphs）会
+          // 与 antd chunk 形成静态交叉引用，把图表库又拉回首屏
           antd: ["antd", "@ant-design/icons"],
           react: ["react", "react-dom", "react-router-dom"],
         },

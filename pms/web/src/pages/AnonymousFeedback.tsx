@@ -14,6 +14,7 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import BottomActions from "@/components/ui/BottomActions";
 
 
 interface Colleague {
@@ -84,7 +85,7 @@ export default function AnonymousFeedback() {
     .map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }));
 
   return (
-    <Card title="匿名主动评价">
+    <Card title="匿名主动评价" className="has-bottom-actions">
       <Alert
         type="warning"
         showIcon
@@ -124,10 +125,12 @@ export default function AnonymousFeedback() {
         <Form.Item name="comment" label="评语（必填）" rules={[{ required: true }]}>
           <Input.TextArea rows={5} placeholder="基于事实，陈述具体情况" />
         </Form.Item>
-        <Form.Item>
-          <Button type="primary" onClick={onSubmit} loading={saving}>
-            匿名提交
-          </Button>
+        <Form.Item style={{ marginBottom: 0 }}>
+          <BottomActions>
+            <Button type="primary" onClick={onSubmit} loading={saving}>
+              匿名提交
+            </Button>
+          </BottomActions>
         </Form.Item>
       </Form>
     </Card>

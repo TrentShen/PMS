@@ -1,8 +1,8 @@
 // Leader 端：选周期 -> 列下属 -> 进入单人评估页
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Empty, List, Progress, Select, Space, Typography } from "antd";
-import { api } from "@/services/api";
+import { Card, Empty, List, Progress, Select, Space, Typography, message } from "antd";
+import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
@@ -32,6 +32,10 @@ const PSTATUS_LABEL: Record<string, string> = {
   published: "已公布",
   excluded: "已排除",
 };
+// 评估周期状态中文映射（与 LeaderEvalDetail 的 CYCLE_STATUS_LABEL 一致）
+const CYCLE_STATUS_LABEL: Record<string, string> = {
+  draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已关闭",
+};
 const PSTATUS_TYPE: Record<string, StatusType> = {
   pending: "default",
   self_done: "warning",
@@ -59,7 +63,7 @@ export default function LeaderEval() {
       // 默认选第一个进行中的
       const inp = r.data.find((c) => c.status === "in_progress");
       if (inp) setSelectedCycle(inp.id);
-    });
+    }).catch((e) => message.error(formatError(e, "加载周期列表失败")));
   }, []);
 
   useEffect(() => {
@@ -69,7 +73,8 @@ export default function LeaderEval() {
       .get<{items: Participant[]; total: number}>(`/v1/cycles/${selectedCycle}/participants`, {
         params: { only_subordinates: true, page_size: 9999 },
       })
-      .then((r) => setParticipants(r.data.items));
+      .then((r) => setParticipants(r.data.items))
+      .catch((e) => message.error(formatError(e, "加载下属列表失败")));
   }, [selectedCycle]);
 
   const visible = participants.filter((p) => p.user_id !== me.id);
@@ -107,13 +112,13 @@ export default function LeaderEval() {
       title="下属评估"
       extra={
         <Select
-          style={{ width: 320 }}
+          style={{ width: "100%", maxWidth: 320 }}
           placeholder="选择周期"
           value={selectedCycle ?? undefined}
           onChange={(v) => setSelectedCycle(v)}
           options={cycles.map((c) => ({
             value: c.id,
-            label: `${c.name}（${c.status}）`,
+            label: `${c.name}（${CYCLE_STATUS_LABEL[c.status] ?? c.status}）`,
           }))}
         />
       }

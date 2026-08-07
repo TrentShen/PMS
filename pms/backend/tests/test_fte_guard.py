@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
+from pms.database.models.cycle import PerformanceCycle
 from pms.database.models.user import User
 from pms.database.session import engine
 
@@ -29,6 +30,30 @@ def make_intern():
         alice.employee_type = original
         s.add(alice)
         s.commit()
+
+
+@pytest.fixture
+def make_intern_leader():
+    """将 mock-tech-leader 临时改为实习身份（非 FTE 的 Leader 场景），测试结束后恢复。"""
+    with Session(engine) as s:
+        leader = s.exec(select(User).where(User.wecom_userid == "mock-tech-leader")).first()
+        original = leader.employee_type
+        leader.employee_type = "intern"
+        s.add(leader)
+        s.commit()
+    yield
+    with Session(engine) as s:
+        leader = s.exec(select(User).where(User.wecom_userid == "mock-tech-leader")).first()
+        leader.employee_type = original
+        s.add(leader)
+        s.commit()
+
+
+def _seed_cycle_id() -> int:
+    with Session(engine) as s:
+        cycle = s.exec(select(PerformanceCycle)).first()
+        assert cycle and cycle.id
+        return cycle.id
 
 
 class TestFteGuard:
@@ -79,3 +104,50 @@ class TestFteGuard:
         )
         # 不应被 FTE 拦截
         assert resp.status_code != 403 or "全职" not in resp.json().get("detail", "")
+
+    def test_intern_leader_probation_list_returns_empty(
+        self, client: TestClient, tech_leader_token: str, make_intern_leader
+    ) -> None:
+        # 非 FTE 的 Leader 访问试用期列表返回 200 空列表而非 403（对齐 cycles 口径）
+        resp = client.get("/api/v1/probation", headers=_headers(tech_leader_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == []
+
+    def test_intern_calibration_view_returns_empty(
+        self, client: TestClient, tech_leader_token: str, make_intern_leader
+    ) -> None:
+        # 非 FTE 访问校准视图返回 200 空数据而非 403，前端显示空态
+        cycle_id = _seed_cycle_id()
+        resp = client.get(
+            f"/api/v1/calibration/cycles/{cycle_id}/view",
+            headers=_headers(tech_leader_token),
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["distribution"] == []
+
+    def test_intern_calibration_history_returns_empty(
+        self, client: TestClient, tech_leader_token: str, make_intern_leader
+    ) -> None:
+        cycle_id = _seed_cycle_id()
+        resp = client.get(
+            f"/api/v1/calibration/cycles/{cycle_id}/history",
+            headers=_headers(tech_leader_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == []
+
+    def test_intern_blocked_from_calibration_write(
+        self, client: TestClient, tech_leader_token: str, make_intern_leader
+    ) -> None:
+        # 校准写接口仍由 require_fte 拦截
+        cycle_id = _seed_cycle_id()
+        resp = client.post(
+            f"/api/v1/calibration/cycles/{cycle_id}/calibrate",
+            headers=_headers(tech_leader_token),
+            json={"items": [{"user_id": 1, "perf_score": 3.5, "reason": "test"}]},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "全职" in resp.json()["detail"]

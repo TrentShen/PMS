@@ -1,6 +1,6 @@
 // Leader 端单人评估页：看员工目标 + 自评 + 互评名单审核 + 互评汇总 + 填上级评估
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
   Avatar,
@@ -13,6 +13,7 @@ import {
   Grid,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -23,6 +24,7 @@ import {
   Typography,
   message,
 } from "antd";
+import { ArrowLeftOutlined } from "@ant-design/icons";
 import { api, formatError } from "@/services/api";
 import type { FormProps } from "antd";
 import type { AdjustmentView, HistoricalEvaluationView, HistoricalObjective } from "@/services/api.types";
@@ -30,6 +32,8 @@ import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/componen
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
+import TableCardList from "@/components/ui/TableCardList";
+import type { CardColumn } from "@/components/ui/TableCardList";
 
 
 interface ObjectiveView {
@@ -85,6 +89,13 @@ interface Detail {
   objective_cycle?: { id: number; name: string; start_date: string; end_date: string; status: string } | null;
 }
 
+// 待评估下属（"下一位"快捷跳转用，LeaderEval 列表字段的最小子集）
+interface PendingParticipant {
+  user_id: number;
+  user_name: string;
+  status: string;
+}
+
 const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
 const PERF_LEVEL_LABEL: Record<string, string> = {
   excellent: "优秀",
@@ -98,6 +109,10 @@ const CYCLE_STATUS_LABEL: Record<string, string> = {
 };
 const CYCLE_STATUS_TYPE: Record<string, StatusType> = {
   draft: "default", in_progress: "primary", published: "success", closed: "default",
+};
+// 目标周期状态（另一套枚举：draft/active/completed，勿与评估周期状态混用）
+const OBJECTIVE_CYCLE_STATUS_LABEL: Record<string, string> = {
+  draft: "制定中", active: "执行中", completed: "已结束",
 };
 const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
   pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
@@ -148,6 +163,40 @@ function PeerReviewSection({
   const removed = cands.filter((c) => c.status === "removed");
   const canEdit = cycleStatus === "in_progress" && approved.length === 0;
 
+  // 桌面表格与移动端卡片共用同一套渲染
+  function peerStatusTag(v: string) {
+    return v === "approved" ? (
+      <StatusTag type="success">已发起互评</StatusTag>
+    ) : v === "removed" ? (
+      <StatusTag>已移除</StatusTag>
+    ) : (
+      <StatusTag type="warning">待审核</StatusTag>
+    );
+  }
+
+  function peerRemoveAction(r: PeerCandidate) {
+    return canEdit && r.status === "pending" ? (
+      <a onClick={() => setRemoveIds((prev) => Array.from(new Set([...prev, r.user_id])))}>
+        拟移除
+      </a>
+    ) : null;
+  }
+
+  const peerCardColumns: CardColumn<PeerCandidate>[] = [
+    { title: "姓名", dataIndex: "name" },
+    { title: "职位", render: (c) => c.position ?? "-" },
+    {
+      title: "来源",
+      render: (c) =>
+        c.proposed_by === "leader" ? (
+          <StatusTag type="primary">上级加</StatusTag>
+        ) : (
+          <StatusTag>员工选</StatusTag>
+        ),
+    },
+    { title: "状态", render: (c) => peerStatusTag(c.status) },
+  ];
+
   async function onConfirm() {
     setSaving(true);
     try {
@@ -184,43 +233,42 @@ function PeerReviewSection({
       )}
 
       {(pending.length > 0 || removed.length > 0 || approved.length > 0) && (
-        <Table
-          size="small"
-          rowKey="user_id"
-          pagination={false}
-          dataSource={cands}
-          style={{ marginBottom: 16 }}
-          columns={[
-            { title: "姓名", dataIndex: "name" },
-            { title: "职位", dataIndex: "position" },
-            {
-              title: "来源",
-              dataIndex: "proposed_by",
-              render: (v) => (v === "leader" ? <StatusTag type="primary">上级加</StatusTag> : <StatusTag>员工选</StatusTag>),
-            },
-            {
-              title: "状态",
-              dataIndex: "status",
-              render: (v) =>
-                v === "approved" ? (
-                  <StatusTag type="success">已发起互评</StatusTag>
-                ) : v === "removed" ? (
-                  <StatusTag>已移除</StatusTag>
-                ) : (
-                  <StatusTag type="warning">待审核</StatusTag>
-                ),
-            },
-            {
-              title: "操作",
-              render: (_, r) =>
-                canEdit && r.status === "pending" ? (
-                  <a onClick={() => setRemoveIds((prev) => Array.from(new Set([...prev, r.user_id])))}>
-                    拟移除
-                  </a>
-                ) : null,
-            },
-          ]}
-        />
+        <>
+          {/* 桌面端：表格 */}
+          <div className="pms-responsive-table" style={{ marginBottom: 16 }}>
+            <Table
+              size="small"
+              rowKey="user_id"
+              pagination={false}
+              dataSource={cands}
+              columns={[
+                { title: "姓名", dataIndex: "name" },
+                { title: "职位", dataIndex: "position" },
+                {
+                  title: "来源",
+                  dataIndex: "proposed_by",
+                  render: (v) => (v === "leader" ? <StatusTag type="primary">上级加</StatusTag> : <StatusTag>员工选</StatusTag>),
+                },
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  render: (v) => peerStatusTag(v),
+                },
+                {
+                  title: "操作",
+                  render: (_, r) => peerRemoveAction(r),
+                },
+              ]}
+            />
+          </div>
+          {/* 移动端：卡片列表（.table-card-list 由 CSS 在 ≤767px 自动显示） */}
+          <TableCardList<PeerCandidate>
+            columns={peerCardColumns}
+            dataSource={cands}
+            rowKey={(c) => c.user_id}
+            renderActions={peerRemoveAction}
+          />
+        </>
       )}
 
       {canEdit && (
@@ -231,7 +279,7 @@ function PeerReviewSection({
               mode="multiple"
               value={addIds}
               onChange={setAddIds}
-              style={{ width: 360 }}
+              style={{ width: "100%", maxWidth: 360 }}
               placeholder="选同事"
               options={allUsers
                 .filter((u) => !cands.find((c) => c.user_id === u.id))
@@ -287,6 +335,22 @@ interface PeerSummary {
 
 function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: number }) {
   const [sum, setSum] = useState<PeerSummary | null>(null);
+
+  // 桌面表格与移动端卡片共用同一套渲染
+  function peerCommentValueGrade(r: PeerSummary["comments"][number]) {
+    return VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? ""] ?? "-";
+  }
+
+  function peerCommentText(v: string) {
+    return (
+      <Typography.Paragraph
+        style={{ marginBottom: 0 }}
+        ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+      >
+        {v}
+      </Typography.Paragraph>
+    );
+  }
   useEffect(() => {
     api
       .get<PeerSummary>(`/v1/cycles/${cycleId}/users/${userId}/peer/summary`)
@@ -340,30 +404,36 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
       )}
 
       {sum.comments.length > 0 ? (
-        <Table
-          size="small"
-          rowKey={(_, i) => String(i)}
-          pagination={false}
-          dataSource={sum.comments}
-          columns={[
-            { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) },
-            { title: "价值观", render: (_, r) =>
-              VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? ""] ?? "-"
-            },
-            {
-              title: "评语",
-              dataIndex: "comment",
-              render: (v: string) => (
-                <Typography.Paragraph
-                  style={{ marginBottom: 0 }}
-                  ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
-                >
-                  {v}
-                </Typography.Paragraph>
-              ),
-            },
-          ]}
-        />
+        <>
+          {/* 桌面端：表格 */}
+          <div className="pms-responsive-table">
+            <Table
+              size="small"
+              rowKey={(_, i) => String(i)}
+              pagination={false}
+              dataSource={sum.comments}
+              columns={[
+                { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) },
+                { title: "价值观", render: (_, r) => peerCommentValueGrade(r) },
+                {
+                  title: "评语",
+                  dataIndex: "comment",
+                  render: (v: string) => peerCommentText(v),
+                },
+              ]}
+            />
+          </div>
+          {/* 移动端：卡片列表 */}
+          <TableCardList
+            columns={[
+              { title: "业绩", render: (r) => r.perf_score?.toFixed(2) },
+              { title: "价值观", render: (r) => peerCommentValueGrade(r) },
+              { title: "评语", render: (r) => peerCommentText(r.comment) },
+            ]}
+            dataSource={sum.comments}
+            rowKey={(r) => `${r.perf_score}-${r.comment.slice(0, 16)}`}
+          />
+        </>
       ) : (
         <Empty description="还没有已提交的互评内容" />
       )}
@@ -374,31 +444,57 @@ function PeerSummarySection({ cycleId, userId }: { cycleId: number; userId: numb
           style={{ marginTop: 12 }}
           title="匿名主动评价（仅 HR / 部门 Leader 可见）"
         >
-          <Table
-            size="small"
-            rowKey={(_, i) => String(i)}
-            pagination={false}
-            dataSource={sum.anonymous_feedback}
+          {/* 桌面端：表格；移动端：卡片列表 */}
+          <div className="pms-responsive-table">
+            <Table
+              size="small"
+              rowKey={(_, i) => String(i)}
+              pagination={false}
+              dataSource={sum.anonymous_feedback}
+              columns={[
+                { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+                {
+                  title: "价值观",
+                  render: (_, r) =>
+                    VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? r.value_grade ?? ""] ?? "-",
+                },
+                {
+                  title: "评语",
+                  dataIndex: "comment",
+                  render: (v: string) => (
+                    <Typography.Paragraph
+                      style={{ marginBottom: 0 }}
+                      ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
+                    >
+                      {v}
+                    </Typography.Paragraph>
+                  ),
+                },
+              ]}
+            />
+          </div>
+          <TableCardList
             columns={[
-              { title: "业绩", dataIndex: "perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+              { title: "业绩", render: (r) => r.perf_score?.toFixed(2) ?? "-" },
               {
                 title: "价值观",
-                render: (_, r) =>
+                render: (r) =>
                   VALUE_LABEL[r.value_belief_grade ?? r.value_team_grade ?? r.value_growth_grade ?? r.value_grade ?? ""] ?? "-",
               },
               {
                 title: "评语",
-                dataIndex: "comment",
-                render: (v: string) => (
+                render: (r) => (
                   <Typography.Paragraph
                     style={{ marginBottom: 0 }}
                     ellipsis={{ rows: 4, expandable: true, symbol: "展开" }}
                   >
-                    {v}
+                    {r.comment}
                   </Typography.Paragraph>
                 ),
               },
             ]}
+            dataSource={sum.anonymous_feedback}
+            rowKey={(r) => r.created_at}
           />
         </Card>
       )}
@@ -413,6 +509,11 @@ function perfLevel(s: number): string {
   if (s >= 3.5) return "meet";
   if (s >= 3.0) return "below_part";
   return "below";
+}
+
+// 历史绩效价值观：三维取其一（桌面表格与移动端卡片共用）
+function historyValueGrade(r: HistoryPerf): string {
+  return VALUE_LABEL[r.final_value_belief ?? r.final_value_team ?? r.final_value_growth ?? ""] ?? "-";
 }
 
 // ========== 历史目标（线下导入，只读快照） ==========
@@ -601,27 +702,44 @@ function HistoricalEvaluationsSection({ userId, isMobile }: { userId: number; is
                       {ev.detail.peers.length > 0 && (
                         <div>
                           <Typography.Title level={5} style={{ marginTop: 0 }}>互评（评价人匿名）</Typography.Title>
-                          <Table
-                            size="small"
-                            rowKey="index"
-                            pagination={false}
-                            dataSource={ev.detail.peers}
+                          {/* 桌面端：表格；移动端：卡片列表 */}
+                          <div className="pms-responsive-table">
+                            <Table
+                              size="small"
+                              rowKey="index"
+                              pagination={false}
+                              dataSource={ev.detail.peers}
+                              columns={[
+                                { title: "互评", dataIndex: "index", width: 64, render: (v: number) => `互评${v}` },
+                                {
+                                  title: "分数",
+                                  dataIndex: "score",
+                                  width: 80,
+                                  render: (v: number | null) => (v != null ? v.toFixed(2) : "-"),
+                                },
+                                {
+                                  title: "评语",
+                                  dataIndex: "comment",
+                                  render: (v: string | null) => (
+                                    <span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>
+                                  ),
+                                },
+                              ]}
+                            />
+                          </div>
+                          <TableCardList
                             columns={[
-                              { title: "互评", dataIndex: "index", width: 64, render: (v: number) => `互评${v}` },
-                              {
-                                title: "分数",
-                                dataIndex: "score",
-                                width: 80,
-                                render: (v: number | null) => (v != null ? v.toFixed(2) : "-"),
-                              },
+                              { title: "互评", render: (p) => `互评${p.index}` },
+                              { title: "分数", render: (p) => (p.score != null ? p.score.toFixed(2) : "-") },
                               {
                                 title: "评语",
-                                dataIndex: "comment",
-                                render: (v: string | null) => (
-                                  <span style={{ whiteSpace: "pre-wrap" }}>{v ?? "-"}</span>
+                                render: (p) => (
+                                  <span style={{ whiteSpace: "pre-wrap" }}>{p.comment ?? "-"}</span>
                                 ),
                               },
                             ]}
+                            dataSource={ev.detail.peers}
+                            rowKey={(p) => p.index}
                           />
                         </div>
                       )}
@@ -644,6 +762,14 @@ const OBJ_STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
   approved: { text: "已确认", type: "success" },
   locked: { text: "已锁定", type: "primary" },
 };
+
+// 桌面表格与移动端卡片共用同一套状态渲染
+function objectiveStatusTag(v: string) {
+  if (!v) return "-";
+  const s: { text: string; type: StatusType } =
+    OBJ_STATUS_LABEL[v] ?? { text: v, type: "default" };
+  return <StatusTag type={s.type}>{s.text}</StatusTag>;
+}
 
 function ObjectivesReviewSection({
   objectiveCycleId,
@@ -766,28 +892,38 @@ function ObjectivesReviewSection({
         <Alert type="warning" message="员工尚未填写目标" />
       ) : (
         <>
-          <Table
-            rowKey="id"
-            size="small"
-            pagination={false}
-            tableLayout="fixed"
-            dataSource={objectives}
-            columns={[
-              { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-              { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-              { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-              { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
-              {
-                title: "状态",
-                dataIndex: "status",
-                render: (v) => {
-                  if (!v) return "-";
-                  const s: { text: string; type: StatusType } =
-                    OBJ_STATUS_LABEL[v] ?? { text: v, type: "default" };
-                  return <StatusTag type={s.type}>{s.text}</StatusTag>;
+          {/* 桌面端：表格 */}
+          <div className="pms-responsive-table">
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              tableLayout="fixed"
+              dataSource={objectives}
+              columns={[
+                { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  render: (v) => objectiveStatusTag(v),
                 },
-              },
+              ]}
+            />
+          </div>
+          {/* 移动端：卡片列表 */}
+          <TableCardList<ObjectiveView>
+            columns={[
+              { title: "目标", render: (o) => o.title },
+              { title: "描述", render: (o) => o.description || "-" },
+              { title: "衡量标准", render: (o) => o.measure_criteria || "-" },
+              { title: "权重", render: (o) => `${o.weight}%` },
+              { title: "状态", render: (o) => objectiveStatusTag(o.status) },
             ]}
+            dataSource={objectives}
+            rowKey={(o) => o.id}
           />
           {canEdit && pendingCount > 0 && (
             <div style={{ marginTop: 16 }}>
@@ -844,6 +980,7 @@ function ObjectivesReviewSection({
 
 export default function LeaderEvalDetail() {
   const { cycleId, userId } = useParams();
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 移动端 Collapse 展开项；null 表示用户尚未操作，使用按状态的智能默认
@@ -853,16 +990,64 @@ export default function LeaderEvalDetail() {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
 
+  // 上级评估草稿：localStorage 按周期+被评估人隔离，仅服务端无已提交内容时恢复一次
+  const draftKey = `pms_leader_eval_draft_${cycleId}_${userId}`;
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftRestored = useRef(false);
+
   async function reload() {
     const r = await api.get<Detail>(`/v1/cycles/${cycleId}/users/${userId}/detail`);
     setDetail(r.data);
-    if (r.data.superior_evaluation) form.setFieldsValue(r.data.superior_evaluation);
+    if (r.data.superior_evaluation) {
+      // 服务端已有数据时以服务端为准，不恢复草稿
+      form.setFieldsValue(r.data.superior_evaluation);
+    } else if (!draftRestored.current) {
+      draftRestored.current = true;
+      // 隐私模式下 localStorage 访问可能抛 SecurityError，兜底跳过草稿恢复
+      let raw: string | null = null;
+      try {
+        raw = localStorage.getItem(draftKey);
+      } catch {
+        raw = null;
+      }
+      if (raw) {
+        try {
+          form.setFieldsValue(JSON.parse(raw) as Partial<EvalView>);
+          message.info("已恢复上次未提交的草稿");
+        } catch {
+          localStorage.removeItem(draftKey);
+        }
+      }
+    }
   }
 
   useEffect(() => {
+    // 切换被评估人（含"下一位"跳转）时重置表单与草稿恢复标记
+    draftRestored.current = false;
+    form.resetFields();
     reload().catch(() => message.error("加载失败"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId, userId]);
+
+  // 组件卸载时清掉未触发的防抖计时器
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, []);
+
+  // 表单值变化时防抖 500ms 写入草稿
+  function onValuesChange() {
+    if (!detail || detail.cycle.status !== "in_progress") return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(form.getFieldsValue()));
+      } catch {
+        // localStorage 不可用（隐私模式/超限）时静默跳过草稿
+      }
+    }, 500);
+  }
 
   async function onSubmit(values: EvalView) {
     // 界面只填单项价值观，提交时展开为后端三维度字段（甲事例校验由后端 validate_value_grades 处理）
@@ -874,11 +1059,36 @@ export default function LeaderEvalDetail() {
         expandValueGrades(values)
       );
       message.success("上级评估已提交");
+      localStorage.removeItem(draftKey);
       await reload();
+      await promptNextPending();
     } catch (e) {
       message.error(formatError(e, "提交失败"));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // 提交成功后：若还有已自评待评估的下属，提示快捷跳转到下一位
+  async function promptNextPending() {
+    try {
+      const r = await api.get<{ items: PendingParticipant[]; total: number }>(
+        `/v1/cycles/${cycleId}/participants`,
+        { params: { only_subordinates: true, page_size: 9999 } }
+      );
+      const next = r.data.items.find(
+        (p) => p.status === "self_done" && p.user_id !== Number(userId)
+      );
+      if (!next) return;
+      Modal.confirm({
+        title: "继续评估下一位？",
+        content: `${next.user_name} 已提交自评，等待上级评估`,
+        okText: "去评估",
+        cancelText: "留在本页",
+        onOk: () => navigate(`/leader/${cycleId}/users/${next.user_id}`),
+      });
+    } catch {
+      // 列表拉取失败不影响已提交的评估结果
     }
   }
 
@@ -941,21 +1151,34 @@ export default function LeaderEvalDetail() {
         size="small"
         extra={<Link to={`/trend/${userId}`}>查看趋势</Link>}
       >
-        <Table
-          rowKey="cycle_id"
-          size="small"
-          pagination={false}
-          dataSource={detail.history_perf}
+        {/* 桌面端：表格 */}
+        <div className="pms-responsive-table">
+          <Table
+            rowKey="cycle_id"
+            size="small"
+            pagination={false}
+            dataSource={detail.history_perf}
+            columns={[
+              { title: "周期", dataIndex: "cycle_name" },
+              { title: "业绩分", dataIndex: "final_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
+              { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
+              {
+                title: "价值观",
+                render: (_: unknown, r: HistoryPerf) => historyValueGrade(r),
+              },
+            ]}
+          />
+        </div>
+        {/* 移动端：卡片列表 */}
+        <TableCardList<HistoryPerf>
           columns={[
             { title: "周期", dataIndex: "cycle_name" },
-            { title: "业绩分", dataIndex: "final_perf_score", render: (v) => v?.toFixed(2) ?? "-" },
-            { title: "等级", dataIndex: "final_perf_level", render: (v) => PERF_LEVEL_LABEL[v] ?? "-" },
-            {
-              title: "价值观",
-              render: (_: unknown, r: HistoryPerf) =>
-                VALUE_LABEL[r.final_value_belief ?? r.final_value_team ?? r.final_value_growth ?? ""] ?? "-",
-            },
+            { title: "业绩分", render: (r) => r.final_perf_score?.toFixed(2) ?? "-" },
+            { title: "等级", render: (r) => (r.final_perf_level ? PERF_LEVEL_LABEL[r.final_perf_level] ?? "-" : "-") },
+            { title: "价值观", render: (r) => historyValueGrade(r) },
           ]}
+          dataSource={detail.history_perf}
+          rowKey={(r) => r.cycle_id}
         />
       </Card>
     ) : null;
@@ -964,7 +1187,7 @@ export default function LeaderEvalDetail() {
     <Card size="small" type="inner" title={`关联目标周期：${detail.objective_cycle.name}`}>
       <span>
         {detail.objective_cycle.start_date} ~ {detail.objective_cycle.end_date}，状态：
-        <StatusTag>{detail.objective_cycle.status}</StatusTag>
+        <StatusTag>{OBJECTIVE_CYCLE_STATUS_LABEL[detail.objective_cycle.status] ?? detail.objective_cycle.status}</StatusTag>
       </span>
     </Card>
   ) : null;
@@ -1038,6 +1261,7 @@ export default function LeaderEvalDetail() {
         disabled={readonly || !selfDone}
         onFinish={onSubmit}
         onFinishFailed={onFinishFailed}
+        onValuesChange={onValuesChange}
       >
         <Form.Item
           name="perf_score"
@@ -1063,11 +1287,15 @@ export default function LeaderEvalDetail() {
 
   return (
     <div className={showActions ? "has-bottom-actions" : undefined}>
+      <Space style={{ marginBottom: 16 }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
+          返回列表
+        </Button>
+      </Space>
       {isMobile ? (
-        // 移动端：Collapse 分块，每屏只展开一个区块
+        // 移动端：Collapse 分块，可同时展开多个区块（对照目标/自评/互评）
         // 智能默认：员工已自评（self_done/leader_done/...）展开上级评估，否则先看自评
         <Collapse
-          accordion
           activeKey={collapseActive ?? [selfDone ? "superior" : "self"]}
           onChange={(k) => setCollapseActive(Array.isArray(k) ? k : k ? [k] : [])}
           items={[

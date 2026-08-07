@@ -2,7 +2,7 @@
 // 两种入口：
 //   - 上级/HR：从下属列表点进来 → 写面谈记录
 //   - 员工：从首页 → 查看上级对自己的反馈 → 确认/有异议
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   Alert,
@@ -14,13 +14,15 @@ import {
   Modal,
   Space,
   Spin,
-  Tag,
   message,
 } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import { ROLE } from "@/App";
+import BottomActions from "@/components/ui/BottomActions";
+import StatusTag from "@/components/ui/StatusTag";
+import type { StatusType } from "@/components/ui/StatusTag";
 
 
 interface FeedbackData {
@@ -42,10 +44,10 @@ const STATUS_LABEL: Record<string, string> = {
   confirmed: "已确认",
   disputed: "有异议",
 };
-const STATUS_COLOR: Record<string, string> = {
-  pending: "orange",
-  confirmed: "green",
-  disputed: "red",
+const STATUS_TAG_TYPE: Record<string, StatusType> = {
+  pending: "warning",
+  confirmed: "success",
+  disputed: "danger",
 };
 
 export default function Feedback() {
@@ -57,6 +59,10 @@ export default function Feedback() {
   const [saving, setSaving] = useState(false);
   const [disputing, setDisputing] = useState(false);
   const [disputeComment, setDisputeComment] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [disputeSaving, setDisputeSaving] = useState(false);
+  // 竞态防护：快速切换被反馈人时，旧请求的响应不得写入新目标的表单
+  const loadSeq = useRef(0);
 
   // 目标用户：如果 URL 有 userId 就是看/写别人的；没有就是看自己的
   const targetId = userId ? Number(userId) : user.id;
@@ -66,13 +72,16 @@ export default function Feedback() {
 
   async function load() {
     setLoadError(null);
+    const seq = ++loadSeq.current;
     try {
       const r = await api.get(`/v1/feedback/cycles/${cycleId}/users/${targetId}`);
+      if (seq !== loadSeq.current) return; // 已有更新的请求发出，丢弃旧响应
       setFb(r.data);
       if (r.data) {
         form.setFieldsValue(r.data);
       }
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       // 请求失败（403/500 等）不能伪装成"暂无记录"，要明确报错
       const msg = formatError(e, "加载反馈记录失败");
       setFb(null);
@@ -95,15 +104,18 @@ export default function Feedback() {
   }
 
   async function onConfirm() {
+    setConfirming(true);
     try {
       await api.post(`/v1/feedback/cycles/${cycleId}/confirm`, { action: "confirmed" });
       message.success("已确认收到");
       await load();
     } catch (e) { message.error(formatError(e, "操作失败")); }
+    finally { setConfirming(false); }
   }
 
   async function onDispute() {
     if (!disputeComment.trim()) { message.error("请填写异议原因"); return; }
+    setDisputeSaving(true);
     try {
       await api.post(`/v1/feedback/cycles/${cycleId}/confirm`, {
         action: "disputed",
@@ -113,6 +125,7 @@ export default function Feedback() {
       setDisputing(false);
       await load();
     } catch (e) { message.error(formatError(e, "操作失败")); }
+    finally { setDisputeSaving(false); }
   }
 
   if (fb === undefined) {
@@ -123,9 +136,16 @@ export default function Feedback() {
     );
   }
 
+  // 上级填面谈记录时长表单用底部固定提交栏（避免移动端键盘遮挡），容器同步腾出空间
+  const showBottomActions = !loadError && canWrite;
+
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%", maxWidth: 800 }}>
-      <Card title="绩效反馈面谈">
+    <Space
+      direction="vertical"
+      size="large"
+      style={{ width: "100%", maxWidth: 800 }}
+      className={showBottomActions ? "has-bottom-actions" : undefined}
+    >      <Card title="绩效反馈面谈">
         {loadError && (
           <Alert type="error" showIcon message={loadError} style={{ marginBottom: 16 }} />
         )}
@@ -133,7 +153,9 @@ export default function Feedback() {
           <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="面谈人">{fb.interviewer_name}</Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={STATUS_COLOR[fb.confirm_status]}>{STATUS_LABEL[fb.confirm_status]}</Tag>
+              <StatusTag type={STATUS_TAG_TYPE[fb.confirm_status] ?? "default"}>
+                {STATUS_LABEL[fb.confirm_status] ?? fb.confirm_status}
+              </StatusTag>
             </Descriptions.Item>
             <Descriptions.Item label="创建时间">{fb.created_at}</Descriptions.Item>
             {fb.confirmed_at && <Descriptions.Item label="确认时间">{fb.confirmed_at}</Descriptions.Item>}
@@ -154,10 +176,12 @@ export default function Feedback() {
               <Form.Item name="next_goals" label="下阶段目标/期望" rules={[{ required: true }]}>
                 <Input.TextArea rows={3} placeholder="对下一周期的期望和方向" />
               </Form.Item>
-              <Form.Item>
-                <Button type="primary" htmlType="submit" loading={saving}>
-                  {fb ? "更新面谈记录" : "提交面谈记录"}
-                </Button>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <BottomActions>
+                  <Button type="primary" htmlType="submit" loading={saving}>
+                    {fb ? "更新面谈记录" : "提交面谈记录"}
+                  </Button>
+                </BottomActions>
               </Form.Item>
             </Form>
           </>
@@ -176,7 +200,7 @@ export default function Feedback() {
 
             {fb.confirm_status === "pending" && (
               <Space style={{ marginTop: 16 }}>
-                <Button type="primary" onClick={onConfirm}>确认收到</Button>
+                <Button type="primary" onClick={onConfirm} loading={confirming}>确认收到</Button>
                 <Button danger onClick={() => setDisputing(true)}>有异议</Button>
               </Space>
             )}
@@ -195,6 +219,7 @@ export default function Feedback() {
         open={disputing}
         title="填写异议"
         onOk={onDispute}
+        confirmLoading={disputeSaving}
         onCancel={() => setDisputing(false)}
       >
         <Input.TextArea
