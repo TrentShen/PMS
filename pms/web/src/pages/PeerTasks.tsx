@@ -1,7 +1,7 @@
 // 我的互评任务：列表 + 填评价（被评人不可见自己的互评内容）
 // 移动端：评价表单用全屏底部抽屉 + BottomActions 固定提交，避免键盘遮挡；
 // 提交成功后自动打开下一条待评价任务；桌面端保持 Modal
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -14,7 +14,6 @@ import {
   List,
   Modal,
   Progress,
-  Tag,
   Typography,
   message,
 } from "antd";
@@ -55,12 +54,22 @@ export default function PeerTasks() {
   const [saving, setSaving] = useState(false);
   const isMobile = useMobile();
 
+  // 互评草稿：localStorage 按任务隔离（与自评草稿同款模式），打开抽屉时恢复一次
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   async function load() {
     const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
     setTasks(r.data);
   }
   useEffect(() => {
-    load();
+    load().catch((e) => message.error(formatError(e, "加载互评任务失败")));
+  }, []);
+
+  // 组件卸载时清掉未触发的防抖计时器
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
   }, []);
 
   // 进度：已提交 / 已拒绝都计为已处理
@@ -70,6 +79,35 @@ export default function PeerTasks() {
   function openEdit(t: PeerTask) {
     setEditing(t);
     form.resetFields();
+    const key = `pms_peer_draft_${t.id}`;
+    // 隐私模式下 localStorage 抛 SecurityError，兜底跳过草稿恢复（同 stores/auth.ts safeGet）
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(key);
+    } catch {
+      raw = null;
+    }
+    if (raw) {
+      try {
+        form.setFieldsValue(JSON.parse(raw) as Partial<PeerEvalFormValues>);
+        message.info("已恢复上次未提交的草稿");
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+
+  // 表单值变化时防抖 500ms 写入草稿
+  function onValuesChange() {
+    if (!editing) return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      try {
+        localStorage.setItem(`pms_peer_draft_${editing.id}`, JSON.stringify(form.getFieldsValue()));
+      } catch {
+        // localStorage 不可用（隐私模式/超限）时静默跳过草稿
+      }
+    }, 500);
   }
 
   async function onSubmit() {
@@ -77,12 +115,18 @@ export default function PeerTasks() {
     let v: PeerEvalFormValues;
     try {
       v = await form.validateFields();
-    } catch {
-      return; // 校验失败：Form 已展示错误提示，阻止提交
+    } catch (err) {
+      // 校验失败：滚动定位到第一个错误字段（全屏抽屉里错误可能在视口外），阻止提交
+      const errorFields = (err as { errorFields?: { name: (string | number)[] }[] }).errorFields;
+      if (errorFields && errorFields.length > 0) {
+        form.scrollToField(errorFields[0].name);
+      }
+      return;
     }
     setSaving(true);
     try {
       await api.post(`/v1/peer/tasks/${editing.id}/submit`, expandValueGrades(v));
+      localStorage.removeItem(`pms_peer_draft_${editing.id}`);
       form.resetFields();
       const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
       setTasks(r.data);
@@ -90,7 +134,7 @@ export default function PeerTasks() {
       const next = r.data.find((t) => t.status === "pending") ?? null;
       if (next) {
         message.success(`互评已提交，继续评价下一位：${next.target_name}`);
-        setEditing(next);
+        openEdit(next);
       } else {
         message.success("互评已提交，所有互评任务均已处理");
         setEditing(null);
@@ -122,8 +166,8 @@ export default function PeerTasks() {
   }
 
   function statusTag(t: PeerTask) {
-    if (t.status === "pending") return <Tag color="orange">待评价</Tag>;
-    if (t.status === "submitted") return <Tag color="green">已提交</Tag>;
+    if (t.status === "pending") return <StatusTag type="warning">待评价</StatusTag>;
+    if (t.status === "submitted") return <StatusTag type="success">已提交</StatusTag>;
     return <StatusTag type="default">已拒绝</StatusTag>;
   }
 
@@ -155,7 +199,7 @@ export default function PeerTasks() {
   }
 
   const evalForm = (
-    <Form form={form} layout="vertical">
+    <Form form={form} layout="vertical" onValuesChange={onValuesChange}>
       <Form.Item
         name="perf_score"
         label="业绩评分（1-5，0.25 分段）"
@@ -192,7 +236,8 @@ export default function PeerTasks() {
         <Empty description="暂无互评任务" />
       ) : (
         <List
-          dataSource={tasks}
+          // 待评价排前、已完成在后，组内保持原顺序（sort 稳定）
+          dataSource={[...tasks].sort((a, b) => Number(a.status !== "pending") - Number(b.status !== "pending"))}
           renderItem={(t) => (
             <List.Item actions={actionsOf(t)}>
               <List.Item.Meta

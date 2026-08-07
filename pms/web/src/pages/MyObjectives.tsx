@@ -99,14 +99,30 @@ export default function MyObjectives() {
     setItems(next);
   }
 
+  // 编辑中的 items 与已保存 objectives 是否有差异（用于取消编辑时的防误丢确认）
+  function isDirty() {
+    if (items.length !== objectives.length) return true;
+    return items.some((item, idx) => {
+      const o = objectives[idx];
+      return (
+        !o ||
+        item.title !== o.title ||
+        item.description !== o.description ||
+        item.measure_criteria !== o.measure_criteria ||
+        item.weight !== o.weight
+      );
+    });
+  }
+
   async function onSave() {
     const total = items.reduce((s, i) => s + (i.weight || 0), 0);
     if (total !== 100) {
       message.error(`权重总和必须为 100，当前为 ${total}`);
       return;
     }
-    if (items.some((i) => !i.title.trim())) {
-      message.error("目标标题不能为空");
+    const emptyTitleIdx = items.findIndex((i) => !i.title.trim());
+    if (emptyTitleIdx >= 0) {
+      message.error(`目标 ${emptyTitleIdx + 1} 的重点工作不能为空`);
       return;
     }
     setLoading(true);
@@ -182,29 +198,11 @@ export default function MyObjectives() {
               >
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                   <div>
-                    <div style={FIELD_LABEL_STYLE}>目标标题</div>
+                    <div style={FIELD_LABEL_STYLE}>重点工作</div>
                     <Input
-                      placeholder="例：完成 Q3 销售额 500 万"
+                      placeholder="例：独立完成 XX 模块的开发与上线"
                       value={item.title}
                       onChange={(e) => updateRow(idx, "title", e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <div style={FIELD_LABEL_STYLE}>目标描述</div>
-                    <Input.TextArea
-                      autoSize={{ minRows: 2 }}
-                      placeholder="目标的背景、范围与关键交付物"
-                      value={item.description}
-                      onChange={(e) => updateRow(idx, "description", e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <div style={FIELD_LABEL_STYLE}>衡量标准</div>
-                    <Input.TextArea
-                      autoSize={{ minRows: 2 }}
-                      placeholder="如何算达成（量化口径 / 验收方式）"
-                      value={item.measure_criteria}
-                      onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)}
                     />
                   </div>
                   <div>
@@ -218,6 +216,24 @@ export default function MyObjectives() {
                       placeholder="权重"
                       value={item.weight || undefined}
                       onChange={(v) => updateRow(idx, "weight", v ?? 0)}
+                    />
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>关键成果</div>
+                    <Input.TextArea
+                      rows={2}
+                      placeholder="本目标要交付的关键成果/交付物，可逐条列出"
+                      value={item.description}
+                      onChange={(e) => updateRow(idx, "description", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <div style={FIELD_LABEL_STYLE}>衡量标准</div>
+                    <Input.TextArea
+                      rows={2}
+                      placeholder="如何算达成（4分及5分需写出分项考核标准）"
+                      value={item.measure_criteria}
+                      onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)}
                     />
                   </div>
                 </Space>
@@ -238,7 +254,18 @@ export default function MyObjectives() {
           </Space>
         </Card>
         <BottomActions>
-          <Button onClick={() => setEditing(false)}>取消</Button>
+          {isDirty() ? (
+            <Popconfirm
+              title="修改未保存，确定放弃？"
+              okText="放弃修改"
+              cancelText="继续编辑"
+              onConfirm={() => setEditing(false)}
+            >
+              <Button>取消</Button>
+            </Popconfirm>
+          ) : (
+            <Button onClick={() => setEditing(false)}>取消</Button>
+          )}
           <Button type="primary" onClick={onSave} loading={loading}>
             保存草稿
           </Button>
@@ -318,7 +345,7 @@ export default function MyObjectives() {
                   </Typography.Text>
                 </div>
                 <div style={{ marginTop: 8 }}>
-                  <div style={FIELD_LABEL_STYLE}>目标描述</div>
+                  <div style={FIELD_LABEL_STYLE}>关键成果</div>
                   <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
                     {o.description || "-"}
                   </Typography.Paragraph>

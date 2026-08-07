@@ -24,7 +24,7 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
         甲=持续超越期望，乙=基本符合价值观要求，丙=不符合基本要求（评"甲"时必须填写具体事例）
       </Typography.Text>
-      <div style={{ marginBottom: 16, padding: "12px 16px", background: "#fafafa", borderRadius: 8 }}>
+      <div style={{ marginBottom: 16, padding: "12px 16px", background: "var(--color-surface-raised, #fafafa)", borderRadius: 8 }}>
         <Form.Item
           name={`${prefix}_belief_grade`}
           label="价值观评分"
@@ -42,6 +42,17 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
         <Form.Item
           name={`${prefix}_belief_example`}
           label="事例（选甲时必填）"
+          dependencies={[`${prefix}_belief_grade`]}
+          rules={[
+            ({ getFieldValue }) => ({
+              validator(_, value: string | undefined) {
+                if (getFieldValue(`${prefix}_belief_grade`) === "jia" && (!value || !value.trim())) {
+                  return Promise.reject(new Error("选择甲等评价时，请填写具体事例"));
+                }
+                return Promise.resolve();
+              },
+            }),
+          ]}
           style={{ marginBottom: 0 }}
           extra="从信念、团队协作、学习成长三方面综合评价"
         >
