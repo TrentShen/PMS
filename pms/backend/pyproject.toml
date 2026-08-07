@@ -14,7 +14,7 @@ dependencies = [
     "pydantic-settings>=2.6,<3.0",
     # 数据库驱动
     "pymysql>=1.1,<2.0",
-    "cryptography>=43,<50.0",
+    "cryptography>=43,<51.0",
     # 迁移
     "alembic>=1.13,<2.0",
     # Redis

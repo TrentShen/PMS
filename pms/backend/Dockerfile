@@ -3,11 +3,15 @@ FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
 
 WORKDIR /app
 
 # 先拷依赖文件，利用 Docker 层缓存
+# 注:服务器在国内机房,PyPI 直连不稳定,走阿里云镜像(2026-08-05 部署曾因此卡 17 分钟)
 COPY requirements.txt /app/
 RUN pip install -r requirements.txt
 

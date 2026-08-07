@@ -57,10 +57,39 @@ if [[ -n "$OLD_BACKUPS" ]]; then
     echo "$OLD_BACKUPS" | xargs rm -rf
 fi
 
-# ---------- 4. 构建并启动 ----------
-info "构建镜像并启动服务..."
-$DOCKER_COMPOSE -f deploy/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-$DOCKER_COMPOSE -f deploy/docker-compose.prod.yml up -d --build
+# ---------- 4. 预拉基础镜像 + 先构建后切换 ----------
+# 教训(2026-08-05 502 事故):down 之后 build 失败会导致服务全灭。
+# 因此:先预拉基础镜像(带重试,规避 docker.io 网络抖动),再构建;
+# 构建失败直接中止,旧容器保持运行,服务不受影响。
+info "预拉取基础镜像(失败重试 3 次)..."
+BASE_IMAGES=(python:3.12-slim node:20-alpine alpine:latest mysql:8.0 redis:7-alpine nginx:1.27-alpine)
+for img in "${BASE_IMAGES[@]}"; do
+    pulled=0
+    for attempt in 1 2 3; do
+        if docker pull "$img" >/dev/null 2>&1; then
+            pulled=1
+            break
+        fi
+        warn "拉取 $img 失败,第 $attempt 次重试..."
+        sleep 5
+    done
+    if [[ "$pulled" -eq 0 ]]; then
+        # 本地已有该镜像则可继续(build 会用本地缓存);否则中止
+        if docker image inspect "$img" >/dev/null 2>&1; then
+            warn "$img 拉取失败,但本地已存在,继续构建"
+        else
+            error "$img 拉取失败且本地不存在,中止部署(现有服务未受影响)"
+        fi
+    fi
+done
+info "✅ 基础镜像就绪"
+
+info "构建镜像(先构建,成功后再切换)..."
+if ! $DOCKER_COMPOSE -f deploy/docker-compose.prod.yml build; then
+    error "镜像构建失败,已中止。现有服务未受影响,修复后重新部署即可"
+fi
+info "✅ 构建成功,切换容器..."
+$DOCKER_COMPOSE -f deploy/docker-compose.prod.yml up -d --remove-orphans
 
 # ---------- 5. 等待后端就绪 ----------
 info "等待后端就绪..."

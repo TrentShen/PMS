@@ -3,7 +3,7 @@
 # 参考招聘系统 deploy/expect-deploy.tcl 实现
 # 每次执行均会交互式询问 SSH 密码，不读取环境变量
 
-set timeout 300
+set timeout 1800
 
 # ---------- 服务器配置 ----------
 set server "root@10.222.4.38"
