@@ -12,3 +12,11 @@
 # Docker 镜像备份（体积大，不进入版本控制）
 pms_app_images.tar
 pms_images.tar
+
+# 本地过程稿与临时资产（未来新增文件自动忽略）
+*.draft.md
+docs/drafts/
+notes/
+*.zip
+ui-preview-*/
+design-prototype*.zip
