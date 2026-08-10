@@ -44,7 +44,7 @@ export function formatError(e: unknown, fallback: string): string {
   const detail = err.response?.data?.detail;
   if (typeof detail === "string" && detail.trim()) return detail;
   if (typeof detail === "object" && detail !== null && "errors" in detail && Array.isArray(detail.errors)) {
-    // toast 场景 \n 会被 HTML 折叠成空格，用顿号分隔保证可读
+    // toast 场景 \n 会被 HTML 折叠成空格，用全角分号分隔保证可读
     return detail.errors.join("；");
   }
   return err.message ?? fallback;

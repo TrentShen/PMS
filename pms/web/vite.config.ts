@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -34,5 +35,11 @@ export default defineConfig({
         },
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["src/test/setup.ts"],
+    // 测试文件与源码同在 src 下，构建靠 tree-shaking 不会打进产物
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

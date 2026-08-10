@@ -26,11 +26,11 @@ env: 生产跑在公司服务器，开发本地 Docker
 | 库 | 版本 | 用途 |
 |---|------|------|
 | fastapi | ^0.115 | Web 框架 |
-| sqlmodel | ^0.0.22 | ORM（SQLAlchemy 2.0 封装） |
+| sqlmodel | ^0.0.22 | ORM（SQLAlchemy 2.0 封装，同步 Session） |
 | alembic | ^1.14 | 数据库迁移 |
 | pydantic | ^2.10 | 数据校验 / Settings |
 | pydantic-settings | ^2.7 | 环境变量配置 |
-| aiomysql | ^0.2 | 异步 MySQL 驱动 |
+| pymysql | ^1.1 | MySQL 驱动（同步） |
 | redis | ^5.2 | 缓存 / 限流 |
 | APScheduler | ^3.11 | 定时任务（通讯录同步） |
 | loguru | ^0.7 | 日志 |
@@ -46,11 +46,11 @@ env: 生产跑在公司服务器，开发本地 Docker
 |---|------|------|
 | react | ^18.3 | UI 框架 |
 | typescript | ^5.6 | 类型系统 |
-| vite | ^6.0 | 构建工具 |
+| vite | ^5.4 | 构建工具 |
 | antd | ^5.24 | UI 组件库 |
 | zustand | ^5.0 | 状态管理 |
 | axios | ^1.7 | HTTP 客户端 |
-| react-router-dom | ^7.1 | 路由 |
+| react-router-dom | ^6.27 | 路由 |
 | @ant-design/charts | ^2.2 | 图表（校准分布图等） |
 | xlsx | ^0.18 | Excel 前端解析 |
 
@@ -138,10 +138,10 @@ from pms.database.session import get_db
 - **必须**：Pydantic / SQLModel 字段加类型
 - **禁止**：使用 `Any` 逃避类型检查（除非真的无法确定）
 
-#### 异步
-- 数据库操作使用异步会话（`AsyncSession`）
-- 路由函数声明 `async def`
-- I/O 阻塞操作（文件读写、HTTP 请求）使用 `await`
+#### 同步风格
+- 数据库操作使用同步 `Session`（`sqlmodel.Session`，见 `database/session.py`）
+- 路由函数声明普通 `def`（项目无 async 路由，100 人团队同步足够，禁止引入 async/await 混用）
+- I/O 阻塞操作（文件读写、HTTP 请求）直接同步调用
 
 #### 时间处理
 - **禁止**：使用 `datetime.utcnow()`（Python 3.12 已废弃）
@@ -302,7 +302,7 @@ open http://localhost:8000/docs
 常见问题：
 - **ImportError**：检查 `sys.path` 和 `PYTHONPATH`，确保 `src` 在路径中
 - **Migration 失败**：检查 `alembic.ini` 的 `sqlalchemy.url`，确认数据库可连
-- **异步问题**：确认用了 `await`，确认函数声明了 `async def`
+- **数据库连接问题**：检查 `.env` 的 `MYSQL_HOST`/`MYSQL_PORT` 等配置，确认容器 `pms-mysql` 已启动
 
 ### 7.2 前端排查
 
