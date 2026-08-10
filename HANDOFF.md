@@ -1,7 +1,7 @@
 # HANDOFF.md — PMS 项目交接上下文
 
 > 写给后续接手开发的 AI(Codex)和人类协作者。
-> 最后更新:2026-08-05(Kimi Code 交接)。
+> 最后更新:2026-08-10(Codex 接手部署后刷新)。
 > 读法:先读本文 → 再按 §2 的清单深入 → 开工前核对 §3 的状态快照是否已过时。
 
 ---
@@ -32,17 +32,17 @@
 | `.workbuddy/memory/` | 逐日工作记录(2026-07-22 / 07-31 / 08-04 三份信息量最大,含大量踩坑记录) |
 | `docs/部署指南-PMS.md` | 部署与企微配置 |
 
-## 3. 当前状态快照(2026-08-05,使用前请重新核对)
+## 3. 当前状态快照(2026-08-10,使用前请重新核对)
 
 ### Git
-- `TrentShen/PMS` origin/main = `7c1b3e8`(自检修复已推)
-- **未提交改动(批次 1)**:AGENTS.md 纠偏、pyproject requires-python 收紧、删 init_db.py 与 import_objectives.py、/health 加探针 + test_health.py、前端 Vitest 骨架(7 用例 + CI 接入)、api.ts 注释修正
+- `TrentShen/PMS` origin/main = `919dcb1`(批次 1 + HANDOFF.md 已推送)
+- **未提交改动**:新增 `pms/deploy/bastion-deploy.sh`(堡垒机部署脚本,待确认是否入库);`design-prototype.zip`、`ui-preview-20260724/` 为设计稿/截图,待 owner 决定
 - `hr-trent` PR #13(同步 7c1b3e8 内容)**待人工合并**
 
 ### 生产
-- 线上版本 ≈ `74e1805`(8-05 上午部署,权限语义 + 安全加固 + 唯一约束)
-- **未上线**:`7c1b3e8`(前端自检修复)和批次 1 全部内容
-- 部署方式见 §5;迁移会自动跑(有 DB 备份兜底)
+- 线上版本 ≈ `919dcb1`(8-10 部署,批次 1:健康探针 + Vitest 骨架 + 清理孤儿脚本)
+- **部署方式**:本地 `pms/deploy/bastion-deploy.sh` 经 JumpServer 堡垒机 → `/opt/pms` → 执行 `remote-deploy.sh`
+- 迁移会自动跑,有 DB 备份兜底
 
 ### 测试基线
 - 后端:`cd pms/backend && .venv/bin/python -m pytest -q` → **197 passed**
@@ -51,7 +51,7 @@
 
 ## 4. 待办与待决策(按优先级)
 
-1. **生产部署**(随时可做):把 7c1b3e8 + 批次 1 一起上;部署后真机验证:企微登录回跳、iPad/手机校准页、首页"结果待发布"、/health 探针
+1. **生产部署** ✅ 已完成(2026-08-10):批次 1 已上;剩余真机验证:企微登录回跳、iPad/手机校准页、首页"结果待发布"(建议 owner 今天顺手点一遍)
 2. **端口回收**(等 owner 问运维):确认无人直连 3307/6379 后,删 docker-compose.prod.yml 的 mysql/redis ports 映射
 3. **K8s 迁移 2 个决策**(等 owner):① MySQL 集群内 StatefulSet vs 外部 RDS;② 定时任务:独立 scheduler Deployment + SCHEDULER_ENABLED 开关(推荐)vs K8s CronJob。背景见 `.workbuddy/memory/2026-07-31.md`
 4. **服务器密码轮换**(owner 已知,灰度期暂缓):MySQL 双密码 + Redis 设密码;正式推广前必做
@@ -61,9 +61,11 @@
 
 ### 部署(生产)
 ```bash
-cd pms && expect deploy/expect-deploy.tcl   # 交互式问 SSH 密码;或 DEPLOY_SSH_PASSWORD=xxx 环境变量
+cd pms && bash deploy/bastion-deploy.sh   # 经 JumpServer 堡垒机,无需 SSH 密码
 ```
-- 流程:本地打包 pms/ → scp 到 /opt/pms → 预拉基础镜像 → **先 build 后切换**(build 失败不影响在运行服务,8-05 强化)→ DB 备份 → alembic upgrade head → 健康检查
+旧方式(直连 10.222.4.38)已因网络策略失效,保留 `deploy/expect-deploy.tcl` 作为历史参考。
+- 流程:本地打包 pms/ → SFTP 上传 → 远程解压到 /opt/pms → 预拉基础镜像 → **先 build 后切换**(build 失败不影响在运行服务,8-05 强化)→ DB 备份 → alembic upgrade head → 健康检查
+- 关键参数默认从 `TrentShen-jumpserver.pem` + 资产 `10.206.32.8`(`/VM-10-222-4-38`)读取,可覆盖: `BASTION_ASSET`、`BASTION_SFTP_ROOT`、`BASTION_KEY`
 - **长任务防 SSH 断开**:关键操作用 nohup + 日志文件,本地轮询(参考 8-05 事故:expect 同步等待 pip install 会超时误杀)
 - 服务器 Docker Hub/PyPI 直连不稳:daemon.json 已配国内 mirror;Dockerfile 已走阿里云 pip 镜像;仍失败就先手动 `docker pull python:3.12-slim node:20-alpine alpine`
 - 备份:代码 /opt/pms/backup.<时间戳>/,数据库同目录 db.sql.gz(保留 10 份)
