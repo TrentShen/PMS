@@ -40,8 +40,7 @@ services:
       - ./.env.prod
     environment:
       - TZ=Asia/Shanghai
-    ports:
-      - "3307:3306"
+    # 不映射端口到宿主机：仅容器内网络访问（2026-08-10 确认无人直连 3307/6379 后回收）
     volumes:
       - pms_mysql_data:/var/lib/mysql
     command:
@@ -58,8 +57,7 @@ services:
     image: redis:7-alpine
     container_name: pms-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # 不映射端口到宿主机：仅容器内网络访问
     volumes:
       - pms_redis_data:/data
     command: ["redis-server", "--appendonly", "yes"]
