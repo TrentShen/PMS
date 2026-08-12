@@ -29,13 +29,14 @@
 | `docs/待决策事项-20260804.md` | **权限语义等产品决策的记录**(第六节"决策执行结果"是已定口径,不要反着改) |
 | `docs/PMS-前端全面自检-20260805.md` | 最近一次全面自检:发现、修复、复检、有意不修的 backlog |
 | `docs/PMS-Codex审计评估与修复计划-20260805.md` | Codex 审计核实 + 批次 1 已修、批次 2 待确认 |
+| `docs/PMS-飞书People能力对比与迭代建议-20260812.md` | 飞书 People 能力调研、PMS gap 分析、未来 Phase 1~3 迭代建议 |
 | `.workbuddy/memory/` | 逐日工作记录(2026-07-22 / 07-31 / 08-04 三份信息量最大,含大量踩坑记录) |
 | `docs/部署指南-PMS.md` | 部署与企微配置 |
 
 ## 3. 当前状态快照(2026-08-10,使用前请重新核对)
 
 ### Git
-- `TrentShen/PMS` origin/main = `919dcb1`(批次 1 + HANDOFF.md 已推送)
+- `TrentShen/PMS` origin/main = `4e2f2d2`(端口回收 + 飞书 People 能力对比文档已推送)
 - **未提交改动**:新增 `pms/deploy/bastion-deploy.sh`(堡垒机部署脚本,待确认是否入库);`design-prototype.zip`、`ui-preview-20260724/` 为设计稿/截图,待 owner 决定
 - `hr-trent` PR #13(同步 7c1b3e8 内容)**待人工合并**
 
@@ -52,7 +53,7 @@
 ## 4. 待办与待决策(按优先级)
 
 1. **生产部署** ✅ 已完成(2026-08-10):批次 1 已上;剩余真机验证:企微登录回跳、iPad/手机校准页、首页"结果待发布"(建议 owner 今天顺手点一遍)
-2. **端口回收**(等 owner 问运维):确认无人直连 3307/6379 后,删 docker-compose.prod.yml 的 mysql/redis ports 映射
+2. **端口回收** ✅ 已完成(2026-08-12):docker-compose.prod.yml 已移除 mysql/redis 宿主机 ports 映射
 3. **K8s 迁移 2 个决策**(等 owner):① MySQL 集群内 StatefulSet vs 外部 RDS;② 定时任务:独立 scheduler Deployment + SCHEDULER_ENABLED 开关(推荐)vs K8s CronJob。背景见 `.workbuddy/memory/2026-07-31.md`
 4. **服务器密码轮换**(owner 已知,灰度期暂缓):MySQL 双密码 + Redis 设密码;正式推广前必做
 5. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)
