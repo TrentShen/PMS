@@ -23,6 +23,7 @@ const LeaderEvalDetail = lazy(() => import("@/pages/LeaderEvalDetail"));
 const HrConsole = lazy(() => import("@/pages/HrConsole"));
 const AdminUsers = lazy(() => import("@/pages/AdminUsers"));
 const PeerTasks = lazy(() => import("@/pages/PeerTasks"));
+const PeerReview = lazy(() => import("@/pages/PeerReview"));
 const AnonymousFeedbackPage = lazy(() => import("@/pages/AnonymousFeedback"));
 const Calibration = lazy(() => import("@/pages/Calibration"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
@@ -110,6 +111,7 @@ export default function App() {
                 path="/leader/:cycleId/users/:userId"
                 element={<LeaderEvalDetail />}
               />
+              <Route path="/peer-review" element={<PeerReview />} />
             </Route>
 
             {/* 校准：dept_leader/HR + HR 部门 Leader（与后端口径一致，direct_leader 无权限） */}

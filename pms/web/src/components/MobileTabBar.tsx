@@ -7,16 +7,19 @@ import { useLocation, useNavigate } from "react-router-dom";
 interface MobileTabBarProps {
   /** 待办角标数：评估任务 + 目标制定 + 待互评任务 */
   todoCount: number;
+  /** 进行中周期是否开启互评：false 时隐藏「待办」Tab（与 Layout 菜单隐藏 /peer 入口口径一致） */
+  peerEnabled?: boolean;
 }
 
-export default function MobileTabBar({ todoCount }: MobileTabBarProps) {
+export default function MobileTabBar({ todoCount, peerEnabled = true }: MobileTabBarProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
   // 通知接口（/v1/notify/mine）返回的是发送状态而非已读状态，无未读数字段，故通知 Tab 不显示角标
+  // peerEnabled === false 时隐藏「待办」Tab；Tab 为 flex:1 布局，2 个 Tab 不会错位
   const tabs = [
     { key: "/", label: "首页", icon: <HomeOutlined />, badge: 0 },
-    { key: "/peer", label: "待办", icon: <TeamOutlined />, badge: todoCount },
+    ...(peerEnabled ? [{ key: "/peer", label: "待办", icon: <TeamOutlined />, badge: todoCount }] : []),
     { key: "/notifications", label: "通知", icon: <BellOutlined />, badge: 0 },
   ];
 

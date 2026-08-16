@@ -9,6 +9,7 @@ import { useAuth } from "@/stores/auth";
 import { hasAnyRole } from "@/components/RequireRole";
 import MobileTabBar from "@/components/MobileTabBar";
 import { api, formatError } from "@/services/api";
+import type { Cycle } from "@/services/api.types";
 
 
 const ROLE_LABEL: Record<string, string> = {
@@ -25,6 +26,7 @@ const PATH_TITLE: [string, string][] = [
   ["/objectives/", "目标制定"],
   ["/objective-cycles", "目标周期"],
   ["/leader", "下属评估"],
+  ["/peer-review", "互评名单"],
   ["/calibration", "绩效校准"],
   ["/feedback", "绩效反馈"],
   ["/probation/", "试用期详情"],
@@ -45,6 +47,30 @@ export default function AppLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [todoCount, setTodoCount] = useState(0);
+  // 进行中周期的环节开关：用于菜单隐藏。默认 true（失败/加载中不隐藏，页面内另有守卫）
+  const [switches, setSwitches] = useState({ peer: true, calibration: true });
+
+  // 拉取周期开关：有进行中周期时，按 enable_* 隐藏对应菜单入口；无周期/失败保持默认显示
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Cycle[]>("/v1/cycles")
+      .then((r) => {
+        if (cancelled) return;
+        const active = r.data.filter((c) => c.status === "in_progress");
+        if (active.length === 0) return;
+        setSwitches({
+          peer: active.some((c) => c.enable_peer_eval),
+          calibration: active.some((c) => c.enable_calibration),
+        });
+      })
+      .catch(() => {
+        // 菜单开关拉取失败不打扰用户，保持显示（页面内仍有开关守卫）
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname]);
 
   // 底部 TabBar 待办角标：评估任务 + 目标制定 + 待互评任务
   // 低频刷新：路由切换时重新拉取 + 60 秒轮询；失败静默（角标非关键路径）
@@ -77,15 +103,16 @@ export default function AppLayout() {
 
   // 菜单/入口权限基于当前生效角色（role），切换角色后菜单同步变化
 
-  // 构造菜单项；按角色过滤
+  // 构造菜单项；按角色过滤；互评/校准入口再按进行中周期的 enable_* 开关过滤
   const menuItems = [
     { key: "/", label: "首页" },
     hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/history", label: "历史绩效" },
     { key: "/notifications", label: "通知" },
-    { key: "/peer", label: "互评任务" },
+    switches.peer && { key: "/peer", label: "互评任务" },
     { key: "/anonymous", label: "匿名评价" },
     hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/leader", label: "下属评估" },
-    (hasAnyRole(user?.role, ["dept_leader", ...ROLE.HR]) || user?.has_hr_permission) && { key: "/calibration", label: "校准" },
+    hasAnyRole(user?.role, [...ROLE.LEADER]) && switches.peer && { key: "/peer-review", label: "互评名单" },
+    (hasAnyRole(user?.role, ["dept_leader", ...ROLE.HR]) || user?.has_hr_permission) && switches.calibration && { key: "/calibration", label: "校准" },
     (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission) && { key: "/probation", label: "试用期管理" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/objective-cycles", label: "目标周期" },
@@ -93,8 +120,11 @@ export default function AppLayout() {
     (hasAnyRole(user?.role, [...ROLE.ADMIN]) || user?.has_hr_permission) && { key: "/admin/users", label: "用户与权限" },
   ].filter(Boolean) as { key: string; label: string }[];
 
+  // 最长前缀优先：避免 /peer-review 命中 /peer、/hr/dashboard 命中 /hr
   const activeKey =
-    menuItems.find((m) => m.key !== "/" && location.pathname.startsWith(m.key))?.key ?? "/";
+    [...menuItems]
+      .filter((m) => m.key !== "/" && location.pathname.startsWith(m.key))
+      .sort((a, b) => b.key.length - a.key.length)[0]?.key ?? "/";
   const pageTitle =
     PATH_TITLE.find(([prefix]) => location.pathname.startsWith(prefix))?.[1] ??
     menuItems.find((m) => m.key === activeKey)?.label ??
@@ -164,7 +194,7 @@ export default function AppLayout() {
   return (
     <AntLayout style={{ minHeight: "100vh" }}>
       {/* 桌面端左侧边栏（≤1023px 由 CSS 隐藏，改用抽屉） */}
-      <AntLayout.Sider className="pms-sider" width={240} breakpoint="lg" collapsedWidth={0} trigger={null}>
+      <AntLayout.Sider className="pms-sider" width="var(--sidebar-width)" breakpoint="lg" collapsedWidth={0} trigger={null}>
         <div className="pms-sider-logo">
           <h4>MO绩效</h4>
         </div>
@@ -222,7 +252,7 @@ export default function AppLayout() {
       </AntLayout>
 
       {/* 移动端底部 Tab 导航（≤767px 由 CSS 显示，桌面端不渲染视觉差异） */}
-      <MobileTabBar todoCount={todoCount} />
+      <MobileTabBar todoCount={todoCount} peerEnabled={switches.peer} />
 
       {/* 移动端侧边抽屉 */}
       <Drawer
@@ -240,7 +270,7 @@ export default function AppLayout() {
         placement="left"
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
-        width={280}
+        width="var(--sidebar-drawer-width)"
         styles={{ body: { padding: 0 } }}
       >
         <Menu
