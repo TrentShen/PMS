@@ -871,6 +871,7 @@ def cycle_dashboard(
     perf_user_ids = [p.user_id for p in perf_participants]
 
     # 目标参与人（来自关联目标周期）
+    oc_participants: list = []
     objective_participant_count = 0
     if cycle.objective_cycle_id:
         oc_participants = session.exec(
@@ -881,6 +882,11 @@ def cycle_dashboard(
         if scope is not None:
             oc_participants = [p for p in oc_participants if p.user_id in scope]
         objective_participant_count = len(oc_participants)
+
+    # 目标制定进度：已提交（待审批/已确认）的目标参与人数
+    objective_submitted_count = len(
+        [p for p in oc_participants if p.status in ("pending_review", "approved")]
+    )
 
     # 自评完成数
     self_eval_submitted = 0
@@ -927,6 +933,38 @@ def cycle_dashboard(
                 PeerEvaluation.status == "submitted",
             )
         ).all())
+
+    # 校准进度：已定分（final_perf_score 非空）的参与人数
+    calibration_done = len([p for p in perf_participants if p.final_perf_score is not None])
+
+    # 审批进度：无审批记录视为校准中
+    approval = session.exec(
+        select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
+    ).first()
+    approval_status = approval.status if approval else "calibrating"
+
+    # 反馈进度：面谈记录已填写数 / 员工已确认（含异议）数
+    feedback_filled = 0
+    feedback_confirmed = 0
+    if perf_user_ids:
+        feedback_records = session.exec(
+            select(FeedbackRecord).where(
+                FeedbackRecord.cycle_id == cycle_id,
+                FeedbackRecord.user_id.in_(perf_user_ids),
+            )
+        ).all()
+        feedback_filled = len(feedback_records)
+        feedback_confirmed = len([r for r in feedback_records if r.confirm_status != "pending"])
+
+    # 结果分布：按最终绩效等级统计（进行中=校准定分情况，发布后=最终结果）
+    level_counts: dict[str, int] = {}
+    for p in perf_participants:
+        lv = p.final_perf_level or "unset"
+        level_counts[lv] = level_counts.get(lv, 0) + 1
+    result_distribution = [
+        {"level": lv, "count": level_counts.get(lv, 0)}
+        for lv in ["excellent", "exceed_part", "meet", "below_part", "below", "unset"]
+    ]
 
     # 按部门统计：自评完成进度 + 互评完成进度
     dept_self_progress: list[dict] = []
@@ -1009,6 +1047,7 @@ def cycle_dashboard(
     return {
         "cycle": CycleBrief.model_validate(cycle, from_attributes=True).model_dump(mode="json"),
         "objective_cycle_participant_count": objective_participant_count,
+        "objective_submitted_count": objective_submitted_count,
         "performance_participant_count": len(perf_participants),
         "self_eval_done": self_eval_submitted,
         "self_eval_total": len(perf_participants),
@@ -1016,6 +1055,13 @@ def cycle_dashboard(
         "peer_eval_done": peer_eval_submitted,
         "superior_eval_done": superior_eval_submitted,
         "superior_eval_total": len(perf_participants),
+        "calibration_done": calibration_done,
+        "calibration_total": len(perf_participants),
+        "approval_status": approval_status,
+        "feedback_filled": feedback_filled,
+        "feedback_confirmed": feedback_confirmed,
+        "feedback_total": len(perf_participants),
+        "result_distribution": result_distribution,
         "self_eval_progress_by_department": dept_self_progress,
         "peer_eval_progress_by_department": dept_peer_progress,
     }

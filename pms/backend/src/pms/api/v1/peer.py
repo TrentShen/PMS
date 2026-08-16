@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from pms.database.models.cycle import CycleParticipant, PerformanceCycle
+from pms.database.models.objective import Objective
 from pms.database.models.peer import AnonymousFeedback, PeerEvaluation, PeerInvitation
 from pms.database.models.user import User
 from pms.database.session import get_session
@@ -349,7 +350,7 @@ def approve_peer_list(
                 target_userids=notify_userids,
                 title="你被邀请参与互评",
                 description=f"你已被邀请为 {target.name} 的「{cycle.name}」互评人，请尽快完成评价。",
-                url="/peer/my-tasks",
+                url="/peer",
                 payload={"cycle_id": cycle.id, "target_user_id": target.id, "event": "peer_invitation_approved"},
             )
 
@@ -357,6 +358,70 @@ def approve_peer_list(
         "approved_tasks": approved_count,
         "total_peers": len([inv for inv in all_invs if inv.status == "approved"]),
     }
+
+
+# ============ Leader 侧：待审名单汇总（独立审核页用） ============
+
+class PeerReviewListItem(BaseModel):
+    user_id: int
+    name: str
+    position: str | None
+    pending_count: int
+    approved_count: int
+
+
+@router.get("/cycles/{cycle_id}/peer/review-list", response_model=list[PeerReviewListItem])
+def list_peer_review_list(
+    cycle_id: int,
+    session: Session = Depends(get_session),
+    current: User = Depends(require_fte),
+):
+    """各员工的互评名单待审汇总。Leader 看直属下属；HR/超管看全部参与人。"""
+    is_hr = has_any_role(current, "hrbp", "super_admin")
+    if not is_hr and not has_any_role(current, "direct_leader", "dept_leader"):
+        raise HTTPException(status_code=403, detail="无权限")
+
+    q = (
+        select(CycleParticipant, User)
+        .join(User, User.id == CycleParticipant.user_id)
+        .where(CycleParticipant.cycle_id == cycle_id)
+    )
+    if not is_hr:
+        # 与 participants?only_subordinates 同口径：直属下属
+        q = q.where(User.leader_userid == current.wecom_userid)
+    rows = session.exec(q).all()
+    if not rows:
+        return []
+
+    invitee_ids = [u.id for _, u in rows]
+    invs = session.exec(
+        select(PeerInvitation).where(
+            PeerInvitation.cycle_id == cycle_id,
+            PeerInvitation.invitee_user_id.in_(invitee_ids),
+        )
+    ).all()
+    pending_map: dict[int, int] = {}
+    approved_map: dict[int, int] = {}
+    for inv in invs:
+        if inv.status == "pending":
+            pending_map[inv.invitee_user_id] = pending_map.get(inv.invitee_user_id, 0) + 1
+        elif inv.status == "approved":
+            approved_map[inv.invitee_user_id] = approved_map.get(inv.invitee_user_id, 0) + 1
+
+    items = [
+        PeerReviewListItem(
+            user_id=u.id,
+            name=u.name,
+            position=u.position,
+            pending_count=pending_map.get(u.id, 0),
+            approved_count=approved_map.get(u.id, 0),
+        )
+        for _, u in rows
+        if u.id != current.id  # 自己不审自己
+    ]
+    # 有待审的排前面，其余保持原顺序（sort 稳定）
+    items.sort(key=lambda i: -i.pending_count)
+    return items
 
 
 # ============ 评价人视角：我的互评任务 ============
@@ -381,6 +446,24 @@ def list_my_peer_tasks(
             PerformanceCycle.status == "in_progress",
         )
     ).all()
+    # 批量取被评人目标（按目标周期+用户一次性查询，避免 N+1），评价时"有据可依"
+    # 只给互评人看已生效（approved/locked）的目标，草稿/待审批/被驳回的不作为评价依据
+    oc_ids = {cycle.objective_cycle_id for _, _, cycle in rows if cycle.objective_cycle_id}
+    target_ids = {pe.target_user_id for pe, _, _ in rows}
+    objectives_map: dict[tuple[int, int], list[Objective]] = {}
+    if oc_ids and target_ids:
+        objs = session.exec(
+            select(Objective)
+            .where(
+                Objective.objective_cycle_id.in_(oc_ids),
+                Objective.user_id.in_(target_ids),
+                Objective.status.in_(["approved", "locked"]),
+            )
+            .order_by(Objective.order_num)
+        ).all()
+        for o in objs:
+            objectives_map.setdefault((o.objective_cycle_id, o.user_id), []).append(o)
+
     return [
         {
             "id": pe.id,
@@ -392,6 +475,16 @@ def list_my_peer_tasks(
             "status": pe.status,
             "decline_reason": pe.decline_reason,
             "submitted_at": pe.submitted_at.isoformat() if pe.submitted_at else None,
+            "objectives": [
+                {
+                    "title": o.title,
+                    "description": o.description,
+                    "measure_criteria": o.measure_criteria,
+                    "weight": o.weight,
+                    "progress": o.progress,
+                }
+                for o in objectives_map.get((cycle.objective_cycle_id, pe.target_user_id), [])
+            ],
         }
         for pe, target, cycle in rows
     ]

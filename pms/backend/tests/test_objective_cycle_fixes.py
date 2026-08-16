@@ -316,3 +316,70 @@ def test_direct_leader_adjustments_scoped(client: TestClient) -> None:
             tech_leader.role = original_role
             session.add(tech_leader)
             session.commit()
+
+
+def test_objective_progress_update(client: TestClient) -> None:
+    """目标进展：本人可更新 0-100；越界 400；他人 403；草稿状态不可更新。"""
+    uids = _user_ids(client)
+    hr_token = _login(client, "mock-hr")
+    oc_id = _create_objective_cycle(client, hr_token)
+    _start_objective_cycle(client, hr_token, oc_id)
+
+    alice_token = _login(client, "mock-alice")
+    resp = client.put(
+        f"/api/v1/objective-cycles/{oc_id}/objectives",
+        headers=_headers(alice_token),
+        json=OBJECTIVES_PAYLOAD,
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = client.get(
+        f"/api/v1/objective-cycles/{oc_id}/objectives",
+        headers=_headers(alice_token),
+    )
+    assert resp.status_code == 200, resp.text
+    objs = resp.json()
+    assert objs[0]["progress"] == 0  # 默认 0
+    objective_id = objs[0]["id"]
+
+    # 草稿状态不可更新进展 → 400
+    resp = client.put(
+        f"/api/v1/objective-cycles/{oc_id}/objectives/{objective_id}/progress",
+        headers=_headers(alice_token),
+        json={"progress": 60},
+    )
+    assert resp.status_code == 400, resp.text
+
+    # 提交并经上级确认后才能更新进展
+    resp = client.post(
+        f"/api/v1/objective-cycles/{oc_id}/objectives/submit",
+        headers=_headers(alice_token),
+    )
+    assert resp.status_code == 200, resp.text
+    _approve_objectives(client, oc_id, uids["mock-alice"], "mock-tech-leader")
+
+    # 越界 → 400
+    resp = client.put(
+        f"/api/v1/objective-cycles/{oc_id}/objectives/{objective_id}/progress",
+        headers=_headers(alice_token),
+        json={"progress": 120},
+    )
+    assert resp.status_code == 400, resp.text
+
+    # 本人更新 → 200
+    resp = client.put(
+        f"/api/v1/objective-cycles/{oc_id}/objectives/{objective_id}/progress",
+        headers=_headers(alice_token),
+        json={"progress": 60},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["progress"] == 60
+
+    # 他人更新 → 403
+    carol_token = _login(client, "mock-carol")
+    resp = client.put(
+        f"/api/v1/objective-cycles/{oc_id}/objectives/{objective_id}/progress",
+        headers=_headers(carol_token),
+        json={"progress": 80},
+    )
+    assert resp.status_code == 403, resp.text

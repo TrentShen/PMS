@@ -43,10 +43,15 @@ class ObjectiveView(BaseModel):
     measure_criteria: str
     weight: int
     order_num: int
+    progress: int = 0
     status: str
     reviewed_by: str | None
     reviewed_at: datetime | None
     reject_reason: str | None
+
+
+class ObjectiveProgressUpdate(BaseModel):
+    progress: int  # 完成百分比，0-100
 
 
 class RejectPayload(BaseModel):
@@ -146,6 +151,51 @@ def save_objectives(
 
     session.commit()
     return {"saved": len(payload.items)}
+
+
+# ============ 写：更新单条目标进展 ============
+
+@router.put("/{objective_id}/progress")
+def update_objective_progress(
+    objective_cycle_id: int,
+    objective_id: int,
+    payload: ObjectiveProgressUpdate,
+    session: Session = Depends(get_session),
+    current: User = Depends(get_current_user),
+):
+    """员工自报目标完成百分比（0-100）。目标周期结束后锁定，避免改动历史。"""
+    if not 0 <= payload.progress <= 100:
+        raise HTTPException(status_code=400, detail="进度必须在 0-100 之间")
+
+    obj = session.get(Objective, objective_id)
+    if not obj or obj.objective_cycle_id != objective_cycle_id:
+        raise HTTPException(status_code=404, detail="目标不存在")
+    if obj.user_id != current.id:
+        raise HTTPException(status_code=403, detail="只能更新自己的目标进展")
+    # 只有上级已确认的目标才能更新进展；草稿/待审批期间进展无意义，
+    # 也避免 save_objectives 覆盖式重建（删旧插新）把进展静默清掉
+    if obj.status not in ("approved", "locked"):
+        raise HTTPException(status_code=400, detail="目标经上级确认后才能更新进展")
+
+    cycle = session.get(ObjectiveCycle, objective_cycle_id)
+    if not cycle or cycle.status not in ("draft", "active"):
+        raise HTTPException(status_code=400, detail="目标周期已结束，不能再更新进展")
+
+    before = {"progress": obj.progress}
+    obj.progress = payload.progress
+    session.add(obj)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="update_objective_progress",
+        resource_type="objective",
+        resource_id=str(objective_id),
+        before=before,
+        after={"progress": payload.progress},
+    )
+    session.commit()
+    return {"id": obj.id, "progress": obj.progress}
 
 
 # ============ 提交上级审批 ============

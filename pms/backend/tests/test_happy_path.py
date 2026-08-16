@@ -285,10 +285,11 @@ def test_full_performance_cycle(client: TestClient) -> None:
     )
     assert resp.status_code == 200, resp.text
 
-    # 提交校准结果进入审批
+    # 提交校准结果进入审批（测试数据分布不符 3-6-1，按软校验规则附差异理由）
     resp = client.post(
         f"/api/v1/calibration/cycles/{cycle_id}/submit-calibration",
         headers=_headers(leader_token),
+        json={"distribution_override_reason": "测试数据分布不符，确认提交"},
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "pending_hr"

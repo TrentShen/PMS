@@ -270,10 +270,11 @@ def test_submit_calibration_after_approved_returns_400(client: TestClient) -> No
     )
     assert resp.status_code == 200, resp.text
 
-    # 提交校准 → HR 批 → CEO 批 → approved
+    # 提交校准 → HR 批 → CEO 批 → approved（测试数据分布不符 3-6-1，按软校验规则附差异理由）
     resp = client.post(
         f"/api/v1/calibration/cycles/{cycle_id}/submit-calibration",
         headers=_headers(leader_token),
+        json={"distribution_override_reason": "测试数据分布不符，确认提交"},
     )
     assert resp.status_code == 200, resp.text
     hr_token = _login(client, "mock-hr")
@@ -299,3 +300,34 @@ def test_submit_calibration_after_approved_returns_400(client: TestClient) -> No
     )
     assert resp.status_code == 400, resp.text
     assert "已通过" in resp.json()["detail"]
+
+
+# ============ 修复 4：分布软校验（3-6-1）============
+
+def test_submit_calibration_distribution_requires_reason(client: TestClient) -> None:
+    # 单人周期：C 档 0%（目标 ≥10%）→ 分布不符；无理由 400，附理由放行
+    cycle_id, _, uids = _setup_calibration_cycle(client, ["mock-alice"])
+    leader_token = _login(client, "mock-tech-leader")
+    resp = client.post(
+        f"/api/v1/calibration/cycles/{cycle_id}/calibrate",
+        headers=_headers(leader_token),
+        json={"items": [_calibrate_item(uids["mock-alice"])]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # 无理由：被软校验拦截
+    resp = client.post(
+        f"/api/v1/calibration/cycles/{cycle_id}/submit-calibration",
+        headers=_headers(leader_token),
+    )
+    assert resp.status_code == 400, resp.text
+    assert "分布不符" in resp.json()["detail"]
+
+    # 附差异理由：放行并进入审批
+    resp = client.post(
+        f"/api/v1/calibration/cycles/{cycle_id}/submit-calibration",
+        headers=_headers(leader_token),
+        json={"distribution_override_reason": "单人周期无法凑足 C 档比例"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "pending_hr"

@@ -340,9 +340,11 @@ def test_publish_requires_feedback_confirmation(client: TestClient) -> None:
             ]
         },
     )
+    # 测试数据分布不符 3-6-1，按软校验规则附差异理由
     client.post(
         f"/api/v1/calibration/cycles/{cycle_id}/submit-calibration",
         headers=_headers(leader_token),
+        json={"distribution_override_reason": "测试数据分布不符，确认提交"},
     )
     hr_token2 = _login(client, "mock-hr")
     client.post(

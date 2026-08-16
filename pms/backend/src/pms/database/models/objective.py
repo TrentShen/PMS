@@ -20,6 +20,8 @@ class Objective(SQLModel, table=True):
     # 权重：百分比，同一人所有目标权重之和应为 100（前端+后端双校验）
     weight: int = Field(default=0)
     order_num: int = Field(default=0)
+    # 进展跟踪：员工自报的完成百分比（0-100），执行期随时更新
+    progress: int = Field(default=0)
     # 目标状态：draft → pending_review → approved → locked
     status: str = Field(default="draft", max_length=16)
     # 审批信息

@@ -40,6 +40,7 @@ class ObjectiveView(BaseModel):
     measure_criteria: str | None = None
     weight: int
     order_num: int = 0
+    progress: int = 0
     status: str = "draft"
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None

@@ -48,6 +48,11 @@ class ApprovalAction(BaseModel):
     comment: str | None = None
 
 
+class SubmitCalibrationRequest(BaseModel):
+    # 分布不符（3-6-1 软校验未通过）时必填：说明突破分布的原因，进审计日志
+    distribution_override_reason: str | None = None
+
+
 class DistributionItem(BaseModel):
     level: str
     label: str
@@ -378,6 +383,7 @@ def calibrate(
 @router.post("/cycles/{cycle_id}/submit-calibration", dependencies=[Depends(require_fte)])
 def submit_calibration(
     cycle_id: int,
+    payload: SubmitCalibrationRequest | None = None,
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
@@ -398,12 +404,29 @@ def submit_calibration(
     if unset:
         raise HTTPException(status_code=400, detail=f"还有 {len(unset)} 人未确定最终评分")
 
-    # 创建或更新 approval
+    # 已通过的审批不可回退（先于此后的分布校验，避免重复提交被分布理由弹窗误导）
     approval = session.exec(
         select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
     ).first()
     if approval and approval.status == "approved":
         raise HTTPException(status_code=400, detail="审批已通过，不可回退重新提交")
+
+    # 分布软校验（3-6-1）：A 档超标 / C 档不足时，必须填分布差异理由才允许提交
+    violations = [
+        d for d in _compute_distribution(parts)
+        if d.warning and d.level in ("A", "C")
+    ]
+    override_reason = (payload.distribution_override_reason or "").strip() if payload else ""
+    if violations and not override_reason:
+        desc = "；".join(
+            f"{d.level} 档（{d.label}）实际 {d.percent}%，目标 {d.target_percent}" for d in violations
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"分布不符：{desc}。如确认提交，请填写分布差异理由",
+        )
+
+    # 创建或更新 approval
     if not approval:
         approval = CycleApproval(cycle_id=cycle_id)
     approval.status = "pending_hr"
@@ -420,7 +443,10 @@ def submit_calibration(
         action="submit_calibration",
         resource_type="cycle_approval",
         resource_id=str(cycle_id),
-        after={"status": "pending_hr"},
+        after={
+            "status": "pending_hr",
+            "distribution_override_reason": override_reason or None,
+        },
     )
     session.commit()
 
