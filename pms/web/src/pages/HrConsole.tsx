@@ -9,6 +9,7 @@ import {
   DatePicker,
   Form,
   Input,
+  List,
   Modal,
   Popconfirm,
   Row,
@@ -26,6 +27,7 @@ import dayjs from "dayjs";
 import { api, formatError } from "@/services/api";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList from "@/components/ui/TableCardList";
+import { PARTICIPANT_STATUS_LABEL, PARTICIPANT_STATUS_TYPE } from "@/components/ui/participantStatus";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
 import { useMobile } from "@/hooks/useMobile";
 import { showHistoricalEvaluationImportResult, showObjectiveImportResult } from "@/components/ui/showImportResult";
@@ -76,24 +78,6 @@ function cycleStatusType(status: string): StatusType {
   }
 }
 
-// 参与人进度语义：pending→warning、excluded→danger、completed→success、各阶段 done→info
-function participantStatusType(status: string): StatusType {
-  if (status === "excluded") return "danger";
-  if (status === "pending") return "warning";
-  if (status === "completed") return "success";
-  if (status.endsWith("_done")) return "info";
-  return "default";
-}
-
-// 参与人进度中文文案
-const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
-  pending: "待自评",
-  self_done: "待上级评估",
-  leader_done: "待发布",
-  published: "已公布",
-  excluded: "已排除",
-};
-
 /** 操作列图标统一 16px */
 const ACTION_ICON_STYLE: React.CSSProperties = { fontSize: 16 };
 
@@ -123,10 +107,13 @@ export default function HrConsole() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filtering, setFiltering] = useState(false);
   const [filterForm] = Form.useForm();
+  // Excel 导入/导出防重：上传超时 60s，期间禁用按钮
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  async function loadCycles() {
+  async function loadCycles(): Promise<Cycle[]> {
     setCyclesLoading(true);
-    try { const r = await api.get<Cycle[]>("/v1/cycles"); setCycles(r.data); }
+    try { const r = await api.get<Cycle[]>("/v1/cycles"); setCycles(r.data); return r.data; }
     finally { setCyclesLoading(false); }
   }
   async function loadObjectiveCycles() { const r = await api.get<ObjectiveCycle[]>("/v1/objective-cycles"); setObjectiveCycles(r.data); }
@@ -143,7 +130,11 @@ export default function HrConsole() {
     loadUsers().catch((e) => message.error(formatError(e, "加载失败")));
     loadDepartments().catch((e) => message.error(formatError(e, "加载失败")));
   }, []);
-  useEffect(() => { if (selectedCycle) loadParticipants(selectedCycle.id); }, [selectedCycle]);
+  useEffect(() => {
+    if (selectedCycle) {
+      loadParticipants(selectedCycle.id).catch((e) => message.error(formatError(e, "加载参与人失败")));
+    }
+  }, [selectedCycle]);
   // 筛选弹窗打开时，用周期已保存的规则预填充表单
   useEffect(() => {
     if (filterOpen && selectedCycle?.exclusion_rules) {
@@ -157,6 +148,16 @@ export default function HrConsole() {
       });
     }
   }, [filterOpen]);
+
+  // 周期操作后刷新列表并同步 selectedCycle（状态标签/可用操作需用新对象；被删周期自动取消选中）
+  async function refreshCycles() {
+    try {
+      const list = await loadCycles();
+      setSelectedCycle((prev) => (prev ? list.find((c) => c.id === prev.id) ?? null : prev));
+    } catch (e) {
+      message.error(formatError(e, "刷新周期列表失败"));
+    }
+  }
 
   async function onCreate(values: CycleCreateForm) {
     setCreating(true);
@@ -174,7 +175,7 @@ export default function HrConsole() {
       if (values.enable_calibration !== undefined) payload.enable_calibration = values.enable_calibration;
       if (values.enable_feedback !== undefined) payload.enable_feedback = values.enable_feedback;
       await api.post("/v1/cycles", payload);
-      message.success("周期已创建"); setCreateOpen(false); form.resetFields(); loadCycles();
+      message.success("周期已创建"); setCreateOpen(false); form.resetFields(); await refreshCycles();
     } catch (e) { message.error(formatError(e, "创建失败")); }
     finally { setCreating(false); }
   }
@@ -199,19 +200,20 @@ export default function HrConsole() {
   }
   async function onStart(c: Cycle) {
     setCycleActing(true);
-    try { await api.post(`/v1/cycles/${c.id}/start`); message.success("周期已启动"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
+    // refreshCycles 会同步 selectedCycle 为新对象，触发参与人列表自动刷新
+    try { await api.post(`/v1/cycles/${c.id}/start`); message.success("周期已启动"); await refreshCycles(); }
     catch (e) { message.error(formatError(e, "启动失败")); }
     finally { setCycleActing(false); }
   }
   async function onPublish(c: Cycle) {
     setCycleActing(true);
-    try { await api.post(`/v1/cycles/${c.id}/publish`); message.success("已发布"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
+    try { await api.post(`/v1/cycles/${c.id}/publish`); message.success("已发布"); await refreshCycles(); }
     catch (e) { message.error(formatError(e, "发布失败")); }
     finally { setCycleActing(false); }
   }
   async function onClose(c: Cycle) {
     setCycleActing(true);
-    try { await api.post(`/v1/cycles/${c.id}/close`); message.success("已归档"); loadCycles(); if (selectedCycle?.id === c.id) loadParticipants(c.id); }
+    try { await api.post(`/v1/cycles/${c.id}/close`); message.success("已归档"); await refreshCycles(); }
     catch (e) { message.error(formatError(e, "归档失败")); }
     finally { setCycleActing(false); }
   }
@@ -220,17 +222,17 @@ export default function HrConsole() {
     try {
       await api.delete(`/v1/cycles/${c.id}`);
       message.success("周期已删除");
-      loadCycles();
-      if (selectedCycle?.id === c.id) setSelectedCycle(null);
+      await refreshCycles();
     } catch (e) { message.error(formatError(e, "删除失败")); }
     finally { setCycleActing(false); }
   }
 
   // === Excel 导入 ===
   async function onUploadExcel(file: File) {
-    if (!selectedCycle) return false;
+    if (!selectedCycle || importing) return false;
     const fd = new FormData();
     fd.append("file", file);
+    setImporting(true);
     try {
       if (!selectedCycle.objective_cycle_id) {
         message.error("当前评估周期未关联目标周期，无法导入目标");
@@ -252,14 +254,16 @@ export default function HrConsole() {
           width: 600,
         });
       } else { message.error(typeof detail === "string" ? detail : "导入失败"); }
-    }
+    } finally { setImporting(false); }
     return false; // 阻止 antd 默认上传
   }
 
   // === 历史绩效导入 ===
   async function onUploadHistorical(file: File) {
+    if (importing) return false;
     const fd = new FormData();
     fd.append("file", file);
+    setImporting(true);
     try {
       const r = await api.post("/v1/import/historical-performance", fd, { headers: { "Content-Type": "multipart/form-data" } });
       const { success, failed, errors } = r.data;
@@ -290,14 +294,16 @@ export default function HrConsole() {
           width: 600,
         });
       } else { message.error(typeof detail === "string" ? detail : "导入失败"); }
-    }
+    } finally { setImporting(false); }
     return false;
   }
 
   // === 历史目标导入 ===
   async function onUploadHistoricalObjectives(file: File) {
+    if (importing) return false;
     const fd = new FormData();
     fd.append("file", file);
+    setImporting(true);
     try {
       const r = await api.post<ObjectiveImportResult>("/v1/import/historical-objectives", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -305,14 +311,16 @@ export default function HrConsole() {
       showObjectiveImportResult(r.data);
     } catch (e) {
       message.error(formatError(e, "导入失败"));
-    }
+    } finally { setImporting(false); }
     return false;
   }
 
   // === 历史考核导入（汇总 / 明细，响应结构 {imported, skipped}） ===
   async function onUploadHistoricalEvaluations(url: string, file: File) {
+    if (importing) return false;
     const fd = new FormData();
     fd.append("file", file);
+    setImporting(true);
     try {
       const r = await api.post<HistoricalEvaluationImportResult>(url, fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -321,13 +329,14 @@ export default function HrConsole() {
       showHistoricalEvaluationImportResult(r.data);
     } catch (e) {
       message.error(formatError(e, "导入失败"));
-    }
+    } finally { setImporting(false); }
     return false;
   }
 
   // === Excel 导出 ===
   async function onExport() {
-    if (!selectedCycle) return;
+    if (!selectedCycle || exporting) return;
+    setExporting(true);
     try {
       const r = await api.get(`/v1/export/cycles/${selectedCycle.id}`, { responseType: "blob", timeout: 60000 });
       const url = URL.createObjectURL(r.data);
@@ -335,11 +344,13 @@ export default function HrConsole() {
       URL.revokeObjectURL(url);
       message.success("导出成功");
     } catch (e) { message.error(formatError(e, "导出失败")); }
+    finally { setExporting(false); }
   }
 
   // === 催办 ===
   async function onUrge() {
-    if (!selectedCycle || urgeIds.length === 0) return;
+    if (!selectedCycle) return;
+    if (urgeIds.length === 0) { message.warning("请选择催办对象"); return; }
     setUrging(true);
     try {
       const r = await api.post("/v1/notify/urge", { cycle_id: selectedCycle.id, user_ids: urgeIds });
@@ -451,7 +462,7 @@ export default function HrConsole() {
     {
       title: "进度",
       dataIndex: "status",
-      render: (s: string) => <StatusTag type={participantStatusType(s)}>{PARTICIPANT_STATUS_LABEL[s] ?? s}</StatusTag>,
+      render: (s: string) => <StatusTag type={PARTICIPANT_STATUS_TYPE[s] ?? "default"}>{PARTICIPANT_STATUS_LABEL[s] ?? s}</StatusTag>,
     },
     { title: "业绩", render: (_, p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
     {
@@ -470,10 +481,10 @@ export default function HrConsole() {
       <>
         <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/objective-cycles/excel/template">下载导入模板</Button>
         <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadExcel(f)}>
-          <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>Excel 导入目标</Button>
+          <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />} loading={importing} disabled={importing}>Excel 导入目标</Button>
         </Upload>
         {selectedCycle.status === "published" && (
-          <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} onClick={onExport}>导出结果</Button>
+          <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} onClick={onExport} loading={exporting} disabled={exporting}>导出结果</Button>
         )}
         {selectedCycle.status === "in_progress" && (
           <Button size="small" onClick={() => { setUrgeIds(pendingParticipants.map((p) => p.user_id)); setUrgeOpen(true); }}>催办</Button>
@@ -501,6 +512,7 @@ export default function HrConsole() {
         <TableCardList<Cycle>
           dataSource={cycles}
           rowKey={(c) => c.id}
+          loading={cyclesLoading}
           onCardClick={(c) => setSelectedCycle(c)}
           columns={[
             { title: "周期名", dataIndex: "name" },
@@ -515,50 +527,65 @@ export default function HrConsole() {
         />
       </Card>
 
-      {/* 历史绩效导入 */}
-      <Card title="历史绩效导入" size="small">
-        <ResponsiveShow on="desktop">
-          <Space size={8}>
-            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-performance/template">下载历史绩效模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
-              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
-            </Upload>
-            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-objectives/template">下载历史目标模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
-              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
-            </Upload>
-            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/summary/template">下载考核汇总模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/summary", f)}>
-              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核汇总</Button>
-            </Upload>
-            <Button size="small" icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/detail/template">下载考核详情模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/detail", f)}>
-              <Button size="small" icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核详情</Button>
-            </Upload>
-            <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
-          </Space>
-        </ResponsiveShow>
-        <ResponsiveShow on="mobile">
-          <div className="hr-console-mobile-actions">
-            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-performance/template">下载历史绩效模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistorical(f)}>
-              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史绩效</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-objectives/template">下载历史目标模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalObjectives(f)}>
-              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入历史目标</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/summary/template">下载考核汇总模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/summary", f)}>
-              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核汇总</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href="/api/v1/import/historical-evaluations/detail/template">下载考核详情模板</Button>
-            <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/detail", f)}>
-              <Button icon={<UploadOutlined style={ACTION_ICON_STYLE} />}>导入考核详情</Button>
-            </Upload>
-            <Typography.Text type="secondary">用于导入历史考核结果，不参与当前流程</Typography.Text>
-          </div>
-        </ResponsiveShow>
+      {/* 历史数据导入：模板与上传按类型配对，附用途说明；导入结果为只读快照，不参与当前流程 */}
+      <Card title="历史数据导入" size="small">
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="三步完成导入：① 下载对应模板 ② 按模板填写 Excel ③ 上传导入"
+          description="导入的历史数据为只读快照，用于历史档案与趋势分析，不参与当前考核流程。"
+        />
+        <List
+          dataSource={[
+            {
+              key: "performance",
+              title: "历史绩效结果",
+              description: "历年最终考核结果（业绩分、等级、价值观评级），历史绩效页可见",
+              templateUrl: "/api/v1/import/historical-performance/template",
+              onUpload: onUploadHistorical,
+            },
+            {
+              key: "objectives",
+              title: "历史目标留档",
+              description: "历年绩效目标（目标项、权重、衡量标准），仅留档查看",
+              templateUrl: "/api/v1/import/historical-objectives/template",
+              onUpload: onUploadHistoricalObjectives,
+            },
+            {
+              key: "eval-summary",
+              title: "历史考核汇总",
+              description: "按人按周期一条：自评 / 互评 / 上级评分与校准结果汇总",
+              templateUrl: "/api/v1/import/historical-evaluations/summary/template",
+              onUpload: (f: File) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/summary", f),
+            },
+            {
+              key: "eval-detail",
+              title: "历史考核详情",
+              description: "含自评产出、上级评价、逐条互评评语等完整明细",
+              templateUrl: "/api/v1/import/historical-evaluations/detail/template",
+              onUpload: (f: File) => onUploadHistoricalEvaluations("/v1/import/historical-evaluations/detail", f),
+            },
+          ]}
+          renderItem={(item) => (
+            <List.Item style={{ display: "block" }}>
+              <List.Item.Meta
+                title={item.title}
+                description={item.description}
+              />
+              <Space style={{ marginTop: 8 }}>
+                <Button icon={<DownloadOutlined style={ACTION_ICON_STYLE} />} href={item.templateUrl}>
+                  下载模板
+                </Button>
+                <Upload accept=".xlsx" showUploadList={false} beforeUpload={item.onUpload}>
+                  <Button type="primary" ghost icon={<UploadOutlined style={ACTION_ICON_STYLE} />} loading={importing} disabled={importing}>
+                    上传导入
+                  </Button>
+                </Upload>
+              </Space>
+            </List.Item>
+          )}
+        />
       </Card>
 
       {/* 参与人详情 */}
@@ -599,12 +626,13 @@ export default function HrConsole() {
             <TableCardList<Participant>
               dataSource={participants}
               rowKey={(p) => p.id}
+              loading={participantsLoading}
               columns={[
                 { title: "姓名", dataIndex: "user_name" },
                 { title: "职位", render: (p) => p.user_position ?? "-" },
                 {
                   title: "进度",
-                  render: (p) => <StatusTag type={participantStatusType(p.status)}>{PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}</StatusTag>,
+                  render: (p) => <StatusTag type={PARTICIPANT_STATUS_TYPE[p.status] ?? "default"}>{PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}</StatusTag>,
                 },
                 { title: "业绩", render: (p) => (p.final_perf_score != null ? p.final_perf_score.toFixed(2) : "-") },
                 {
@@ -622,6 +650,7 @@ export default function HrConsole() {
               pagination={false}
               loading={participantsLoading}
               columns={participantColumns}
+              scroll={{ x: 640 }}
             />
           )}
         </Card>
@@ -753,11 +782,11 @@ function StageConfigPanel({ cycleId }: { cycleId: number; cycleStatus: string })
               <div style={{ marginBottom: 4, fontWeight: 500 }}>{s.label}</div>
               <Space style={{ display: "flex", width: "100%" }}>
                 <Form.Item name={`${s.key}_start`} noStyle style={{ flex: 1 }}>
-                  <DatePicker placeholder="开始" size="small" style={{ width: "100%" }} />
+                  <DatePicker placeholder="开始" size="small" style={{ width: "100%" }} aria-label={`${s.label}开始日期`} />
                 </Form.Item>
                 <span>~</span>
                 <Form.Item name={`${s.key}_end`} noStyle style={{ flex: 1 }}>
-                  <DatePicker placeholder="截止" size="small" style={{ width: "100%" }} />
+                  <DatePicker placeholder="截止" size="small" style={{ width: "100%" }} aria-label={`${s.label}截止日期`} />
                 </Form.Item>
               </Space>
             </Col>
@@ -765,7 +794,7 @@ function StageConfigPanel({ cycleId }: { cycleId: number; cycleStatus: string })
           <Col xs={24} md={12} lg={8}>
             <div style={{ marginBottom: 4, fontWeight: 500 }}>结果公布</div>
             <Form.Item name="publish_date" noStyle>
-              <DatePicker placeholder="公布日" size="small" style={{ width: "100%" }} />
+              <DatePicker placeholder="公布日" size="small" style={{ width: "100%" }} aria-label="结果公布日期" />
             </Form.Item>
           </Col>
         </Row>

@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { Card, Empty, message, Space, Table, Tag, Typography } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
+import { hasAnyRole } from "@/components/RequireRole";
 import type { HistoricalObjective } from "@/services/api.types";
 import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
@@ -84,6 +85,9 @@ export default function History() {
 
   const published = cycles.filter((c) => c.participant_status === "published");
 
+  // HR 在"历史考核记录"卡上额外看到导入入口（导入口在 HR 管理台）
+  const isHr = hasAnyRole(user?.role, ["hrbp", "super_admin"]) || user?.has_hr_permission === true;
+
   // 历史目标按周期分组（保持接口返回顺序，组内按 order_num 排序）
   const objectiveGroups: [string, HistoricalObjective[]][] = [];
   for (const o of histObjectives) {
@@ -138,6 +142,7 @@ export default function History() {
                 dataSource={published}
                 pagination={false}
                 loading={cyclesLoading}
+                scroll={{ x: 720 }}
                 columns={[
                   { title: "周期", dataIndex: ["cycle", "name"] },
                   { title: "考核期间", render: (_, r) => `${r.cycle.start_date} ~ ${r.cycle.end_date}` },
@@ -178,8 +183,11 @@ export default function History() {
         )}
       </Card>
 
-      {(histLoading || historical.length > 0) && (
-        <Card title="历史考核记录（只读）">
+      {(histLoading || historical.length > 0 || isHr) && (
+        <Card
+          title="历史考核记录（只读）"
+          extra={isHr ? <a onClick={() => navigate("/hr")}>导入历史数据</a> : undefined}
+        >
           <div className="pms-responsive-table">
             <Table
               rowKey="id"
