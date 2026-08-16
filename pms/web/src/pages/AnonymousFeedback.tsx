@@ -55,11 +55,9 @@ export default function AnonymousFeedback() {
   }, [form]);
 
   async function onSubmit() {
-    const v = await form.validateFields();
-    if (!v.comment?.trim()) {
-      message.error("评语必填");
-      return;
-    }
+    // 校验未通过时 validateFields reject，antd 已高亮错误项，直接返回
+    const v = await form.validateFields().catch(() => null);
+    if (!v) return;
     setSaving(true);
     try {
       await api.post(`/v1/cycles/${v.cycle_id}/anonymous-feedback`, {
@@ -92,7 +90,7 @@ export default function AnonymousFeedback() {
         style={{ marginBottom: 16 }}
         message="提交内容仅 HR / 部门 Leader 可见，被评人和直属上级都看不到；请勿用于人身攻击"
       />
-      <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
+      <Form form={form} layout="vertical" scrollToFirstError style={{ maxWidth: 600 }}>
         <Form.Item
           name="cycle_id"
           label="周期"
@@ -122,7 +120,11 @@ export default function AnonymousFeedback() {
             <Radio.Button value="bing">丙</Radio.Button>
           </Radio.Group>
         </Form.Item>
-        <Form.Item name="comment" label="评语（必填）" rules={[{ required: true }]}>
+        <Form.Item
+          name="comment"
+          label="评语（必填）"
+          rules={[{ required: true, whitespace: true, message: "请填写评语" }]}
+        >
           <Input.TextArea rows={5} placeholder="基于事实，陈述具体情况" />
         </Form.Item>
         <Form.Item style={{ marginBottom: 0 }}>

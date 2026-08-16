@@ -47,14 +47,23 @@ export default function ObjectiveCycleList() {
   const [creating, setCreating] = useState(false);
   // 启动/完成/删除在途保护：记录正在操作的周期 id，防止 Popconfirm 确认按钮重复点击
   const [actingId, setActingId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
 
+  // 内部自捕获：成功后各操作的刷新直接裸调用 load() 不会产生 unhandled rejection
   async function load() {
-    const r = await api.get<ObjectiveCycle[]>("/v1/objective-cycles");
-    setCycles(r.data);
+    setLoading(true);
+    try {
+      const r = await api.get<ObjectiveCycle[]>("/v1/objective-cycles");
+      setCycles(r.data);
+    } catch (e) {
+      message.error(formatError(e, "加载失败"));
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load().catch((e) => message.error(formatError(e, "加载失败"))); }, []);
+  useEffect(() => { load(); }, []);
 
   async function onCreate(values: ObjectiveCycleCreateForm) {
     setCreating(true);
@@ -120,6 +129,7 @@ export default function ObjectiveCycleList() {
         <Button type="primary" onClick={() => setCreateOpen(true)}>新建目标周期</Button>
       }>
         <List
+          loading={loading}
           dataSource={cycles}
           renderItem={(c) => (
             <List.Item actions={[

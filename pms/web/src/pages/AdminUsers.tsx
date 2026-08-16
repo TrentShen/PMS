@@ -112,9 +112,9 @@ export default function AdminUsers() {
 
   async function onSave() {
     if (!editing) return;
-    const values = await form.validateFields();
     setSaving(true);
     try {
+      const values = await form.validateFields();
       const payload: Record<string, unknown> = {
         role: values.role,
         // Select allowClear 后值为 undefined 会被 JSON 序列化丢弃，后端语义是"不修改"；清空需显式传空串
@@ -139,6 +139,8 @@ export default function AdminUsers() {
       setEditing(null);
       await load();
     } catch (e) {
+      // antd 校验失败 reject 出 errorFields 对象，表单已有红字提示，无需额外 message
+      if ((e as { errorFields?: unknown[] })?.errorFields) return;
       message.error(formatError(e, "保存失败"));
     } finally {
       setSaving(false);

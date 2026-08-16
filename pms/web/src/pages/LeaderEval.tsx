@@ -5,7 +5,7 @@ import { Card, Empty, List, Progress, Select, Space, Typography, message } from 
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 import StatusTag from "@/components/ui/StatusTag";
-import type { StatusType } from "@/components/ui/StatusTag";
+import { PARTICIPANT_STATUS_LABEL, PARTICIPANT_STATUS_TYPE } from "@/components/ui/participantStatus";
 import TableCardList from "@/components/ui/TableCardList";
 import type { CardColumn } from "@/components/ui/TableCardList";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -14,6 +14,7 @@ interface Cycle {
   id: number;
   name: string;
   status: string;
+  enable_feedback: boolean;
 }
 
 interface Participant {
@@ -25,23 +26,9 @@ interface Participant {
   status: string;
 }
 
-const PSTATUS_LABEL: Record<string, string> = {
-  pending: "未开始自评",
-  self_done: "等待上级评估",
-  leader_done: "已完成上级评估",
-  published: "已公布",
-  excluded: "已排除",
-};
 // 评估周期状态中文映射（与 LeaderEvalDetail 的 CYCLE_STATUS_LABEL 一致）
 const CYCLE_STATUS_LABEL: Record<string, string> = {
   draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已关闭",
-};
-const PSTATUS_TYPE: Record<string, StatusType> = {
-  pending: "default",
-  self_done: "warning",
-  leader_done: "primary",
-  published: "success",
-  excluded: "default",
 };
 
 function actionText(status: string): string {
@@ -52,29 +39,40 @@ function actionText(status: string): string {
 
 export default function LeaderEval() {
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [cyclesLoading, setCyclesLoading] = useState(false);
   const [selectedCycle, setSelectedCycle] = useState<number | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const me = useAuth((s) => s.user)!;
 
   useEffect(() => {
+    let cancelled = false;
+    setCyclesLoading(true);
     api.get<Cycle[]>("/v1/cycles").then((r) => {
+      if (cancelled) return;
       setCycles(r.data);
       // 默认选第一个进行中的
       const inp = r.data.find((c) => c.status === "in_progress");
       if (inp) setSelectedCycle(inp.id);
-    }).catch((e) => message.error(formatError(e, "加载周期列表失败")));
+    }).catch((e) => { if (!cancelled) message.error(formatError(e, "加载周期列表失败")); })
+      .finally(() => { if (!cancelled) setCyclesLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!selectedCycle) return;
-    // 只拉自己的直属下属（不是全部参与人）
+    // 只拉自己的直属下属（不是全部参与人）；防响应乱序：快速切周期时旧响应不覆盖
+    let cancelled = false;
+    setLoading(true);
     api
       .get<{items: Participant[]; total: number}>(`/v1/cycles/${selectedCycle}/participants`, {
         params: { only_subordinates: true, page_size: 9999 },
       })
-      .then((r) => setParticipants(r.data.items))
-      .catch((e) => message.error(formatError(e, "加载下属列表失败")));
+      .then((r) => { if (!cancelled) setParticipants(r.data.items); })
+      .catch((e) => { if (!cancelled) message.error(formatError(e, "加载下属列表失败")); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedCycle]);
 
   const visible = participants.filter((p) => p.user_id !== me.id);
@@ -93,18 +91,26 @@ export default function LeaderEval() {
     navigate(`/leader/${p.cycle_id}/users/${p.user_id}`);
   };
 
+  // 反馈填写入口：周期进行中且开启反馈环节、上级评估已完成的下属，可直达面谈记录页
+  const selectedCycleObj = cycles.find((c) => c.id === selectedCycle) ?? null;
+  const feedbackEnabled = selectedCycleObj?.status === "in_progress" && selectedCycleObj.enable_feedback;
+  const canWriteFeedback = (p: Participant): boolean =>
+    !!feedbackEnabled && (p.status === "leader_done" || p.status === "published");
+  const goFeedback = (p: Participant): void => {
+    navigate(`/feedback/${p.cycle_id}/${p.user_id}`);
+  };
+
   const cardColumns: CardColumn<Participant>[] = [
     { title: "姓名", dataIndex: "user_name" },
     { title: "职位", render: (p) => p.user_position ?? "-" },
     {
       title: "状态",
       render: (p) => (
-        <StatusTag type={PSTATUS_TYPE[p.status] ?? "default"}>
-          {PSTATUS_LABEL[p.status] ?? p.status}
+        <StatusTag type={PARTICIPANT_STATUS_TYPE[p.status] ?? "default"}>
+          {PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}
         </StatusTag>
       ),
     },
-    { title: "操作", render: (p) => <Typography.Link>{actionText(p.status)}</Typography.Link> },
   ];
 
   return (
@@ -114,6 +120,7 @@ export default function LeaderEval() {
         <Select
           style={{ width: "100%", maxWidth: 320 }}
           placeholder="选择周期"
+          loading={cyclesLoading}
           value={selectedCycle ?? undefined}
           onChange={(v) => setSelectedCycle(v)}
           options={cycles.map((c) => ({
@@ -123,7 +130,7 @@ export default function LeaderEval() {
         />
       }
     >
-      {visible.length === 0 ? (
+      {!loading && !cyclesLoading && visible.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -153,6 +160,7 @@ export default function LeaderEval() {
           {/* 桌面端：列表 */}
           <ResponsiveShow on="desktop">
             <List
+              loading={loading || cyclesLoading}
               dataSource={sorted}
               renderItem={(p) => (
                 <List.Item
@@ -160,14 +168,17 @@ export default function LeaderEval() {
                     <a key="eval" onClick={() => goDetail(p)}>
                       {actionText(p.status)}
                     </a>,
+                    ...(canWriteFeedback(p)
+                      ? [<a key="fb" onClick={() => goFeedback(p)}>反馈</a>]
+                      : []),
                   ]}
                 >
                   <List.Item.Meta
                     title={
                       <Space>
                         {p.user_name}
-                        <StatusTag type={PSTATUS_TYPE[p.status] ?? "default"}>
-                          {PSTATUS_LABEL[p.status] ?? p.status}
+                        <StatusTag type={PARTICIPANT_STATUS_TYPE[p.status] ?? "default"}>
+                          {PARTICIPANT_STATUS_LABEL[p.status] ?? p.status}
                         </StatusTag>
                       </Space>
                     }
@@ -182,7 +193,13 @@ export default function LeaderEval() {
             columns={cardColumns}
             dataSource={sorted}
             rowKey={(p) => p.id}
+            loading={loading || cyclesLoading}
             onCardClick={goDetail}
+            renderActions={(p) =>
+              canWriteFeedback(p) ? (
+                <a onClick={() => goFeedback(p)}>写面谈反馈</a>
+              ) : undefined
+            }
           />
         </>
       )}

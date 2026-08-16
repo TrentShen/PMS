@@ -112,6 +112,7 @@ export interface ObjectiveView {
   description: string;
   measure_criteria: string;
   weight: number;
+  progress: number;
   status: string;
   reviewed_by: string | null;
   reviewed_at: string | null;

@@ -15,7 +15,6 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
-  Select,
   Space,
   Spin,
   Statistic,
@@ -32,6 +31,7 @@ import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/componen
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
+import { PARTICIPANT_STATUS_LABEL, PARTICIPANT_STATUS_TYPE } from "@/components/ui/participantStatus";
 import TableCardList from "@/components/ui/TableCardList";
 import type { CardColumn } from "@/components/ui/TableCardList";
 
@@ -114,193 +114,9 @@ const CYCLE_STATUS_TYPE: Record<string, StatusType> = {
 const OBJECTIVE_CYCLE_STATUS_LABEL: Record<string, string> = {
   draft: "制定中", active: "执行中", completed: "已结束",
 };
-const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
-  pending: "待填写", self_done: "已自评", leader_done: "上级已评", published: "已公布", excluded: "已排除",
-};
-const PARTICIPANT_STATUS_TYPE: Record<string, StatusType> = {
-  pending: "default", self_done: "warning", leader_done: "primary", published: "success", excluded: "default",
-};
+// 参与人进度状态映射统一走共享组件 components/ui/participantStatus
 
-// ========== 互评名单审核 ==========
-// 互评三态：pending（员工选的）/ approved（已发起）/ removed（Leader 删除）
-interface PeerCandidate {
-  user_id: number;
-  name: string;
-  position: string | null;
-  status: string;
-  proposed_by: string | null;
-}
-
-function PeerReviewSection({
-  cycleId,
-  userId,
-  cycleStatus,
-}: {
-  cycleId: number;
-  userId: number;
-  cycleStatus: string;
-}) {
-  const [cands, setCands] = useState<PeerCandidate[]>([]);
-  const [allUsers, setAllUsers] = useState<{ id: number; name: string; position: string | null }[]>([]);
-  const [addIds, setAddIds] = useState<number[]>([]);
-  const [removeIds, setRemoveIds] = useState<number[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  async function load() {
-    const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/users/${userId}/peer/pending`);
-    setCands(r.data);
-    // 候选人：脱敏同事列表（/v1/cycles/:id/participants 按 scope 过滤，员工视角下可选人恒为空）
-    const u = await api.get<{ id: number; name: string; position: string | null }[]>("/v1/users/colleagues");
-    setAllUsers(u.data.filter((x) => x.id !== userId));
-  }
-  useEffect(() => {
-    load().catch((e) => message.error(formatError(e, "加载互评名单失败")));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cycleId, userId]);
-
-  const pending = cands.filter((c) => c.status === "pending");
-  const approved = cands.filter((c) => c.status === "approved");
-  const removed = cands.filter((c) => c.status === "removed");
-  const canEdit = cycleStatus === "in_progress" && approved.length === 0;
-
-  // 桌面表格与移动端卡片共用同一套渲染
-  function peerStatusTag(v: string) {
-    return v === "approved" ? (
-      <StatusTag type="success">已发起互评</StatusTag>
-    ) : v === "removed" ? (
-      <StatusTag>已移除</StatusTag>
-    ) : (
-      <StatusTag type="warning">待审核</StatusTag>
-    );
-  }
-
-  function peerRemoveAction(r: PeerCandidate) {
-    return canEdit && r.status === "pending" ? (
-      <a onClick={() => setRemoveIds((prev) => Array.from(new Set([...prev, r.user_id])))}>
-        拟移除
-      </a>
-    ) : null;
-  }
-
-  const peerCardColumns: CardColumn<PeerCandidate>[] = [
-    { title: "姓名", dataIndex: "name" },
-    { title: "职位", render: (c) => c.position ?? "-" },
-    {
-      title: "来源",
-      render: (c) =>
-        c.proposed_by === "leader" ? (
-          <StatusTag type="primary">上级加</StatusTag>
-        ) : (
-          <StatusTag>员工选</StatusTag>
-        ),
-    },
-    { title: "状态", render: (c) => peerStatusTag(c.status) },
-  ];
-
-  async function onConfirm() {
-    setSaving(true);
-    try {
-      const r = await api.post(
-        `/v1/cycles/${cycleId}/users/${userId}/peer/approve`,
-        {
-          add_user_ids: addIds,
-          remove_user_ids: removeIds,
-        }
-      );
-      message.success(`已发起互评：新增 ${r.data.approved_tasks} 人，共 ${r.data.total_peers} 人`);
-      setAddIds([]);
-      setRemoveIds([]);
-      await load();
-    } catch (e) {
-      message.error(formatError(e, "操作失败"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Card title="互评名单审核">
-      {approved.length > 0 && (
-        <Alert
-          type="success"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={`已发起 ${approved.length} 人的正式互评；不能再修改`}
-        />
-      )}
-      {cands.length === 0 && approved.length === 0 && (
-        <Alert type="info" showIcon message="员工尚未提交互评人邀请" style={{ marginBottom: 12 }} />
-      )}
-
-      {(pending.length > 0 || removed.length > 0 || approved.length > 0) && (
-        <>
-          {/* 桌面端：表格 */}
-          <div className="pms-responsive-table" style={{ marginBottom: 16 }}>
-            <Table
-              size="small"
-              rowKey="user_id"
-              pagination={false}
-              dataSource={cands}
-              columns={[
-                { title: "姓名", dataIndex: "name" },
-                { title: "职位", dataIndex: "position" },
-                {
-                  title: "来源",
-                  dataIndex: "proposed_by",
-                  render: (v) => (v === "leader" ? <StatusTag type="primary">上级加</StatusTag> : <StatusTag>员工选</StatusTag>),
-                },
-                {
-                  title: "状态",
-                  dataIndex: "status",
-                  render: (v) => peerStatusTag(v),
-                },
-                {
-                  title: "操作",
-                  render: (_, r) => peerRemoveAction(r),
-                },
-              ]}
-            />
-          </div>
-          {/* 移动端：卡片列表（.table-card-list 由 CSS 在 ≤767px 自动显示） */}
-          <TableCardList<PeerCandidate>
-            columns={peerCardColumns}
-            dataSource={cands}
-            rowKey={(c) => c.user_id}
-            renderActions={peerRemoveAction}
-          />
-        </>
-      )}
-
-      {canEdit && (
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <div>
-            <Typography.Text>追加互评人：</Typography.Text>
-            <Select
-              mode="multiple"
-              value={addIds}
-              onChange={setAddIds}
-              style={{ width: "100%", maxWidth: 360 }}
-              placeholder="选同事"
-              options={allUsers
-                .filter((u) => !cands.find((c) => c.user_id === u.id))
-                .map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }))}
-            />
-          </div>
-          {removeIds.length > 0 && (
-            <div>
-              <Typography.Text type="danger">
-                将移除：{cands.filter((c) => removeIds.includes(c.user_id)).map((c) => c.name).join(", ")}
-              </Typography.Text>
-            </div>
-          )}
-          <Button type="primary" onClick={onConfirm} loading={saving}>
-            确认并发起互评
-          </Button>
-        </Space>
-      )}
-    </Card>
-  );
-}
+// 互评名单审核已拆到独立页面 /peer-review（面板组件 components/PeerReviewPanel.tsx），本页只保留互评汇总
 
 // ========== 互评汇总（被评人收到的） ==========
 interface RaterBias {
@@ -881,9 +697,17 @@ function ObjectivesReviewSection({
       extra={
         canEdit && pendingCount > 0 ? (
           <Space>
-            <Button type="primary" onClick={onApprove} loading={processing}>
-              批准目标
-            </Button>
+            <Popconfirm
+              title="确认批准目标？"
+              description="批准后目标进入执行状态，员工将按此目标被考核"
+              okText="确认批准"
+              cancelText="取消"
+              onConfirm={onApprove}
+            >
+              <Button type="primary" loading={processing}>
+                批准目标
+              </Button>
+            </Popconfirm>
           </Space>
         ) : null
       }
@@ -1025,7 +849,7 @@ export default function LeaderEvalDetail() {
     // 切换被评估人（含"下一位"跳转）时重置表单与草稿恢复标记
     draftRestored.current = false;
     form.resetFields();
-    reload().catch(() => message.error("加载失败"));
+    reload().catch((e) => message.error(formatError(e, "加载评估详情失败")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId, userId]);
 
@@ -1104,7 +928,7 @@ export default function LeaderEvalDetail() {
 
   if (!detail) {
     return (
-      <div style={{ textAlign: "center", padding: 64 }}>
+      <div style={{ textAlign: "center", padding: "var(--space-10)" }}>
         <Spin size="large" />
       </div>
     );
@@ -1202,8 +1026,18 @@ export default function LeaderEvalDetail() {
     />
   );
 
-  const peerReviewSection = (
-    <PeerReviewSection cycleId={Number(cycleId)} userId={Number(userId)} cycleStatus={detail.cycle.status} />
+  // 名单审核已移至独立页面 /peer-review，互评 Tab 只保留汇总 + 引导入口
+  const peerReviewGuide = (
+    <Alert
+      type="info"
+      showIcon
+      message={
+        <>
+          互评名单确认已移至「互评名单」独立页面，
+          <Link to="/peer-review">去审核名单</Link>
+        </>
+      }
+    />
   );
 
   const peerSummarySection = <PeerSummarySection cycleId={Number(cycleId)} userId={Number(userId)} />;
@@ -1319,7 +1153,7 @@ export default function LeaderEvalDetail() {
               label: "互评",
               children: (
                 <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                  {peerReviewSection}
+                  {peerReviewGuide}
                   {peerSummarySection}
                 </Space>
               ),
@@ -1336,7 +1170,7 @@ export default function LeaderEvalDetail() {
           {historicalEvaluationsSection}
           {objectiveCycleCard}
           {objectivesSection}
-          {peerReviewSection}
+          {peerReviewGuide}
           {peerSummarySection}
           {selfEvalCard}
           {superiorEvalCard}

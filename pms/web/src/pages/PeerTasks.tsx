@@ -14,6 +14,7 @@ import {
   List,
   Modal,
   Progress,
+  Spin,
   Typography,
   message,
 } from "antd";
@@ -23,6 +24,15 @@ import { useMobile } from "@/hooks/useMobile";
 import BottomActions from "@/components/ui/BottomActions";
 import StatusTag from "@/components/ui/StatusTag";
 
+
+// 被评人目标（只读），评价时"有据可依"
+interface PeerObjective {
+  title: string;
+  description: string;
+  measure_criteria: string;
+  weight: number;
+  progress: number;
+}
 
 interface PeerTask {
   id: number;
@@ -34,6 +44,7 @@ interface PeerTask {
   status: "pending" | "submitted" | "declined";
   decline_reason: string | null;
   submitted_at: string | null;
+  objectives: PeerObjective[];
 }
 
 // 互评表单值（界面只采集 belief 一组，提交时 expandValueGrades 展开为后端三维度契约）
@@ -46,6 +57,7 @@ interface PeerEvalFormValues {
 
 export default function PeerTasks() {
   const [tasks, setTasks] = useState<PeerTask[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PeerTask | null>(null);
   const [declining, setDeclining] = useState<PeerTask | null>(null);
   const [declineReason, setDeclineReason] = useState("");
@@ -58,8 +70,13 @@ export default function PeerTasks() {
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
-    const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
-    setTasks(r.data);
+    setLoading(true);
+    try {
+      const r = await api.get<PeerTask[]>(`/v1/peer/my-tasks`);
+      setTasks(r.data);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => {
     load().catch((e) => message.error(formatError(e, "加载互评任务失败")));
@@ -187,7 +204,7 @@ export default function PeerTasks() {
       <Button
         key="decline"
         type="text"
-        size="small"
+        size={isMobile ? undefined : "small"}
         onClick={() => {
           setDeclining(t);
           setDeclineReason("");
@@ -198,12 +215,40 @@ export default function PeerTasks() {
     ];
   }
 
+  // 被评人目标只读区：评价时展示，作为评分依据（抽屉/Modal 共用，随表单一起渲染）
+  const objectiveBlock =
+    editing && editing.objectives.length > 0 ? (
+      <div style={{ marginBottom: 16, padding: 12, background: "var(--color-surface-raised)", borderRadius: "var(--radius-lg)" }}>
+        <Typography.Text strong>{editing.target_name} 的绩效目标</Typography.Text>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+          {editing.objectives.map((o, i) => (
+            <li key={i} style={{ marginBottom: 8 }}>
+              <Typography.Text strong>{o.title}</Typography.Text>
+              <Typography.Text type="secondary">（权重 {o.weight}% · 进度 {o.progress}%）</Typography.Text>
+              {o.description && (
+                <div>
+                  <Typography.Text type="secondary">{o.description}</Typography.Text>
+                </div>
+              )}
+              {o.measure_criteria && (
+                <div>
+                  <Typography.Text type="secondary">衡量标准：{o.measure_criteria}</Typography.Text>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
   const evalForm = (
-    <Form form={form} layout="vertical" onValuesChange={onValuesChange}>
+    <>
+      {objectiveBlock}
+      <Form form={form} layout="vertical" onValuesChange={onValuesChange}>
       <Form.Item
         name="perf_score"
         label="业绩评分（1-5，0.25 分段）"
-        rules={[{ required: true }]}
+        rules={[{ required: true, message: "请打分" }]}
       >
         <InputNumber min={1} max={5} step={0.25} style={{ width: 200 }} inputMode="decimal" />
       </Form.Item>
@@ -212,6 +257,7 @@ export default function PeerTasks() {
         <Input.TextArea rows={3} />
       </Form.Item>
     </Form>
+    </>
   );
 
   const evalTitle = editing ? `评价 ${editing.target_name}` : "";
@@ -232,7 +278,11 @@ export default function PeerTasks() {
           </Typography.Text>
         </div>
       )}
-      {tasks.length === 0 ? (
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 32 }}>
+          <Spin />
+        </div>
+      ) : tasks.length === 0 ? (
         <Empty description="暂无互评任务" />
       ) : (
         <List

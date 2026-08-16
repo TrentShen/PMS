@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Empty, List, Space, Typography, message } from "antd";
+import { Button, Card, Empty, List, Space, Spin, Typography, message } from "antd";
 import { RightOutlined } from "@ant-design/icons";
 import { ROLE } from "@/App";
 import { hasAnyRole } from "@/components/RequireRole";
@@ -162,25 +162,30 @@ export default function Home() {
     objective_settings: [],
   });
   const [pendingPeerTasks, setPendingPeerTasks] = useState<PeerTaskBrief[]>([]);
+  // 四个请求并发，全部结束后才置 false，避免首屏假空态
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api
-      .get<MyCycleItem[]>("/v1/cycles/mine")
-      .then((r) => setCycles(r.data))
-      .catch((e) => message.error(formatError(e, "加载我的周期失败")));
-    api
-      .get<ProbationPlanBrief | null>("/v1/probation/mine")
-      .then((r) => setMyProbation(r.data))
-      .catch((e) => message.error(formatError(e, "加载试用期信息失败")));
-    api
-      .get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks")
-      .then((r) => setTasks(r.data))
-      .catch((e) => message.error(formatError(e, "加载待办任务失败")));
-    // 互评待办与上面的请求并发，只保留待评价的任务
-    api
-      .get<PeerTaskBrief[]>("/v1/peer/my-tasks")
-      .then((r) => setPendingPeerTasks(r.data.filter((t) => t.status === "pending")))
-      .catch((e) => message.error(formatError(e, "加载互评任务失败")));
+    const requests = [
+      api
+        .get<MyCycleItem[]>("/v1/cycles/mine")
+        .then((r) => setCycles(r.data))
+        .catch((e) => message.error(formatError(e, "加载我的周期失败"))),
+      api
+        .get<ProbationPlanBrief | null>("/v1/probation/mine")
+        .then((r) => setMyProbation(r.data))
+        .catch((e) => message.error(formatError(e, "加载试用期信息失败"))),
+      api
+        .get<{ evaluations: TaskItem[]; objective_settings: TaskItem[] }>("/v1/auth/me/tasks")
+        .then((r) => setTasks(r.data))
+        .catch((e) => message.error(formatError(e, "加载待办任务失败"))),
+      // 互评待办与上面的请求并发，只保留待评价的任务
+      api
+        .get<PeerTaskBrief[]>("/v1/peer/my-tasks")
+        .then((r) => setPendingPeerTasks(r.data.filter((t) => t.status === "pending")))
+        .catch((e) => message.error(formatError(e, "加载互评任务失败"))),
+    ];
+    void Promise.allSettled(requests).then(() => setLoading(false));
   }, []);
 
   // 统一走 ROLE 分组；避免各页面各写一套角色字符串
@@ -322,6 +327,8 @@ export default function Home() {
               <Typography.Text type="secondary">还有 {todos.length - 1} 条待办</Typography.Text>
             )}
           </Space>
+        ) : loading ? (
+          <Spin />
         ) : (
           <Typography.Text type="secondary">当前没有待办事项</Typography.Text>
         )}
@@ -396,7 +403,9 @@ export default function Home() {
       )}
 
       <Card title="我参与的周期">
-        {cycles.length === 0 ? (
+        {loading ? (
+          <Spin />
+        ) : cycles.length === 0 ? (
           <Empty description="暂无参与的绩效周期，待 HR 发起新周期后即可在这里查看" />
         ) : (
           <>

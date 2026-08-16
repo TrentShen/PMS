@@ -17,6 +17,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Typography,
 } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -326,7 +327,11 @@ export default function ProbationDetail() {
   }
 
   async function submitEvaluation() {
-    if (!userId || !evalResult) return;
+    if (!userId) return;
+    if (!evalResult) {
+      message.warning("请选择转正建议");
+      return;
+    }
     if (!evalComment.trim()) {
       message.error("请填写评估意见");
       return;
@@ -379,7 +384,14 @@ export default function ProbationDetail() {
     );
   }
 
-  if (!plan) return null;
+  // 初次加载中：居中 Spin 占位，避免整页白屏
+  if (!plan) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: 64 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   const statusCfg = STATUS_LABEL[plan.status] ?? { text: plan.status_text, type: "default" as StatusType };
   // 编辑态权重合计：等于 100 显示 success，否则 warning；保存/提交时强校验拦截
@@ -450,7 +462,7 @@ export default function ProbationDetail() {
                             cancelText="取消"
                             onConfirm={() => removeObjective(idx)}
                           >
-                            <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                            <Button type="text" danger size={isMobile ? undefined : "small"} icon={<DeleteOutlined />}>
                               删除
                             </Button>
                           </Popconfirm>
@@ -561,9 +573,15 @@ export default function ProbationDetail() {
             {canApproveObjectives() && (
               <Card size="small" title="目标审批" style={{ marginTop: 16 }}>
                 <Space wrap>
-                  <Button type="primary" onClick={approveObjectives} loading={approving}>
-                    批准目标
-                  </Button>
+                  <Popconfirm
+                    title="确认批准该员工的试用期目标？"
+                    onConfirm={approveObjectives}
+                    okButtonProps={{ loading: approving }}
+                  >
+                    <Button type="primary" loading={approving}>
+                      批准目标
+                    </Button>
+                  </Popconfirm>
                   <Button danger onClick={() => setRejectOpen(true)}>
                     驳回目标
                   </Button>

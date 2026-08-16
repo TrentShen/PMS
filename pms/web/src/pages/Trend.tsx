@@ -45,7 +45,10 @@ export default function Trend() {
     if (user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission) {
       api.get<DeptTrendPoint[]>("/v1/trend/departments")
         .then((r) => setDeptPoints(r.data))
-        .catch(() => setDeptPoints([]));
+        .catch((e) => {
+          setDeptPoints([]);
+          message.error(formatError(e, "加载部门趋势失败"));
+        });
     }
   }, [targetId, user.role, user.has_hr_permission]);
 
@@ -75,21 +78,26 @@ export default function Trend() {
         {personalChartData.length === 0 ? (
           <Empty description="暂无趋势数据" />
         ) : (
-          <Line
-            data={personalChartData}
-            xField="cycle"
-            yField="score"
-            seriesField="source"
-            point={{ size: 4 }}
-            smooth
-            yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
-            tooltip={{
-              formatter: (d: { source: string; score: number; level: string }) => ({
-                name: d.source,
-                value: `${d.score.toFixed(2)} 分（${d.level}）`,
-              }),
-            }}
-          />
+          <div
+            role="img"
+            aria-label={`个人绩效趋势折线图，共 ${points.length} 个周期`}
+          >
+            <Line
+              data={personalChartData}
+              xField="cycle"
+              yField="score"
+              seriesField="source"
+              point={{ size: 4 }}
+              smooth
+              yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
+              tooltip={{
+                formatter: (d: { source: string; score: number; level: string }) => ({
+                  name: d.source,
+                  value: `${d.score.toFixed(2)} 分（${d.level}）`,
+                }),
+              }}
+            />
+          </div>
         )}
         <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
           显示个人各周期绩效评分变化，包含当前系统已发布周期和导入的历史数据。
@@ -98,21 +106,26 @@ export default function Trend() {
 
       {deptPoints.length > 0 && (
         <Card title="部门绩效趋势">
-          <Line
-            data={deptChartData}
-            xField="cycle"
-            yField="score"
-            seriesField="department"
-            point={{ size: 4 }}
-            smooth
-            yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
-            tooltip={{
-              formatter: (d: { department: string; score: number; count: number }) => ({
-                name: d.department,
-                value: `${d.score.toFixed(2)} 分（${d.count} 人）`,
-              }),
-            }}
-          />
+          <div
+            role="img"
+            aria-label={`部门绩效趋势折线图，共 ${deptPoints.length} 个周期`}
+          >
+            <Line
+              data={deptChartData}
+              xField="cycle"
+              yField="score"
+              seriesField="department"
+              point={{ size: 4 }}
+              smooth
+              yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
+              tooltip={{
+                formatter: (d: { department: string; score: number; count: number }) => ({
+                  name: d.department,
+                  value: `${d.score.toFixed(2)} 分（${d.count} 人）`,
+                }),
+              }}
+            />
+          </div>
           <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
             显示各部门在各周期的平均绩效评分，用于横向对比。
           </Typography.Paragraph>

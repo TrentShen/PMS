@@ -48,6 +48,9 @@ export default function Probation() {
   const [items, setItems] = useState<ProbationListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  // 两个导入按钮分别防重：导入超时 60s，期间 loading + disabled
+  const [uploadingObjectives, setUploadingObjectives] = useState(false);
+  const [uploadingOffline, setUploadingOffline] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
 
@@ -83,6 +86,7 @@ export default function Probation() {
   async function onUploadObjectives(file: File) {
     const fd = new FormData();
     fd.append("file", file);
+    setUploadingObjectives(true);
     try {
       const r = await api.post<ObjectiveImportResult>("/v1/probation/import-objectives", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -92,6 +96,8 @@ export default function Probation() {
       load();
     } catch (e) {
       message.error(formatError(e, "导入失败"));
+    } finally {
+      setUploadingObjectives(false);
     }
     return false; // 阻止 antd 默认上传
   }
@@ -103,6 +109,7 @@ export default function Probation() {
   async function uploadOfflineObjectives(files: File[]) {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
+    setUploadingOffline(true);
     try {
       const r = await api.post<OfflineObjectiveImportResult>(
         "/v1/probation/import-offline-objectives",
@@ -116,6 +123,8 @@ export default function Probation() {
       load();
     } catch (e) {
       message.error(formatError(e, "导入失败"));
+    } finally {
+      setUploadingOffline(false);
     }
   }
 
@@ -248,7 +257,7 @@ export default function Probation() {
                 下载目标导入模板
               </Button>
               <Upload accept=".xlsx" showUploadList={false} beforeUpload={(f) => onUploadObjectives(f)}>
-                <Button icon={<UploadOutlined />}>导入试用期目标</Button>
+                <Button icon={<UploadOutlined />} loading={uploadingObjectives} disabled={uploadingObjectives}>导入试用期目标</Button>
               </Upload>
               <Tooltip title="支持线下《目标设定及考核表》原表上传，每人一个文件，按工号匹配">
                 <Upload
@@ -257,7 +266,7 @@ export default function Probation() {
                   showUploadList={false}
                   beforeUpload={(f) => onSelectOfflineFiles(f)}
                 >
-                  <Button icon={<UploadOutlined />}>导入线下目标表</Button>
+                  <Button icon={<UploadOutlined />} loading={uploadingOffline} disabled={uploadingOffline}>导入线下目标表</Button>
                 </Upload>
               </Tooltip>
             </>
@@ -272,18 +281,15 @@ export default function Probation() {
             loading={loading}
             size="small"
             pagination={false}
+            scroll={{ x: 1010 }}
           />
         </div>
         <TableCardList<ProbationListItem>
           columns={cardColumns}
           dataSource={items}
+          loading={loading}
           rowKey={(r) => r.id}
           onCardClick={(r) => navigate(`/probation/${r.user_id}`)}
-          renderActions={(r) => (
-            <Button type="link" size="small" onClick={() => navigate(`/probation/${r.user_id}`)}>
-              查看
-            </Button>
-          )}
         />
       </Card>
     </div>

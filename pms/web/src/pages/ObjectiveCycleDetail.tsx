@@ -272,7 +272,7 @@ export default function ObjectiveCycleDetail() {
       <Card
         title="参与人目标状态"
         extra={
-          <Space>
+          <Space wrap>
             <Button size="small" icon={<DownloadOutlined />} href="/api/v1/objective-cycles/excel/template">
               下载导入模板
             </Button>
@@ -305,7 +305,7 @@ export default function ObjectiveCycleDetail() {
             <Select
               mode="multiple"
               placeholder="选择员工"
-              style={{ width: 320 }}
+              style={{ width: "100%", maxWidth: 320 }}
               value={addingIds}
               onChange={setAddingIds}
               options={availableUsers.map((u) => ({ value: u.id, label: `${u.name}（${u.position ?? ""}）` }))}

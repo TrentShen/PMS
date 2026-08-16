@@ -55,7 +55,7 @@ const CYCLE_STATUS_LABEL: Record<string, string> = {
   draft: "草稿", in_progress: "进行中", published: "已公布", closed: "已归档",
 };
 const CYCLE_STATUS_TYPE: Record<string, StatusType> = {
-  draft: "warning", in_progress: "primary", published: "success", closed: "success",
+  draft: "warning", in_progress: "primary", published: "success", closed: "default",
 };
 
 interface Detail {
@@ -118,7 +118,7 @@ const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
   draft: { text: "草稿", type: "default" },
   pending_review: { text: "待上级审批", type: "warning" },
   approved: { text: "已确认", type: "success" },
-  locked: { text: "已锁定", type: "info" },
+  locked: { text: "已锁定", type: "primary" },
   // pending_adjustment 状态目前不直接体现在 objective 表上，而是通过 adjustments API 查询
 };
 
@@ -187,7 +187,7 @@ function ObjectivesSection({
       await api.put(`/v1/objective-cycles/${objectiveCycleId}/objectives`, { items });
       message.success("目标草稿已保存");
       setEditing(false);
-      onSaved();
+      await onSaved();
     } catch (e) {
       message.error(formatError(e, "保存失败"));
     } finally { setSaving(false); }
@@ -199,7 +199,7 @@ function ObjectivesSection({
     try {
       await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/submit`);
       message.success("目标已提交上级审批");
-      onSaved();
+      await onSaved();
     } catch (e) {
       message.error(formatError(e, "提交失败"));
     } finally { setSubmitting(false); }
@@ -243,7 +243,7 @@ function ObjectivesSection({
       message.success("调整申请已提交，等待上级审批");
       setAdjusting(false);
       setAdjReason("");
-      onSaved();
+      await onSaved();
     } catch (e) {
       message.error(formatError(e, "提交失败"));
     } finally { setAdjSubmitting(false); }
@@ -377,15 +377,21 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
   const [allUsers, setAllUsers] = useState<UserBrief[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/peer/candidates`);
-    setCandidates(r.data);
-    // employee-proposed 的作为可编辑初值；leader-added 和 approved 都不展示在选择框里
-    setSelected(r.data.filter((c) => c.proposed_by === "employee" && c.status !== "removed").map((c) => c.user_id));
-    // 候选人：脱敏同事列表（/v1/cycles/:id/participants 按 scope 过滤后员工只剩自己，排除后下拉恒空）
-    const u = await api.get<UserBrief[]>("/v1/users/colleagues");
-    setAllUsers(u.data.filter((x) => x.id !== me.id));
+    setLoading(true);
+    try {
+      const r = await api.get<PeerCandidate[]>(`/v1/cycles/${cycleId}/peer/candidates`);
+      setCandidates(r.data);
+      // employee-proposed 的作为可编辑初值；leader-added 和 approved 都不展示在选择框里
+      setSelected(r.data.filter((c) => c.proposed_by === "employee" && c.status !== "removed").map((c) => c.user_id));
+      // 候选人：脱敏同事列表（/v1/cycles/:id/participants 按 scope 过滤后员工只剩自己，排除后下拉恒空）
+      const u = await api.get<UserBrief[]>("/v1/users/colleagues");
+      setAllUsers(u.data.filter((x) => x.id !== me.id));
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => {
     load().catch((e) => message.error(formatError(e, "加载互评人信息失败")));
@@ -448,6 +454,7 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
         <Select
           mode="multiple"
           disabled={disabled || hasApproved}
+          loading={loading}
           value={selected}
           onChange={onSelectChange}
           style={{ width: "100%" }}
@@ -464,11 +471,17 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
             保存互评名单
           </Button>
         )}
-        {candidates.length > 0 && (
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 24 }}>
+            <Spin />
+          </div>
+        ) : (
+          !loading && candidates.length > 0 && (
           <Table
             size="small"
             pagination={false}
             rowKey="user_id"
+            scroll={{ x: 480 }}
             dataSource={candidates}
             columns={[
               { title: "姓名", dataIndex: "name" },
@@ -486,6 +499,7 @@ function PeerInviteSection({ cycleId, disabled }: { cycleId: number; disabled: b
               },
             ]}
           />
+          )
         )}
       </Space>
     </Card>
@@ -531,7 +545,7 @@ export default function SelfEval() {
   }
 
   useEffect(() => {
-    reload().catch(() => message.error("加载失败"));
+    reload().catch((e) => message.error(formatError(e, "加载失败")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId]);
 

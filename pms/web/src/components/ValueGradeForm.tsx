@@ -24,7 +24,7 @@ export default function ValueGradeForm({ disabled = false, prefix = "value" }: P
       <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
         甲=持续超越期望，乙=基本符合价值观要求，丙=不符合基本要求（评"甲"时必须填写具体事例）
       </Typography.Text>
-      <div style={{ marginBottom: 16, padding: "12px 16px", background: "var(--color-surface-raised, #fafafa)", borderRadius: 8 }}>
+      <div style={{ marginBottom: 16, padding: "var(--space-3) var(--space-4)", background: "var(--color-surface-raised)", borderRadius: "var(--radius-lg)" }}>
         <Form.Item
           name={`${prefix}_belief_grade`}
           label="价值观评分"

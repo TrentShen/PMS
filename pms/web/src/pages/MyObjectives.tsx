@@ -10,6 +10,7 @@ import {
   Input,
   InputNumber,
   Popconfirm,
+  Progress,
   Space,
   Spin,
   Typography,
@@ -22,6 +23,7 @@ import type { ObjectiveView } from "@/services/api.types";
 import BottomActions from "@/components/ui/BottomActions";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
+import { useMobile } from "@/hooks/useMobile";
 
 interface ObjItem {
   title: string;
@@ -55,6 +57,10 @@ export default function MyObjectives() {
   const [items, setItems] = useState<ObjItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  // 进展编辑：按目标 id 暂存待提交的进度值（不直接改 objectives，避免未提交就覆盖展示）
+  const [progressEdits, setProgressEdits] = useState<Record<number, number>>({});
+  const [progressSavingId, setProgressSavingId] = useState<number | null>(null);
+  const isMobile = useMobile();
 
   async function load() {
     const r = await api.get<ObjectiveView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives`);
@@ -151,6 +157,27 @@ export default function MyObjectives() {
     }
   }
 
+  // 更新单条目标进展（0-100）；目标周期已结束时后端会拒绝并报错提示
+  async function onUpdateProgress(o: ObjectiveView) {
+    const progress = progressEdits[o.id] ?? o.progress;
+    setProgressSavingId(o.id);
+    try {
+      await api.put(`/v1/objective-cycles/${objectiveCycleId}/objectives/${o.id}/progress`, { progress });
+      message.success("进展已更新");
+      setProgressEdits((prev) => {
+        const next = { ...prev };
+        delete next[o.id];
+        return next;
+      });
+      // 数据已写入，刷新失败单独提示，不误报"更新失败"
+      await load().catch((e) => message.error(formatError(e, "刷新列表失败")));
+    } catch (e) {
+      message.error(formatError(e, "更新进展失败"));
+    } finally {
+      setProgressSavingId(null);
+    }
+  }
+
   const overallStatus = objectives.length > 0
     ? objectives.some((o) => o.status === "pending_review")
       ? "pending_review"
@@ -190,7 +217,7 @@ export default function MyObjectives() {
                     cancelText="取消"
                     onConfirm={() => removeRow(idx)}
                   >
-                    <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                    <Button type="text" danger size={isMobile ? undefined : "small"} icon={<DeleteOutlined />}>
                       删除
                     </Button>
                   </Popconfirm>
@@ -354,9 +381,38 @@ export default function MyObjectives() {
                     {o.measure_criteria || "-"}
                   </Typography.Paragraph>
                 </div>
-                <StatusTag type={STATUS_LABEL[o.status]?.type ?? "default"}>
-                  {STATUS_LABEL[o.status]?.text ?? o.status}
-                </StatusTag>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <StatusTag type={STATUS_LABEL[o.status]?.type ?? "default"}>
+                    {STATUS_LABEL[o.status]?.text ?? o.status}
+                  </StatusTag>
+                </div>
+                {/* 进展跟踪：进度条 + 百分比更新（执行期随时自报） */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                  <Progress
+                    percent={o.progress}
+                    size="small"
+                    style={{ flex: 1, marginBottom: 0 }}
+                  />
+                  <InputNumber
+                    min={0}
+                    max={100}
+                    size={isMobile ? undefined : "small"}
+                    addonAfter="%"
+                    style={{ width: 100 }}
+                    value={progressEdits[o.id] ?? o.progress}
+                    onChange={(v) =>
+                      setProgressEdits((prev) => ({ ...prev, [o.id]: v ?? 0 }))
+                    }
+                  />
+                  <Button
+                    size={isMobile ? undefined : "small"}
+                    loading={progressSavingId === o.id}
+                    disabled={(progressEdits[o.id] ?? o.progress) === o.progress}
+                    onClick={() => onUpdateProgress(o)}
+                  >
+                    更新
+                  </Button>
+                </div>
               </Card>
             ))}
           </>

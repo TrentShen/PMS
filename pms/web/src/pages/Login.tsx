@@ -1,7 +1,7 @@
 // 登录页：在企微内 → 跳 OAuth 授权；非企微 → mock 身份列表
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Card, List, Result, Tag, Typography, message } from "antd";
+import { Button, Card, Empty, List, Result, Tag, Typography, message } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
 
@@ -73,7 +73,10 @@ export default function Login() {
     }
     // 非企微环境：展示 mock 登录
     setChecking(false);
-    api.get<MockUser[]>("/v1/auth/mock-users").then((r) => setUsers(r.data));
+    api
+      .get<MockUser[]>("/v1/auth/mock-users")
+      .then((r) => setUsers(r.data))
+      .catch((e) => message.error(formatError(e, "加载测试账号失败")));
   }, [redirect]);
 
   async function loginAs(uid: string) {
@@ -121,6 +124,7 @@ export default function Login() {
         </Typography.Paragraph>
         <List
           dataSource={users}
+          locale={{ emptyText: <Empty description="暂无可用的测试身份" /> }}
           renderItem={(u) => (
             <List.Item
               actions={[

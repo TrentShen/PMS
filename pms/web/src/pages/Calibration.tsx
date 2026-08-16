@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Drawer,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -30,6 +31,7 @@ import BottomActions from "@/components/ui/BottomActions";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
 import StatusTag, { type StatusType } from "@/components/ui/StatusTag";
 import TableCardList, { type CardColumn } from "@/components/ui/TableCardList";
+import { PARTICIPANT_STATUS_LABEL, PARTICIPANT_STATUS_TYPE } from "@/components/ui/participantStatus";
 
 
 interface Cycle {
@@ -49,6 +51,24 @@ interface CalItem {
 interface Dist { level: string; label: string; count: number; percent: number; target_percent: string; warning: boolean }
 interface MatrixRow { group: string; excellent: number; exceed_part: number; meet: number; below_part: number; below: number; unset: number; total: number }
 interface MatrixData { by_dept: MatrixRow[]; by_level: MatrixRow[] }
+
+// 人员详情抽屉数据（复用 /v1/cycles/{cid}/users/{uid}/detail 契约的子集）
+interface EvalDetail {
+  perf_score: number | null;
+  perf_level: string | null;
+  value_belief_grade: string | null;
+  value_team_grade: string | null;
+  value_growth_grade: string | null;
+  key_results: string | null;
+  comment: string | null;
+  status: string;
+}
+interface DetailObjective { id: number; title: string; description: string; measure_criteria: string | null; weight: number; progress: number }
+interface UserDetailData {
+  objectives: DetailObjective[];
+  self_evaluation: EvalDetail | null;
+  superior_evaluation: EvalDetail | null;
+}
 
 // 校准弹窗表单值（界面只采集 belief 一组，提交时 expandValueGrades 展开为后端三维度契约）
 interface CalibrateFormValues {
@@ -86,7 +106,7 @@ function MatrixTable({ data }: { data: MatrixRow[] }) {
       textAlign: "center",
       backgroundColor: `hsl(210, 90%, ${lightness}%)`,
       fontWeight: ratio > 0.5 ? 600 : 400,
-      color: ratio > 0.5 ? "#fff" : "#000",
+      color: ratio > 0.5 ? "var(--color-primary-text-on)" : "var(--color-text-primary)",
     };
   };
 
@@ -137,20 +157,6 @@ const APPROVAL_TAG_TYPE: Record<string, StatusType> = {
   rejected_by_hr: "danger",
   rejected_by_ceo: "danger",
 };
-const PARTICIPANT_STATUS_LABEL: Record<string, string> = {
-  pending: "待自评",
-  self_done: "待上级评估",
-  leader_done: "上级已评",
-  published: "已公布",
-  excluded: "已排除",
-};
-const PARTICIPANT_STATUS_TYPE: Record<string, StatusType> = {
-  pending: "default",
-  self_done: "info",
-  leader_done: "primary",
-  published: "success",
-  excluded: "default",
-};
 
 // 分数变化：上调绿色（--color-success）、下调红色（--color-danger），配色类定义在 global.css
 function ScoreDelta({ initial, calibrated }: { initial: number | null; calibrated: number | null }) {
@@ -191,9 +197,11 @@ function getChartColor(token: string, fallback: string): string {
 export default function Calibration() {
   const user = useAuth((s) => s.user)!;
   const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [cyclesLoaded, setCyclesLoaded] = useState(false);
   const [selectedCid, setSelectedCid] = useState<number | null>(null);
   const [items, setItems] = useState<CalItem[]>([]);
   const [distribution, setDistribution] = useState<Dist[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
   const [matrix, setMatrix] = useState<MatrixData | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<string>("calibrating");
   const [rejectReason, setRejectReason] = useState<string | null>(null);
@@ -205,6 +213,13 @@ export default function Calibration() {
   const [approvalSaving, setApprovalSaving] = useState(false);
   // 提交校准防重：重复提交会产生重复审批流
   const [submittingCal, setSubmittingCal] = useState(false);
+  // 分布软校验：A/C 档预警时提交前必须填差异理由（后端同样强制校验，理由进审计日志）
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  // 人员详情抽屉：校准人不用跳页即可看目标/自评/上级评估
+  const [viewing, setViewing] = useState<CalItem | null>(null);
+  const [detail, setDetail] = useState<UserDetailData | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useMobile();
 
   const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
@@ -217,11 +232,17 @@ export default function Calibration() {
       const inp = r.data.filter((c) => c.status === "in_progress");
       setCycles(inp);
       if (inp.length > 0) setSelectedCid(inp[0].id);
+      setCyclesLoaded(true);
     }).catch((e) => message.error(formatError(e, "加载周期列表失败")));
   }, []);
 
   async function loadView() {
     if (!selectedCid) return;
+    // 切周期时先清空旧数据，避免残留上一周期的明细/分布
+    setItems([]);
+    setDistribution([]);
+    setMatrix(null);
+    setViewLoading(true);
     try {
       const r = await api.get(`/v1/calibration/cycles/${selectedCid}/view?page_size=9999`);
       setItems(r.data.items);
@@ -231,9 +252,14 @@ export default function Calibration() {
       setRejectReason(r.data.reject_reason);
     } catch (e) {
       message.error(formatError(e, "加载失败"));
+    } finally {
+      setViewLoading(false);
     }
   }
   useEffect(() => { loadView(); }, [selectedCid]);
+
+  // 切换周期时关闭详情抽屉，避免展示上一周期的人员数据
+  useEffect(() => { setViewing(null); }, [selectedCid]);
 
   // 分布对比图数据：实际分布（--color-chart-1）vs 目标分布（--color-chart-grid）
   // 目标占比从后端文案（如 "≤30%"/"≈60%"/"≥10%"）中提取数值，仅用于展示
@@ -267,6 +293,47 @@ export default function Calibration() {
     });
   }
 
+  // 打开人员详情抽屉：复用员工详情接口（权限与校准视图同为 visible_user_ids scope）
+  function openDetail(r: CalItem) {
+    setViewing(r);
+    setDetail(null);
+    setDetailLoading(true);
+    api
+      .get<UserDetailData>(`/v1/cycles/${selectedCid}/users/${r.user_id}/detail`)
+      .then((res) => setDetail(res.data))
+      .catch((e) => {
+        message.error(formatError(e, "加载详情失败"));
+        // 加载失败时关闭抽屉，避免永久停留在加载骨架
+        setViewing(null);
+      })
+      .finally(() => setDetailLoading(false));
+  }
+
+  // 评估摘要块：自评/上级评估共用；未提交时展示占位文案
+  function evalBlock(e: EvalDetail | null, emptyText: string) {
+    if (!e || e.status !== "submitted") {
+      return <Typography.Text type="secondary">{emptyText}</Typography.Text>;
+    }
+    return (
+      <>
+        <div>
+          业绩 {e.perf_score?.toFixed(2) ?? "-"}（{PERF_LABEL[e.perf_level ?? ""] ?? "-"}）
+          　价值观 {VALUE_LABEL[e.value_belief_grade ?? e.value_team_grade ?? e.value_growth_grade ?? ""] ?? "-"}
+        </div>
+        {e.key_results && (
+          <div style={{ marginTop: 8 }}>
+            <Typography.Text type="secondary">关键成果：{e.key_results}</Typography.Text>
+          </div>
+        )}
+        {e.comment && (
+          <div style={{ marginTop: 4 }}>
+            <Typography.Text type="secondary">评语：{e.comment}</Typography.Text>
+          </div>
+        )}
+      </>
+    );
+  }
+
   async function onCalibrate() {
     if (!editingItem) return;
     let v: CalibrateFormValues;
@@ -295,15 +362,34 @@ export default function Calibration() {
     } finally { setSaving(false); }
   }
 
-  async function onSubmitCalibration() {
+  // 分布预警项（仅 A/C 档做提交软校验，与后端口径一致）
+  const distWarnings = distribution.filter((d) => d.warning && (d.level === "A" || d.level === "C"));
+
+  async function onSubmitCalibration(reason?: string) {
     if (submittingCal) return;
+    // 分布不符时先弹窗收集差异理由；reason 为 undefined 表示来自提交按钮的首次点击
+    if (reason === undefined && distWarnings.length > 0) {
+      setOverrideReason("");
+      setOverrideOpen(true);
+      return;
+    }
     setSubmittingCal(true);
     try {
-      await api.post(`/v1/calibration/cycles/${selectedCid}/submit-calibration`);
+      await api.post(
+        `/v1/calibration/cycles/${selectedCid}/submit-calibration`,
+        reason ? { distribution_override_reason: reason } : {},
+      );
       message.success("已提交校准，等待 HR 审批");
+      setOverrideOpen(false);
       await loadView();
     } catch (e) { message.error(formatError(e, "提交失败")); }
     finally { setSubmittingCal(false); }
+  }
+
+  function onConfirmOverride() {
+    const reason = overrideReason.trim();
+    if (!reason) { message.warning("分布不符时必须填写差异理由"); return; }
+    onSubmitCalibration(reason);
   }
 
   async function onApproval(action: "approve" | "reject", comment: string | null) {
@@ -366,8 +452,12 @@ export default function Calibration() {
     ) },
     {
       title: "操作",
-      render: (_: unknown, r: CalItem) =>
-        canCalibrate ? <a onClick={() => openEdit(r)}>校准</a> : null,
+      render: (_: unknown, r: CalItem) => (
+        <Space size="small">
+          <a onClick={() => openDetail(r)}>详情</a>
+          {canCalibrate ? <a onClick={() => openEdit(r)}>校准</a> : null}
+        </Space>
+      ),
     },
   ];
 
@@ -419,6 +509,15 @@ export default function Calibration() {
     </Form>
   );
   const calibrateTitle = editingItem ? `校准：${editingItem.user_name}` : "";
+
+  // 无进行中周期：整页空态（加载完成后再判定，避免首屏闪空态）
+  if (cyclesLoaded && cycles.length === 0) {
+    return (
+      <Card title="绩效校准">
+        <Empty description="暂无进行中的绩效周期" />
+      </Card>
+    );
+  }
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }} className={showBottomActions ? "has-bottom-actions" : undefined}>
@@ -501,11 +600,15 @@ export default function Calibration() {
             columns={cardColumns}
             dataSource={items}
             rowKey={(r) => r.user_id}
-            renderActions={(r) =>
-              canCalibrate ? (
-                <Button size="small" onClick={() => openEdit(r)}>调整</Button>
-              ) : null
-            }
+            loading={viewLoading}
+            renderActions={(r) => (
+              <>
+                <Button size="small" onClick={() => openDetail(r)}>详情</Button>
+                {canCalibrate ? (
+                  <Button size="small" onClick={() => openEdit(r)}>调整</Button>
+                ) : null}
+              </>
+            )}
           />
         ) : (
           <Table
@@ -514,6 +617,7 @@ export default function Calibration() {
             pagination={false}
             dataSource={items}
             columns={detailColumns}
+            loading={viewLoading}
             scroll={{ x: 1080 }}
             onRow={(r) => ({ className: isAdjusted(r) ? "pms-calibration-adjusted-row" : "" })}
           />
@@ -527,7 +631,7 @@ export default function Calibration() {
             <>
               <Tooltip title={submitByHrOnly ? "校准由 HR 统一提交" : undefined}>
                 <span>
-                  <Popconfirm title="确认提交校准结果进入审批？" onConfirm={onSubmitCalibration} disabled={!canSubmit || submitByHrOnly} okButtonProps={{ loading: submittingCal }}>
+                  <Popconfirm title="确认提交校准结果进入审批？" onConfirm={() => onSubmitCalibration()} disabled={!canSubmit || submitByHrOnly} okButtonProps={{ loading: submittingCal }}>
                     <Button type="primary" disabled={!canSubmit || submitByHrOnly} loading={submittingCal}>
                       提交校准（进入 HR 审批）
                     </Button>
@@ -578,6 +682,81 @@ export default function Calibration() {
           placeholder="必填：请说明驳回原因"
         />
       </Modal>
+
+      {/* 分布软校验弹窗：A/C 档不符 3-6-1 时，填差异理由后才能提交（理由进审计日志） */}
+      <Modal
+        open={overrideOpen}
+        title="分布不符，确认提交？"
+        onCancel={() => setOverrideOpen(false)}
+        onOk={onConfirmOverride}
+        confirmLoading={submittingCal}
+        okText="确认提交"
+        destroyOnClose
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="当前分布与 3-6-1 目标不符"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {distWarnings.map((d) => (
+                <li key={d.level}>
+                  {d.level} 档（{d.label}）实际 {d.percent}%，目标 {d.target_percent}
+                </li>
+              ))}
+            </ul>
+          }
+        />
+        <Input.TextArea
+          rows={3}
+          value={overrideReason}
+          onChange={(e) => setOverrideReason(e.target.value)}
+          placeholder="必填：请说明分布差异理由（将记录到审计日志）"
+        />
+      </Modal>
+
+      {/* 人员详情抽屉：目标 / 自评 / 上级评估，校准人免跳页看上下文 */}
+      <Drawer
+        open={!!viewing}
+        title={viewing ? `${viewing.user_name} 的绩效详情` : ""}
+        placement="right"
+        width={isMobile ? "100%" : 560}
+        onClose={() => setViewing(null)}
+        destroyOnClose
+      >
+        {detailLoading || !detail ? (
+          <Card loading />
+        ) : (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Card type="inner" size="small" title="绩效目标">
+              {detail.objectives.length === 0 ? (
+                <Typography.Text type="secondary">未填写目标</Typography.Text>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {detail.objectives.map((o) => (
+                    <li key={o.id} style={{ marginBottom: 8 }}>
+                      <Typography.Text strong>{o.title}</Typography.Text>
+                      <Typography.Text type="secondary">（权重 {o.weight}% · 进度 {o.progress}%）</Typography.Text>
+                      {o.measure_criteria && (
+                        <div>
+                          <Typography.Text type="secondary">衡量标准：{o.measure_criteria}</Typography.Text>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card type="inner" size="small" title="自评">
+              {evalBlock(detail.self_evaluation, "尚未提交自评")}
+            </Card>
+            <Card type="inner" size="small" title="上级评估">
+              {evalBlock(detail.superior_evaluation, "尚未提交上级评估")}
+            </Card>
+          </Space>
+        )}
+      </Drawer>
 
       {/* 校准表单：移动端全屏底部抽屉 + 底部固定保存，桌面端 Modal */}
       {isMobile ? (

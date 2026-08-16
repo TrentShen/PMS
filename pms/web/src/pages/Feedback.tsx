@@ -12,6 +12,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Space,
   Spin,
   message,
@@ -145,7 +146,8 @@ export default function Feedback() {
       size="large"
       style={{ width: "100%", maxWidth: 800 }}
       className={showBottomActions ? "has-bottom-actions" : undefined}
-    >      <Card title="绩效反馈面谈">
+    >
+      <Card title="绩效反馈面谈">
         {loadError && (
           <Alert type="error" showIcon message={loadError} style={{ marginBottom: 16 }} />
         )}
@@ -166,7 +168,15 @@ export default function Feedback() {
         {!loadError && canWrite && (
           <>
             {!fb && <Alert type="info" showIcon message="尚未填写面谈记录" style={{ marginBottom: 16 }} />}
-            <Form form={form} layout="vertical" onFinish={onSubmitFeedback}>
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={onSubmitFeedback}
+              onFinishFailed={({ errorFields }) => {
+                // 校验失败时定位到第一个错误字段（长表单 + 底部固定栏，错误可能在视口外）
+                if (errorFields.length > 0) form.scrollToField(errorFields[0].name);
+              }}
+            >
               <Form.Item name="strengths" label="员工优势" rules={[{ required: true }]}>
                 <Input.TextArea rows={3} placeholder="本周期的亮点和突出能力" />
               </Form.Item>
@@ -200,7 +210,15 @@ export default function Feedback() {
 
             {fb.confirm_status === "pending" && (
               <Space style={{ marginTop: 16 }}>
-                <Button type="primary" onClick={onConfirm} loading={confirming}>确认收到</Button>
+                <Popconfirm
+                  title="确认收到面谈结果？"
+                  description="确认后不可自行撤销"
+                  okText="确认收到"
+                  cancelText="取消"
+                  onConfirm={onConfirm}
+                >
+                  <Button type="primary" loading={confirming}>确认收到</Button>
+                </Popconfirm>
                 <Button danger onClick={() => setDisputing(true)}>有异议</Button>
               </Space>
             )}

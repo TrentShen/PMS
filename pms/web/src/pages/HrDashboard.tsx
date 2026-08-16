@@ -1,7 +1,7 @@
 // HR 绩效看板：展示某个绩效周期各环节整体进度
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Card, Col, Progress, Row, Select, Space, Statistic, Typography, message } from "antd";
+import { Card, Col, Empty, Progress, Row, Select, Space, Statistic, Typography, message } from "antd";
 import { Column } from "@ant-design/charts";
 import KPIScrollGrid from "@/components/ui/KPIScrollGrid";
 import ResponsiveShow from "@/components/ui/ResponsiveShow";
@@ -31,6 +31,7 @@ interface DepartmentProgress {
 interface DashboardData {
   cycle: CycleBrief;
   objective_cycle_participant_count: number;
+  objective_submitted_count: number;
   performance_participant_count: number;
   self_eval_done: number;
   self_eval_total: number;
@@ -38,6 +39,13 @@ interface DashboardData {
   peer_eval_done: number;
   superior_eval_done: number;
   superior_eval_total: number;
+  calibration_done: number;
+  calibration_total: number;
+  approval_status: string;
+  feedback_filled: number;
+  feedback_confirmed: number;
+  feedback_total: number;
+  result_distribution: { level: string; count: number }[];
   self_eval_progress_by_department: DepartmentProgress[];
   peer_eval_progress_by_department: DepartmentProgress[];
 }
@@ -54,7 +62,7 @@ interface MergedDeptProgress {
 
 interface KpiItem {
   title: string;
-  value: number;
+  value: number | string;
   suffix: string;
   color?: string;
 }
@@ -64,6 +72,26 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: "进行中",
   published: "已公布",
   closed: "已归档",
+};
+
+// 审批状态文案（与后端 CycleApproval.status 口径一致，无记录=校准中）
+const APPROVAL_STATUS_LABEL: Record<string, string> = {
+  calibrating: "校准中",
+  pending_hr: "待 HR 审批",
+  pending_ceo: "待 CEO 审批",
+  approved: "审批已通过",
+  rejected_by_hr: "HR 已驳回",
+  rejected_by_ceo: "CEO 已驳回",
+};
+
+// 结果分布等级文案（与后端 PerfLevel 一致）
+const RESULT_LEVEL_LABEL: Record<string, string> = {
+  excellent: "优秀",
+  exceed_part: "部分超出",
+  meet: "符合",
+  below_part: "部分不符",
+  below: "不符合",
+  unset: "未定级",
 };
 
 // @ant-design/charts 需要具体色值字符串，运行时从设计令牌读取（fallback 与 tokens.css 保持一致）
@@ -139,6 +167,7 @@ function deptStatusTag(d: MergedDeptProgress): ReactNode {
 
 export default function HrDashboard() {
   const [cycles, setCycles] = useState<CycleBrief[]>([]);
+  const [cyclesLoaded, setCyclesLoaded] = useState(false);
   const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -146,6 +175,7 @@ export default function HrDashboard() {
   useEffect(() => {
     api.get<CycleBrief[]>("/v1/cycles").then((r) => {
       setCycles(r.data);
+      setCyclesLoaded(true);
       if (r.data.length > 0 && !selectedCycleId) {
         setSelectedCycleId(r.data[0].id);
       }
@@ -155,6 +185,8 @@ export default function HrDashboard() {
   useEffect(() => {
     if (!selectedCycleId) return;
     setLoading(true);
+    // 切周期先清空旧数据，避免残留上一周期的看板内容
+    setData(null);
     api.get<DashboardData>(`/v1/cycles/${selectedCycleId}/dashboard`)
       .then((r) => setData(r.data))
       .catch((e) => message.error(formatError(e, "加载失败")))
@@ -177,6 +209,15 @@ export default function HrDashboard() {
           value: data.objective_cycle_participant_count,
           suffix: "人",
         },
+        {
+          title: "目标提交",
+          value: data.objective_submitted_count,
+          suffix: `/ ${data.objective_cycle_participant_count}`,
+          color:
+            data.objective_submitted_count === data.objective_cycle_participant_count
+              ? "var(--color-success)"
+              : "var(--color-primary)",
+        },
         { title: "参与绩效评估人数", value: data.performance_participant_count, suffix: "人" },
         {
           title: "自评完成",
@@ -198,8 +239,37 @@ export default function HrDashboard() {
               ? "var(--color-success)"
               : "var(--color-primary)",
         },
+        {
+          title: "已定分（校准）",
+          value: data.calibration_done,
+          suffix: `/ ${data.calibration_total}`,
+          color:
+            data.calibration_done === data.calibration_total
+              ? "var(--color-success)"
+              : "var(--color-primary)",
+        },
+        {
+          title: "审批状态",
+          value: APPROVAL_STATUS_LABEL[data.approval_status] ?? data.approval_status,
+          suffix: "",
+        },
+        {
+          title: "反馈确认",
+          value: data.feedback_confirmed,
+          suffix: `/ ${data.feedback_total}`,
+          color:
+            data.feedback_confirmed === data.feedback_total
+              ? "var(--color-success)"
+              : "var(--color-primary)",
+        },
       ]
     : [];
+
+  // 绩效结果分布图数据（进行中=校准定分情况，发布后=最终等级分布）
+  const resultChartData = (data?.result_distribution ?? []).map((d) => ({
+    level: RESULT_LEVEL_LABEL[d.level] ?? d.level,
+    count: d.count,
+  }));
 
   // 部门自评/互评完成率对比图数据（色板前两色：自评 --color-chart-1、互评 --color-chart-2）
   const deptChartData = mergedDepts.flatMap((d) => [
@@ -240,6 +310,13 @@ export default function HrDashboard() {
           options={cycles.map((c) => ({ value: c.id, label: `${c.name}（${STATUS_LABEL[c.status]}）` }))}
         />
       </Card>
+
+      {/* 无绩效周期：整页空态（加载完成后再判定，避免首屏闪空态） */}
+      {cyclesLoaded && cycles.length === 0 && (
+        <Card>
+          <Empty description="暂无绩效周期" />
+        </Card>
+      )}
 
       {!data && loading && <Card loading />}
 
@@ -283,25 +360,58 @@ export default function HrDashboard() {
             </ResponsiveShow>
           </Card>
 
+          {/* 绩效结果分布：桌面柱图；移动端降级为文本列表 */}
+          <Card title="绩效结果分布">
+            <ResponsiveShow on="desktop">
+              <div
+                role="img"
+                aria-label={`绩效结果分布柱状图：${resultChartData.map((d) => `${d.level} ${d.count} 人`).join("，")}`}
+              >
+                <Column
+                  data={resultChartData}
+                  xField="level"
+                  yField="count"
+                  color={chartColors[0]}
+                  height={240}
+                  yAxis={{ min: 0 }}
+                />
+              </div>
+            </ResponsiveShow>
+            <ResponsiveShow on="mobile">
+              <Space direction="vertical" size={4}>
+                {resultChartData.map((d) => (
+                  <Typography.Text key={d.level}>
+                    {d.level}：{d.count} 人
+                  </Typography.Text>
+                ))}
+              </Space>
+            </ResponsiveShow>
+          </Card>
+
           {mergedDepts.length > 0 && (
             <Card title="部门完成率对比">
               {/* 桌面：柱图；移动端：降级为完成率文本列表（375px 下分组柱图不可读） */}
               <ResponsiveShow on="desktop">
-                <Column
-                  data={deptChartData}
-                  xField="department"
-                  yField="percent"
-                  seriesField="type"
-                  color={chartColors}
-                  height={280}
-                  yAxis={{ max: 100 }}
-                  tooltip={{
-                    formatter: (d: { type: string; percent: number }) => ({
-                      name: d.type,
-                      value: `${d.percent}%`,
-                    }),
-                  }}
-                />
+                <div
+                  role="img"
+                  aria-label={`各部门自评互评完成率对比柱状图：${mergedDepts.map((d) => `${d.department_name}自评 ${percentOf(d.self_done, d.self_total)}%、互评 ${percentOf(d.peer_done, d.peer_total)}%`).join("，")}`}
+                >
+                  <Column
+                    data={deptChartData}
+                    xField="department"
+                    yField="percent"
+                    seriesField="type"
+                    color={chartColors}
+                    height={280}
+                    yAxis={{ max: 100 }}
+                    tooltip={{
+                      formatter: (d: { type: string; percent: number }) => ({
+                        name: d.type,
+                        value: `${d.percent}%`,
+                      }),
+                    }}
+                  />
+                </div>
               </ResponsiveShow>
               <ResponsiveShow on="mobile">
                 <Space direction="vertical" size={4}>
