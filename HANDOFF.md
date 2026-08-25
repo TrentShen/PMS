@@ -1,7 +1,7 @@
 # HANDOFF.md — PMS 项目交接上下文
 
 > 写给后续接手开发的 AI(Codex)和人类协作者。
-> 最后更新:2026-08-10(Codex 接手部署后刷新)。
+> 最后更新:2026-08-16(流程增量 + 互评名单独立页 + UI 打磨已部署生产)。
 > 读法:先读本文 → 再按 §2 的清单深入 → 开工前核对 §3 的状态快照是否已过时。
 
 ---
@@ -33,30 +33,34 @@
 | `.workbuddy/memory/` | 逐日工作记录(2026-07-22 / 07-31 / 08-04 三份信息量最大,含大量踩坑记录) |
 | `docs/部署指南-PMS.md` | 部署与企微配置 |
 
-## 3. 当前状态快照(2026-08-10,使用前请重新核对)
+## 3. 当前状态快照(2026-08-16,使用前请重新核对)
 
 ### Git
-- `TrentShen/PMS` origin/main = `4e2f2d2`(端口回收 + 飞书 People 能力对比文档已推送)
-- **未提交改动**:新增 `pms/deploy/bastion-deploy.sh`(堡垒机部署脚本,待确认是否入库);`design-prototype.zip`、`ui-preview-20260724/` 为设计稿/截图,待 owner 决定
-- `hr-trent` PR #13(同步 7c1b3e8 内容)**待人工合并**
+- `TrentShen/PMS` origin/main = `eacf0b2`(2026-08-16 推送,6 commits:流程增量/互评名单独立页/历史导入改版/UI 打磨/竞品调研文档/部署脚本排除)
+- `hr-trent` PR #13 **已于 2026-08-08 合并**(此前快照记录过时)
+- 新增能力文档:`docs/北森飞书绩效竞品调研与PMS迭代建议-20260813.md`(P0/P1 已全部落地,P2 待启动)
 
 ### 生产
-- 线上版本 ≈ `919dcb1`(8-10 部署,批次 1:健康探针 + Vitest 骨架 + 清理孤儿脚本)
+- 线上版本 = `eacf0b2`(2026-08-16 部署;migration `e2b8c77bfcb7` objective.progress 已上生产)
+- DB 备份:/opt/pms/backup.20260816025348/db.sql.gz(保留 10 份)
 - **部署方式**:本地 `pms/deploy/bastion-deploy.sh` 经 JumpServer 堡垒机 → `/opt/pms` → 执行 `remote-deploy.sh`
 - 迁移会自动跑,有 DB 备份兜底
 
 ### 测试基线
-- 后端:`cd pms/backend && .venv/bin/python -m pytest -q` → **197 passed**
+- 后端:`cd pms/backend && .venv/bin/python -m pytest -q` → **203 passed**
 - 前端:`cd pms/web && npm test`(vitest,7 例)+ `npx tsc --noEmit` + `npm run build` + `npx eslint src`(0 error,15 存量 warning 勿动)
 - 后端测试依赖本地 docker 的 pms-mysql / pms-redis(常年在跑)
+- 注意:backend/.venv 是旧路径失效环境,当前用 `.venv-local`(已 gitignore);旧 .venv 待 owner 手动删除后 `mv .venv-local .venv`
 
 ## 4. 待办与待决策(按优先级)
 
-1. **生产部署** ✅ 已完成(2026-08-10):批次 1 已上;剩余真机验证:企微登录回跳、iPad/手机校准页、首页"结果待发布"(建议 owner 今天顺手点一遍)
-2. **端口回收** ✅ 已完成(2026-08-12):docker-compose.prod.yml 已移除 mysql/redis 宿主机 ports 映射
-3. **K8s 迁移 2 个决策**(等 owner):① MySQL 集群内 StatefulSet vs 外部 RDS;② 定时任务:独立 scheduler Deployment + SCHEDULER_ENABLED 开关(推荐)vs K8s CronJob。背景见 `.workbuddy/memory/2026-07-31.md`
-4. **服务器密码轮换**(owner 已知,灰度期暂缓):MySQL 双密码 + Redis 设密码;正式推广前必做
-5. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)
+1. **K8s 迁移 2 个决策** —— **已挂起**(owner 2026-08-16:记下来,等触发再安排):① MySQL 集群内 StatefulSet vs 外部 RDS;② 定时任务独立 scheduler Deployment(推荐)vs K8s CronJob。背景见 `.workbuddy/memory/2026-07-31.md`
+2. **服务器密码轮换** —— **已挂起**(owner 2026-08-16 同上);MySQL 双密码 + Redis 设密码,正式推广前必做
+3. **评估撤回功能(待实施,owner 2026-08-16 已定口径)**:评估窗口期内 Leader 可撤回上级评估(已提交 → 草稿);过了评估窗口只有超管可修改。需新增撤回接口 + 前端入口 + 状态机变更
+4. **P2 功能迭代(未启动)**:九宫格人才盘点(潜力字段已预留,最成熟)> 历史绩效趋势增强 > 1:1/IDP 轻量记录 > 目标上下对齐(改动大,按需)
+5. **技术小项**:LeaderEvalDetail 详情页补反馈填写入口(列表入口已加);SelfEval 死代码清理(canEdit 恒 false 的目标编辑模式);AnonymousFeedback 隐式 any
+6. **底座线(待定)**:PMS 读 hr_base 主数据(L1)、绩效结果归档 performance_result(L2,ADR-010 细化 DDL);等 Codex 调研后拍板
+7. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)
 
 ## 5. 运维操作手册(踩坑后的正确姿势)
 
@@ -89,6 +93,9 @@ cd pms && bash deploy/bastion-deploy.sh   # 经 JumpServer 堡垒机,无需 SSH 
 - **价值观三维(belief/team/growth)前端合并为单项**,提交时 expandValueGrades 展开写回三字段;老数据只有 value_grade,展示层有兜底
 - **角色体系**:super_admin/hrbp/dept_leader/direct_leader/employee;is_hr_dept_leader 按**生效角色**判定(8-04 统一);超管可切视角
 - **试用期计划状态**:HR 只能改为 in_progress/pending_evaluation/completed/extended 四值,回退态由流程驱动
+- **评估撤回口径(2026-08-16 owner 定)**:评估窗口期内 Leader 可撤回上级评估;窗口外仅超管可改(待实施)
+- **互评人可见被评人目标**:仅已确认(approved/locked)目标,草稿/待审批不可见(8-16 起)
+- **校准提交分布软校验**:A/C 档不符 3-6-1 必须填分布差异理由,理由进审计日志(8-16 起)
 
 ## 7. 踩坑记录(别再犯)
 
