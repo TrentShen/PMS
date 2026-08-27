@@ -66,9 +66,11 @@ def get_current_user(
             redis_client.delete(cache_key)
             raise HTTPException(status_code=401, detail="用户不存在")
         # 记录原始角色；super_admin 可通过 active_role 切换当前生效角色（用于测试）
-        object.__setattr__(user, "base_role", user.role)
+        # 注意：user 是 Session 托管的 ORM 实体，角色切换必须直写 __dict__ 绕过
+        # SQLAlchemy 变更跟踪——否则后续任何 commit 会把临时角色永久写库（权限固化事故）
+        user.__dict__["base_role"] = user.role
         if active_role and user.role == "super_admin":
-            user.role = active_role
+            user.__dict__["role"] = active_role
         return user
 
     user = session.exec(select(User).where(User.wecom_userid == wecom_userid)).first()
@@ -77,10 +79,10 @@ def get_current_user(
     if user.status != "active":
         raise HTTPException(status_code=403, detail="账号已停用")
 
-    # 记录原始角色；super_admin 可通过 active_role 切换当前生效角色（用于测试）
-    object.__setattr__(user, "base_role", user.role)
+    # 同上：base_role/role 都直写 __dict__，不进入 ORM 脏跟踪
+    user.__dict__["base_role"] = user.role
     if active_role and user.role == "super_admin":
-        user.role = active_role
+        user.__dict__["role"] = active_role
 
     redis_client.setex(
         cache_key,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # 应用配置：通过环境变量加载（来自 .env 或系统环境）
 # 所有配置统一从 settings 单例读取，禁止在业务代码里直接 os.getenv
+import warnings
 from functools import lru_cache
 
 from pydantic import Field, model_validator
@@ -47,9 +48,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_prod_secret(self) -> Settings:
-        # 生产环境禁止使用默认密钥，防止 JWT 被伪造
-        if self.app_env == "prod" and self.app_secret == "change-me":
-            raise ValueError("APP_ENV=prod 时必须设置非默认的 APP_SECRET")
+        # 生产环境禁止使用默认密钥/弱口令，防止 JWT 伪造与数据库被拖库
+        if self.app_env == "prod":
+            if self.app_secret == "change-me":
+                raise ValueError("APP_ENV=prod 时必须设置非默认的 APP_SECRET")
+            if self.mysql_password == "pms_password":
+                raise ValueError("APP_ENV=prod 时必须设置非默认的 MYSQL_PASSWORD")
+            if self.redis_password is None:
+                warnings.warn(
+                    "APP_ENV=prod 但未设置 REDIS_PASSWORD，"
+                    "请确认 Redis 仅在容器内网暴露",
+                    stacklevel=2,
+                )
         return self
 
     @property

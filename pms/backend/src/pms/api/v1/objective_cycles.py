@@ -95,6 +95,16 @@ def create_objective_cycle(
     session.add(cycle)
     session.commit()
     session.refresh(cycle)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="create_objective_cycle",
+        resource_type="objective_cycle",
+        resource_id=str(cycle.id),
+        after={"name": cycle.name, "status": cycle.status},
+    )
+    session.commit()
     return ObjectiveCycleView.model_validate(cycle, from_attributes=True)
 
 
@@ -134,6 +144,16 @@ def update_objective_cycle(
         raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
 
     session.add(cycle)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="update_objective_cycle",
+        resource_type="objective_cycle",
+        resource_id=str(cycle.id),
+        # mode="json"：date 等类型转成可 JSON 序列化的值，否则审计写入会 TypeError
+        after={k: v for k, v in payload.model_dump(mode="json").items() if v is not None},
+    )
     session.commit()
     session.refresh(cycle)
     return ObjectiveCycleView.model_validate(cycle, from_attributes=True)
@@ -151,8 +171,19 @@ def start_objective_cycle(
     if cycle.status != ObjectiveCycleStatus.DRAFT:
         raise HTTPException(status_code=400, detail="仅 draft 状态可启动")
 
+    before = {"status": cycle.status}
     cycle.status = ObjectiveCycleStatus.ACTIVE
     session.add(cycle)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="start_objective_cycle",
+        resource_type="objective_cycle",
+        resource_id=str(cycle.id),
+        before=before,
+        after={"status": cycle.status},
+    )
     session.commit()
     session.refresh(cycle)
     return ObjectiveCycleView.model_validate(cycle, from_attributes=True)
@@ -170,9 +201,20 @@ def complete_objective_cycle(
     if cycle.status != ObjectiveCycleStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="仅 active 状态可完成")
 
+    before = {"status": cycle.status}
     cycle.status = ObjectiveCycleStatus.COMPLETED
     cycle.completed_at = datetime.now(timezone.utc)
     session.add(cycle)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="complete_objective_cycle",
+        resource_type="objective_cycle",
+        resource_id=str(cycle.id),
+        before=before,
+        after={"status": cycle.status},
+    )
     session.commit()
     session.refresh(cycle)
     return ObjectiveCycleView.model_validate(cycle, from_attributes=True)
@@ -190,6 +232,14 @@ def delete_objective_cycle(
     if cycle.status != ObjectiveCycleStatus.DRAFT:
         raise HTTPException(status_code=400, detail="仅 draft 状态可删除")
 
+    # 删除前记录关键数量，便于审计追溯
+    objective_count = len(session.exec(
+        select(Objective).where(Objective.objective_cycle_id == objective_cycle_id)
+    ).all())
+    revision_count = len(session.exec(
+        select(ObjectiveRevision).where(ObjectiveRevision.objective_cycle_id == objective_cycle_id)
+    ).all())
+
     # 级联删除该周期下的参与人、目标、调整申请
     for model in (ObjectiveCycleParticipant, Objective, ObjectiveRevision):
         for row in session.exec(
@@ -200,6 +250,20 @@ def delete_objective_cycle(
             session.delete(row)
 
     session.delete(cycle)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="delete_objective_cycle",
+        resource_type="objective_cycle",
+        resource_id=str(objective_cycle_id),
+        before={
+            "name": cycle.name,
+            "status": cycle.status,
+            "objective_count": objective_count,
+            "revision_count": revision_count,
+        },
+    )
     session.commit()
     return {"deleted": True}
 
@@ -344,6 +408,15 @@ def remove_participant(
         raise HTTPException(status_code=404, detail="参与人不存在")
 
     session.delete(participant)
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="remove_objective_participant",
+        resource_type="objective_cycle",
+        resource_id=str(objective_cycle_id),
+        before={"participant_id": participant_id, "user_id": participant.user_id, "status": participant.status},
+    )
     session.commit()
     return {"deleted": True}
 

@@ -151,6 +151,13 @@ def patch_user(
     if payload.status is not None:
         if payload.status not in ("active", "inactive"):
             raise HTTPException(status_code=400, detail="status 只能是 active/inactive")
+        if payload.status != user.status:
+            # 修改 status 仅 super_admin 可做；hrbp 不能停用超管/他人
+            if admin.role != "super_admin":
+                raise HTTPException(status_code=403, detail="仅超级管理员可修改用户状态")
+            # 任何人不能停用自己的账号，防止误锁
+            if user.id == admin.id:
+                raise HTTPException(status_code=403, detail="不能修改自己的状态")
         user.status = payload.status
 
     # 潜力评估：high/medium/low；空串清除为未评定

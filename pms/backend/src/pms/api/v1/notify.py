@@ -17,11 +17,13 @@ from pms.database.models.user import User
 from pms.database.session import get_session
 from pms.services.auth import get_current_user, has_any_role, require_role
 from pms.services.notification import NotificationChannel
+from pms.services.scope import visible_user_ids
 from pms.services.wecom import send_textcard
 
 router = APIRouter(prefix="/notify", tags=["notify"])
 
 MAX_RETRIES = 3
+MAX_URGE_USER_IDS = 50  # 单次催办人数上限，防止滥用
 
 
 class UrgeRequest(BaseModel):
@@ -79,12 +81,25 @@ def send_urge(
     if not has_any_role(current, "hrbp", "super_admin", "dept_leader", "direct_leader"):
         raise HTTPException(status_code=403, detail="普通员工不能发起催办")
 
+    if len(payload.user_ids) > MAX_URGE_USER_IDS:
+        raise HTTPException(status_code=400, detail=f"单次催办人数不能超过 {MAX_URGE_USER_IDS} 人")
+
     cycle = session.get(PerformanceCycle, payload.cycle_id)
     if not cycle or cycle.status not in ("in_progress", "published"):
         raise HTTPException(status_code=400, detail="周期不在进行中或已归档")
 
+    # HR 角色不裁剪；Leader 只能催办自己可见范围内的成员
+    is_hr = has_any_role(current, "hrbp", "super_admin")
+    user_ids = payload.user_ids
+    if not is_hr:
+        scope = visible_user_ids(session, current)
+        if scope is not None:
+            user_ids = [uid for uid in user_ids if uid in scope]
+        if not user_ids:
+            raise HTTPException(status_code=400, detail="无可催办的成员（不在你的可见范围内）")
+
     count = 0
-    for uid in payload.user_ids:
+    for uid in user_ids:
         user = session.get(User, uid)
         if not user:
             continue
@@ -92,7 +107,12 @@ def send_urge(
             target_userid=user.wecom_userid,
             channel=NotificationChannel.WECOM_TEXT,
             title="催办通知",
-            content=payload.message or f"{current.name} 提醒你尽快完成「{cycle.name}」的绩效任务",
+            # 非 HR 角色忽略自定义文案，固定用默认模板，防止借催办发任意消息
+            content=(
+                payload.message
+                if is_hr and payload.message
+                else f"{current.name} 提醒你尽快完成「{cycle.name}」的绩效任务"
+            ),
             payload={"cycle_id": payload.cycle_id, "from": current.wecom_userid},
             status="pending",
         )

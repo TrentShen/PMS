@@ -65,12 +65,13 @@ def create_or_update_feedback(
     session: Session = Depends(get_session),
     current: User = Depends(get_current_user),
 ):
-    # 只有直属上级 / HR / 超管可以写
+    # 只有直属上级 / HR / 超管可以写；本人不可给自己建面谈记录
+    # （否则员工自写+自确认即可绕过 publish 的反馈闭环校验，面谈环节形同虚设）
     target = session.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="员工不存在")
-    if current.id != user_id and not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
-        raise HTTPException(status_code=403, detail="你不是该员工的直属上级")
+    if not can_act_as_superior(current, target, session, allowed_roles=SUPERIOR_ROLES):
+        raise HTTPException(status_code=403, detail="只有直属上级或 HR 才能填写面谈记录")
 
     cycle = session.get(PerformanceCycle, cycle_id)
     if not cycle:

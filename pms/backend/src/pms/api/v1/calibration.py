@@ -558,10 +558,12 @@ def get_calibration_history(
     if not has_any_role(current, "dept_leader", "hrbp", "super_admin"):
         raise HTTPException(status_code=403, detail="无权限")
 
-    records = session.exec(
-        select(CalibrationRecord).where(CalibrationRecord.cycle_id == cycle_id)
-        .order_by(CalibrationRecord.created_at.desc())
-    ).all()
+    scope = visible_user_ids(session, current)
+
+    q = select(CalibrationRecord).where(CalibrationRecord.cycle_id == cycle_id)
+    if scope is not None:
+        q = q.where(CalibrationRecord.user_id.in_(scope))
+    records = session.exec(q.order_by(CalibrationRecord.created_at.desc())).all()
     return [
         {
             "user_id": r.user_id,

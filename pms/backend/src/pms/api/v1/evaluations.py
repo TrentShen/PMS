@@ -145,7 +145,7 @@ def get_evaluation_detail(
     # 如果是本人查看且周期已发布但反馈未确认，隐藏最终分数
     is_self = current.id == user_id
     show_final = True
-    if is_self and cycle.status == "published":
+    if is_self and cycle.status == "published" and cycle.enable_feedback:
         from pms.database.models.feedback import FeedbackRecord
         fb = session.exec(
             select(FeedbackRecord).where(

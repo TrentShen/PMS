@@ -421,7 +421,7 @@ def update_cycle(
     if not cycle:
         raise HTTPException(status_code=404, detail="周期不存在")
 
-    # 非草稿状态：模式开关和起止日期已冻结，只允许改名称等描述性字段。
+    # 非草稿状态：模式开关、起止日期和关联目标周期已冻结，只允许改名称等描述性字段。
     # 否则 in_progress 中把 enable_calibration 关掉即可绕过审批直接发布。
     if cycle.status != "draft":
         restricted = [
@@ -430,13 +430,14 @@ def update_cycle(
                 "start_date", "end_date",
                 "enable_self_eval", "enable_peer_eval",
                 "enable_calibration", "enable_feedback",
+                "objective_cycle_id",
             )
             if getattr(payload, f) is not None
         ]
         if restricted:
             raise HTTPException(
                 status_code=400,
-                detail=f"当前状态 {cycle.status}，不能修改开关或起止日期（{', '.join(restricted)}）",
+                detail=f"当前状态 {cycle.status}，不能修改开关、起止日期或关联目标周期（{', '.join(restricted)}）",
             )
 
     # 只传单个日期时也要用更新后的生效值重新校验 start < end
@@ -785,7 +786,7 @@ def my_cycles(
     result = []
     for c, p in as_self:
         show_final = True
-        if c.status == "published":
+        if c.status == "published" and c.enable_feedback:
             fb = fb_map.get(c.id)
             if not fb or fb.confirm_status == "pending":
                 show_final = False
