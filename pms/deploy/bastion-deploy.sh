@@ -86,7 +86,7 @@ bastion_exec() {
     (
       sleep 2
       printf 'stty -echo 2>/dev/null; echo %sS\n' "$m"
-      printf 'echo; %s; echo EXIT=$?\n' "$cmd"
+      printf 'echo; %s; echo __PMS_EXIT__$?__\n' "$cmd"
       printf 'echo %sE\nexit\n' "$m"
       sleep 3
     ) | ssh -tt -p "$BASTION_PORT" -i "$BASTION_KEY" \
@@ -96,8 +96,10 @@ bastion_exec() {
         'index($0,e){f=0;next} index($0,s){f=1;next} f{print}' | \
       grep -v '^root@'
   )
-  rc=$(printf '%s\n' "$out" | grep -o '^EXIT=[0-9][0-9]*' | tail -1 | cut -d= -f2)
-  printf '%s\n' "$out" | grep -v '^EXIT='
+  # 退出码标记可能与提示符粘连在同一行，不做行首锚定；|| true 防空匹配时 set -e 哑死
+  rc=$(printf '%s\n' "$out" | grep -o '__PMS_EXIT__[0-9][0-9]*__' | tail -1 | sed 's/__PMS_EXIT__//;s/__//' || true)
+  # 展示输出时去掉标记
+  printf '%s\n' "$out" | sed 's/__PMS_EXIT__[0-9][0-9]*__//g'
   if [[ -z "$rc" ]]; then
     error "远端命令未返回退出码(连接可能中断): $cmd"
   fi
