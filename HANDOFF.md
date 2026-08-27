@@ -56,8 +56,8 @@
 
 1. **K8s 迁移 2 个决策** —— **已挂起**(owner 2026-08-16:记下来,等触发再安排):① MySQL 集群内 StatefulSet vs 外部 RDS;② 定时任务独立 scheduler Deployment(推荐)vs K8s CronJob。背景见 `.workbuddy/memory/2026-07-31.md`
 2. **服务器密码轮换** —— **已挂起**(owner 2026-08-16 同上);MySQL 双密码 + Redis 设密码,正式推广前必做
-3. **评估撤回功能(待实施,owner 2026-08-16 已定口径)**:评估窗口期内 Leader 可撤回上级评估(已提交 → 草稿);过了评估窗口只有超管可修改。需新增撤回接口 + 前端入口 + 状态机变更
-4. **P2 功能迭代(未启动)**:九宫格人才盘点(潜力字段已预留,最成熟)> 历史绩效趋势增强 > 1:1/IDP 轻量记录 > 目标上下对齐(改动大,按需)
+3. **评估撤回功能** ✅ 已实施(2026-08-26):撤回接口 `POST /cycles/:id/users/:uid/superior-evaluation/withdraw`(窗口内上级/HR、窗口外仅超管、已校准/已提交审批/已发布均拦截,退回草稿保留内容,final_* 同步回退)+ LeaderEvalDetail 底部"撤回评估"入口;测试 tests/test_superior_withdraw.py 5 例
+4. **P2 功能迭代**:九宫格人才盘点 ✅ 已实施(2026-08-27):`user.potential_level` 字段(migration 728249b1d6ff)+ AdminUsers 评定入口 + `GET /cycles/:id/nine-grid` 聚合接口 + `/nine-grid` 人才盘点页(绩效档 × 潜力 9 象限,含未评定清单);测试 test_nine_grid.py 4 例。历史绩效趋势增强 ✅(同日):Trend 页加最近一期/环比变化/覆盖周期数摘要,tooltip 带价值观三维;纯前端,后端数据已够。剩余:1:1/IDP 轻量记录 > 目标上下对齐(改动大,按需)
 5. **技术小项**:LeaderEvalDetail 详情页补反馈填写入口(列表入口已加);SelfEval 死代码清理(canEdit 恒 false 的目标编辑模式);AnonymousFeedback 隐式 any
 6. **底座线(待定)**:PMS 读 hr_base 主数据(L1)、绩效结果归档 performance_result(L2,ADR-010 细化 DDL);等 Codex 调研后拍板
 7. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)
