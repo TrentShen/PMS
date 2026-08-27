@@ -94,7 +94,7 @@ bastion_exec() {
          "$BASTION_DEST" 2>&1 | \
       tr -d '\r' | awk -v s="${m}S" -v e="${m}E" \
         'index($0,e){f=0;next} index($0,s){f=1;next} f{print}' | \
-      grep -v '^root@'
+      grep -v '^root@' || true  # 输出全被过滤时 grep 返回 1，不能让 set -e 哑死
   )
   # 退出码标记可能与提示符粘连在同一行，不做行首锚定；|| true 防空匹配时 set -e 哑死
   rc=$(printf '%s\n' "$out" | grep -o '__PMS_EXIT__[0-9][0-9]*__' | tail -1 | sed 's/__PMS_EXIT__//;s/__//' || true)
@@ -131,7 +131,7 @@ last_count=0
 while :; do
   sleep 15
   elapsed=$((elapsed + 15))
-  remote_log=$(bastion_exec "cat /tmp/pms-deploy.log 2>/dev/null || true")
+  remote_log=$(bastion_exec "cat /tmp/pms-deploy.log 2>/dev/null || true" || true)  # 轮询中连接抖动不中止，靠超时兜底
   total=$(printf '%s\n' "$remote_log" | wc -l | tr -d ' ')
   if (( total > last_count )); then
     printf '%s\n' "$remote_log" | tail -n +$((last_count + 1))
