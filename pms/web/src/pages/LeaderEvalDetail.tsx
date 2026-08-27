@@ -847,6 +847,8 @@ export default function LeaderEvalDetail() {
 
   useEffect(() => {
     // 切换被评估人（含"下一位"跳转）时重置表单与草稿恢复标记
+    // 先清掉旧防抖计时器，避免把新人的表单值写进旧人的草稿 key
+    if (draftTimer.current) clearTimeout(draftTimer.current);
     draftRestored.current = false;
     form.resetFields();
     reload().catch((e) => message.error(formatError(e, "加载评估详情失败")));

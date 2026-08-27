@@ -339,8 +339,8 @@ export default function SelfEval() {
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm<EvalView>();
 
-  // 自评草稿：localStorage 按周期隔离，仅服务端无已提交内容时恢复一次
-  const draftKey = `self_draft_${cycleId}`;
+  // 自评草稿：localStorage 按用户+周期隔离（防共享设备跨人串号），仅服务端无已提交内容时恢复一次
+  const draftKey = `self_draft_${user.id}_${cycleId}`;
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRestored = useRef(false);
 
@@ -371,6 +371,8 @@ export default function SelfEval() {
   }
 
   useEffect(() => {
+    // 切周期时先清掉旧防抖计时器，避免把新表单值写进上一周期的草稿 key
+    if (draftTimer.current) clearTimeout(draftTimer.current);
     reload().catch((e) => message.error(formatError(e, "加载失败")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId]);

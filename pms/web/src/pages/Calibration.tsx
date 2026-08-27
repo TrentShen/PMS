@@ -1,5 +1,5 @@
 // 绩效校准页：Leader 改分 + 3-6-1 分布图 + 提交审批 + HR/CEO 审批操作
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -221,6 +221,9 @@ export default function Calibration() {
   const [detail, setDetail] = useState<UserDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useMobile();
+  // 竞态防护：快速切周期/连点详情时，旧请求的响应不得覆盖新数据（同 Feedback.tsx loadSeq 模式）
+  const loadSeq = useRef(0);
+  const detailSeq = useRef(0);
 
   const isHr = user.role === "hrbp" || user.role === "super_admin" || user.has_hr_permission === true;
   const isLeader = user.role === "dept_leader";
@@ -238,6 +241,7 @@ export default function Calibration() {
 
   async function loadView() {
     if (!selectedCid) return;
+    const seq = ++loadSeq.current;
     // 切周期时先清空旧数据，避免残留上一周期的明细/分布
     setItems([]);
     setDistribution([]);
@@ -245,15 +249,17 @@ export default function Calibration() {
     setViewLoading(true);
     try {
       const r = await api.get(`/v1/calibration/cycles/${selectedCid}/view?page_size=9999`);
+      if (seq !== loadSeq.current) return; // 已有更新的请求发出，丢弃旧响应
       setItems(r.data.items);
       setDistribution(r.data.distribution);
       setMatrix(r.data.matrix);
       setApprovalStatus(r.data.approval_status);
       setRejectReason(r.data.reject_reason);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       message.error(formatError(e, "加载失败"));
     } finally {
-      setViewLoading(false);
+      if (seq === loadSeq.current) setViewLoading(false);
     }
   }
   useEffect(() => { loadView(); }, [selectedCid]);
@@ -295,18 +301,25 @@ export default function Calibration() {
 
   // 打开人员详情抽屉：复用员工详情接口（权限与校准视图同为 visible_user_ids scope）
   function openDetail(r: CalItem) {
+    const seq = ++detailSeq.current;
     setViewing(r);
     setDetail(null);
     setDetailLoading(true);
     api
       .get<UserDetailData>(`/v1/cycles/${selectedCid}/users/${r.user_id}/detail`)
-      .then((res) => setDetail(res.data))
+      .then((res) => {
+        if (seq !== detailSeq.current) return; // 已点开更新的详情，丢弃旧响应
+        setDetail(res.data);
+      })
       .catch((e) => {
+        if (seq !== detailSeq.current) return;
         message.error(formatError(e, "加载详情失败"));
         // 加载失败时关闭抽屉，避免永久停留在加载骨架
         setViewing(null);
       })
-      .finally(() => setDetailLoading(false));
+      .finally(() => {
+        if (seq === detailSeq.current) setDetailLoading(false);
+      });
   }
 
   // 评估摘要块：自评/上级评估共用；未提交时展示占位文案

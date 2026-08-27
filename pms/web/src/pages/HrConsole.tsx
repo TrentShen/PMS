@@ -386,7 +386,8 @@ export default function HrConsole() {
     finally { setFiltering(false); }
   }
 
-  const availableUsers = users.filter((u) => u.employee_type === "full_time" && u.role !== "super_admin" && u.role !== "hrbp" && !participants.find((p) => p.user_id === u.id));
+  // employee_type 为 null 时按全职放行，与后端 is_fte 的"null 默认放行"口径一致
+  const availableUsers = users.filter((u) => (u.employee_type ?? "full_time") === "full_time" && u.role !== "super_admin" && u.role !== "hrbp" && !participants.find((p) => p.user_id === u.id));
   const pendingParticipants = participants.filter((p) => p.status === "pending" || p.status === "self_done");
 
   // 周期关联信息（桌面表格与移动端卡片共用）
