@@ -28,6 +28,8 @@ interface AdminUser {
   department_id: number | null;
   hrbp_scope_dept_ids: number[] | null;
   status: string;
+  // 潜力评估（九宫格人才盘点）：high/medium/low，null = 未评定
+  potential_level: string | null;
   // 后端标记：角色含 Leader 但无任何下属（可选字段，后端未上线时缺失则不渲染提示）
   role_mismatch?: boolean;
 }
@@ -71,6 +73,16 @@ const ROLE_STATUS_TYPE: Record<string, StatusType> = {
 
 const USER_STATUS_LABEL: Record<string, string> = { active: "在职", inactive: "离职" };
 
+// 潜力评估（与后端 user.potential_level 契约一致；空串 = 清除为未评定）
+const POTENTIAL_OPTIONS = [
+  { value: "high", label: "高" },
+  { value: "medium", label: "中" },
+  { value: "low", label: "低" },
+];
+const POTENTIAL_LABEL: Record<string, string> = Object.fromEntries(
+  POTENTIAL_OPTIONS.map((o) => [o.value, o.label])
+);
+
 export default function AdminUsers() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [depts, setDepts] = useState<Dept[]>([]);
@@ -107,6 +119,7 @@ export default function AdminUsers() {
       scope_global: u.hrbp_scope_dept_ids === null,
       hrbp_scope_dept_ids: u.hrbp_scope_dept_ids ?? [],
       status: u.status,
+      potential_level: u.potential_level ?? "",
     });
   }
 
@@ -122,6 +135,7 @@ export default function AdminUsers() {
         // 后端约定 department_id == 0 表示清空部门，None 表示不修改，原样透传保留 0
         department_id: values.department_id,
         status: values.status,
+        potential_level: values.potential_level ?? "",
       };
       // 仅当被编辑用户是 HR 时，处理管辖范围字段
       if (values.role === "hrbp") {
@@ -221,6 +235,12 @@ export default function AdminUsers() {
             ),
           },
           {
+            title: "潜力",
+            dataIndex: "potential_level",
+            render: (v: string | null) =>
+              v ? <StatusTag type="primary">{POTENTIAL_LABEL[v] ?? v}</StatusTag> : <Typography.Text type="secondary">未评定</Typography.Text>,
+          },
+          {
             title: "操作",
             render: (_, u) => <a onClick={() => openEdit(u)}>编辑</a>,
           },
@@ -302,6 +322,13 @@ export default function AdminUsers() {
                 { value: "active", label: "在职" },
                 { value: "inactive", label: "离职（保留历史数据）" },
               ]}
+            />
+          </Form.Item>
+          <Form.Item name="potential_level" label="潜力评估（用于九宫格人才盘点）">
+            <Select
+              allowClear
+              placeholder="未评定"
+              options={POTENTIAL_OPTIONS}
             />
           </Form.Item>
         </Form>

@@ -26,6 +26,7 @@ const PeerTasks = lazy(() => import("@/pages/PeerTasks"));
 const PeerReview = lazy(() => import("@/pages/PeerReview"));
 const AnonymousFeedbackPage = lazy(() => import("@/pages/AnonymousFeedback"));
 const Calibration = lazy(() => import("@/pages/Calibration"));
+const NineGrid = lazy(() => import("@/pages/NineGrid"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const Feedback = lazy(() => import("@/pages/Feedback"));
 const History = lazy(() => import("@/pages/History"));
@@ -125,6 +126,7 @@ export default function App() {
               }
             >
               <Route path="/calibration" element={<Calibration />} />
+              <Route path="/nine-grid" element={<NineGrid />} />
             </Route>
 
             {/* HR 管理台：hrbp/super_admin + HR 部门 Leader */}

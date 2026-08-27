@@ -26,6 +26,40 @@ interface DeptTrendPoint {
 const PERF_LABEL: Record<string, string> = {
   excellent: "优秀", exceed_part: "部分超出", meet: "符合预期", below_part: "部分不符", below: "不符合",
 };
+const VALUE_LABEL: Record<string, string> = { jia: "甲", yi: "乙", bing: "丙" };
+
+// 个人趋势摘要：最近一期、环比上一期、覆盖周期数
+interface TrendSummary {
+  latest: TrendPoint;
+  latestLabel: string;
+  delta: number | null; // 与上一有分周期的差值
+  count: number;
+}
+
+function summarize(points: TrendPoint[]): TrendSummary | null {
+  const withScore = points.filter((p) => p.perf_score != null);
+  if (withScore.length === 0) return null;
+  const latest = withScore[withScore.length - 1];
+  const prev = withScore.length > 1 ? withScore[withScore.length - 2] : null;
+  return {
+    latest,
+    latestLabel: PERF_LABEL[latest.perf_level ?? ""] ?? "-",
+    delta: prev ? Math.round(((latest.perf_score ?? 0) - (prev.perf_score ?? 0)) * 100) / 100 : null,
+    count: withScore.length,
+  };
+}
+
+// 环比变化文案：上调绿、下调红、持平灰（配色类见 global.css）
+function DeltaText({ delta }: { delta: number | null }) {
+  if (delta === null) return <Typography.Text type="secondary">首期，无环比</Typography.Text>;
+  if (delta === 0) return <Typography.Text type="secondary">环比持平</Typography.Text>;
+  const up = delta > 0;
+  return (
+    <span className={up ? "pms-score-change-up" : "pms-score-change-down"}>
+      环比 {up ? "+" : ""}{delta.toFixed(2)}
+    </span>
+  );
+}
 
 export default function Trend() {
   const { userId } = useParams();
@@ -60,8 +94,15 @@ export default function Trend() {
         score: p.perf_score,
         level: PERF_LABEL[p.perf_level ?? ""] ?? p.perf_level,
         source: p.source === "historical" ? "历史导入" : "当前系统",
+        // 价值观三维（甲/乙/丙），tooltip 展示
+        values: [p.value_belief, p.value_team, p.value_growth]
+          .map((g) => VALUE_LABEL[g ?? ""])
+          .filter(Boolean)
+          .join("/"),
       }));
   }, [points]);
+
+  const summary = useMemo(() => summarize(points), [points]);
 
   const deptChartData = useMemo(() => {
     return deptPoints.map((p) => ({
@@ -78,26 +119,38 @@ export default function Trend() {
         {personalChartData.length === 0 ? (
           <Empty description="暂无趋势数据" />
         ) : (
-          <div
-            role="img"
-            aria-label={`个人绩效趋势折线图，共 ${points.length} 个周期`}
-          >
-            <Line
-              data={personalChartData}
-              xField="cycle"
-              yField="score"
-              seriesField="source"
-              point={{ size: 4 }}
-              smooth
-              yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
-              tooltip={{
-                formatter: (d: { source: string; score: number; level: string }) => ({
-                  name: d.source,
-                  value: `${d.score.toFixed(2)} 分（${d.level}）`,
-                }),
-              }}
-            />
-          </div>
+          <>
+            {/* 摘要：最近一期得分/等级 + 环比 + 覆盖周期数 */}
+            {summary && (
+              <Space size="middle" wrap style={{ marginBottom: 12 }}>
+                <Typography.Text strong style={{ fontSize: 16 }}>
+                  最近一期：{summary.latest.perf_score?.toFixed(2)} 分（{summary.latestLabel}）
+                </Typography.Text>
+                <DeltaText delta={summary.delta} />
+                <Typography.Text type="secondary">共 {summary.count} 个周期</Typography.Text>
+              </Space>
+            )}
+            <div
+              role="img"
+              aria-label={`个人绩效趋势折线图，共 ${points.length} 个周期`}
+            >
+              <Line
+                data={personalChartData}
+                xField="cycle"
+                yField="score"
+                seriesField="source"
+                point={{ size: 4 }}
+                smooth
+                yAxis={{ min: 1, max: 5, tickInterval: 0.5 }}
+                tooltip={{
+                  formatter: (d: { source: string; score: number; level: string; values: string }) => ({
+                    name: d.source,
+                    value: `${d.score.toFixed(2)} 分（${d.level}）${d.values ? ` · 价值观 ${d.values}` : ""}`,
+                  }),
+                }}
+              />
+            </div>
+          </>
         )}
         <Typography.Paragraph type="secondary" style={{ marginTop: 16 }}>
           显示个人各周期绩效评分变化，包含当前系统已发布周期和导入的历史数据。

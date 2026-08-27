@@ -19,7 +19,6 @@ import {
 } from "antd";
 import { api, formatError } from "@/services/api";
 import { useAuth } from "@/stores/auth";
-import type { AdjustmentView } from "@/services/api.types";
 
 import ValueGradeForm, { ValueGradeDisplay, expandValueGrades } from "@/components/ValueGradeForm";
 import BottomActions from "@/components/ui/BottomActions";
@@ -111,8 +110,7 @@ interface UserBrief {
   position: string | null;
 }
 
-// ========== 绩效目标区块（可编辑 / 只读 / 审批状态）==========
-interface ObjItem { title: string; description: string; measure_criteria: string; weight: number }
+// ========== 绩效目标区块（只读；编辑在「目标制定」页）==========
 
 const STATUS_LABEL: Record<string, { text: string; type: StatusType }> = {
   draft: { text: "草稿", type: "default" },
@@ -141,70 +139,9 @@ const OBJECTIVE_CARD_COLUMNS: CardColumn<ObjView>[] = [
   },
 ];
 
-function ObjectivesSection({
-  objectiveCycleId, objectives, canEdit, onSaved
-}: {
-  objectiveCycleId: number | null;
-  objectives: ObjView[];
-  canEdit: boolean;
-  onSaved: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
-  const [items, setItems] = useState<ObjItem[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [adjReason, setAdjReason] = useState("");
-  const [adjSubmitting, setAdjSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (objectives.length > 0) {
-      setItems(objectives.map((o) => ({ title: o.title, description: o.description, measure_criteria: o.measure_criteria, weight: o.weight })));
-    } else {
-      setItems([]);
-    }
-  }, [objectives]);
-
-  function addRow() {
-    setItems([...items, { title: "", description: "", measure_criteria: "", weight: 0 }]);
-  }
-  function removeRow(idx: number) {
-    setItems(items.filter((_, i) => i !== idx));
-  }
-  function updateRow(idx: number, field: keyof ObjItem, value: string | number) {
-    const next = [...items];
-    next[idx] = { ...next[idx], [field]: value };
-    setItems(next);
-  }
-
-  async function onSave() {
-    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期，无法保存目标"); return; }
-    const total = items.reduce((s, i) => s + (i.weight || 0), 0);
-    if (total !== 100) { message.error(`权重总和必须为 100，当前为 ${total}`); return; }
-    if (items.some((i) => !i.title.trim())) { message.error("目标标题不能为空"); return; }
-    setSaving(true);
-    try {
-      await api.put(`/v1/objective-cycles/${objectiveCycleId}/objectives`, { items });
-      message.success("目标草稿已保存");
-      setEditing(false);
-      await onSaved();
-    } catch (e) {
-      message.error(formatError(e, "保存失败"));
-    } finally { setSaving(false); }
-  }
-
-  async function onSubmitForReview() {
-    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期"); return; }
-    setSubmitting(true);
-    try {
-      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/submit`);
-      message.success("目标已提交上级审批");
-      await onSaved();
-    } catch (e) {
-      message.error(formatError(e, "提交失败"));
-    } finally { setSubmitting(false); }
-  }
-
+// 绩效目标只读视图：目标的录入/审批/调整统一在「目标制定」页（MyObjectives）完成，
+// 本页（自评）只展示，避免两套编辑逻辑漂移
+function ObjectivesSection({ objectives }: { objectives: ObjView[] }) {
   const overallStatus = objectives.length > 0
     ? objectives.some((o) => o.status === "pending_review")
       ? "pending_review"
@@ -212,160 +149,49 @@ function ObjectivesSection({
         ? "draft"
         : objectives[0]?.status ?? "draft"
     : "draft";
-
-  const hasDraft = objectives.some((o) => o.status === "draft");
-  const allApproved = objectives.length > 0 && objectives.every((o) => o.status === "approved" || o.status === "locked");
-  const [pendingAdj, setPendingAdj] = useState<AdjustmentView | null>(null);
-  async function loadPendingAdjustment() {
-    if (!objectiveCycleId) return;
-    try {
-      const r = await api.get<AdjustmentView[]>(`/v1/objective-cycles/${objectiveCycleId}/objectives/adjustments`);
-      const pending = r.data.find((a) => a.status === "pending");
-      setPendingAdj(pending || null);
-    } catch (e) {
-      // 无调整申请是正常情况（返回空数组）；请求失败才提示，避免静默吞错
-      setPendingAdj(null);
-      message.error(formatError(e, "加载调整申请失败"));
-    }
-  }
-  useEffect(() => { loadPendingAdjustment(); }, [objectiveCycleId]);
   const rejected = objectives.find((o) => o.reject_reason);
 
-  async function onRequestAdjustment() {
-    const total = items.reduce((s, i) => s + (i.weight || 0), 0);
-    if (total !== 100) { message.error(`权重总和必须为 100，当前为 ${total}`); return; }
-    if (items.some((i) => !i.title.trim())) { message.error("目标标题不能为空"); return; }
-    if (!adjReason.trim()) { message.error("调整原因不能为空"); return; }
-    if (!objectiveCycleId) { message.error("当前评估周期未关联目标周期"); return; }
-    setAdjSubmitting(true);
-    try {
-      await api.post(`/v1/objective-cycles/${objectiveCycleId}/objectives/request-adjustment`, { items, reason: adjReason });
-      message.success("调整申请已提交，等待上级审批");
-      setAdjusting(false);
-      setAdjReason("");
-      await onSaved();
-    } catch (e) {
-      message.error(formatError(e, "提交失败"));
-    } finally { setAdjSubmitting(false); }
-  }
-
-  // 只读模式
-  if (!editing && !adjusting) {
-    return (
-      <Card
-        title={<Space>绩效目标<StatusTag type={statusLabel(overallStatus).type}>{statusLabel(overallStatus).text}</StatusTag></Space>}
-        extra={canEdit && (
-          <Space>
-            {hasDraft && (
-              <Button type="primary" onClick={onSubmitForReview} loading={submitting}>
-                提交上级审批
-              </Button>
-            )}
-            {allApproved && (
-              <Button onClick={() => { setAdjusting(true); setItems(objectives.map((o) => ({ title: o.title, description: o.description, measure_criteria: o.measure_criteria, weight: o.weight }))); }}>
-                申请调整
-              </Button>
-            )}
-            {!allApproved && !pendingAdj && (
-              <Button onClick={() => { setEditing(true); if (items.length === 0) addRow(); }}>
-                {objectives.length > 0 ? "修改目标" : "录入目标"}
-              </Button>
-            )}
-          </Space>
-        )}
-      >
-        {objectives.length === 0 ? (
-          <Alert type="warning" showIcon message="你还没有绩效目标，请先录入目标" />
-        ) : (
-          <>
-            {rejected && (
-              <Alert
-                type="error"
-                showIcon
-                style={{ marginBottom: 12 }}
-                message={`上级驳回原因：${rejected.reject_reason}`}
-              />
-            )}
-            <div className="pms-responsive-table">
-              <Table rowKey="id" size="small" pagination={false} tableLayout="fixed" dataSource={objectives}
-                columns={[
-                  { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
-                  { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
-                  {
-                    title: "状态",
-                    dataIndex: "status",
-                    render: (v) => {
-                      const s = statusLabel(v);
-                      return <StatusTag type={s.type}>{s.text}</StatusTag>;
-                    },
-                  },
-                ]}
-              />
-            </div>
-            <TableCardList<ObjView>
-              columns={OBJECTIVE_CARD_COLUMNS}
-              dataSource={objectives}
-              rowKey={(o) => o.id}
-            />
-          </>
-        )}
-      </Card>
-    );
-  }
-
-  // 调整申请模式
-  if (adjusting) {
-    const totalWeight = items.reduce((s, i) => s + (i.weight || 0), 0);
-    return (
-      <Card title="申请调整绩效目标" extra={<Space>
-        <StatusTag type={totalWeight === 100 ? "success" : "danger"}>权重合计 {totalWeight}%</StatusTag>
-        <Button onClick={() => setAdjusting(false)}>取消</Button>
-        <Button type="primary" onClick={onRequestAdjustment} loading={adjSubmitting}>提交调整申请</Button>
-      </Space>}>
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Alert type="info" showIcon message="调整申请需上级审批通过后才生效" style={{ marginBottom: 8 }} />
-          <Input.TextArea rows={2} placeholder="调整原因（必填）" value={adjReason} onChange={(e) => setAdjReason(e.target.value)} />
-          {items.map((item, idx) => (
-            <Card key={idx} size="small" type="inner" title={`目标 ${idx + 1}`}
-              extra={<a onClick={() => removeRow(idx)} style={{ color: "red" }}>删除</a>}>
-              <Space direction="vertical" style={{ width: "100%" }}>
-                <Input placeholder="目标标题" value={item.title} onChange={(e) => updateRow(idx, "title", e.target.value)} />
-                <Input.TextArea placeholder="目标描述" rows={2} value={item.description} onChange={(e) => updateRow(idx, "description", e.target.value)} />
-                <Input placeholder="衡量标准（如何算达成）" value={item.measure_criteria} onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)} />
-                <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" inputMode="decimal" />
-              </Space>
-            </Card>
-          ))}
-          <Button type="dashed" block onClick={addRow}>+ 添加目标</Button>
-        </Space>
-      </Card>
-    );
-  }
-
-  // 编辑模式
-  const totalWeight = items.reduce((s, i) => s + (i.weight || 0), 0);
   return (
-    <Card title="录入/修改绩效目标" extra={<Space>
-      <StatusTag type={totalWeight === 100 ? "success" : "danger"}>权重合计 {totalWeight}%</StatusTag>
-      <Button onClick={() => setEditing(false)}>取消</Button>
-      <Button type="primary" onClick={onSave} loading={saving}>保存草稿</Button>
-    </Space>}>
-      <Space direction="vertical" style={{ width: "100%" }}>
-        {items.map((item, idx) => (
-          <Card key={idx} size="small" type="inner" title={`目标 ${idx + 1}`}
-            extra={<a onClick={() => removeRow(idx)} style={{ color: "red" }}>删除</a>}>
-            <Space direction="vertical" style={{ width: "100%" }}>
-              <Input placeholder="目标标题" value={item.title} onChange={(e) => updateRow(idx, "title", e.target.value)} />
-              <Input.TextArea placeholder="目标描述" rows={2} value={item.description} onChange={(e) => updateRow(idx, "description", e.target.value)} />
-              <Input placeholder="衡量标准（如何算达成）" value={item.measure_criteria} onChange={(e) => updateRow(idx, "measure_criteria", e.target.value)} />
-              <InputNumber placeholder="权重%" min={1} max={100} value={item.weight || undefined} onChange={(v) => updateRow(idx, "weight", v ?? 0)} addonAfter="%" inputMode="decimal" />
-            </Space>
-          </Card>
-        ))}
-        <Button type="dashed" block onClick={addRow}>+ 添加目标</Button>
-      </Space>
+    <Card
+      title={<Space>绩效目标<StatusTag type={statusLabel(overallStatus).type}>{statusLabel(overallStatus).text}</StatusTag></Space>}
+    >
+      {objectives.length === 0 ? (
+        <Alert type="warning" showIcon message="你还没有绩效目标，请先到「目标制定」页录入目标" />
+      ) : (
+        <>
+          {rejected && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message={`上级驳回原因：${rejected.reject_reason}`}
+            />
+          )}
+          <div className="pms-responsive-table">
+            <Table rowKey="id" size="small" pagination={false} tableLayout="fixed" dataSource={objectives}
+              columns={[
+                { title: "目标", dataIndex: "title", width: "18%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "描述", dataIndex: "description", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "衡量标准", dataIndex: "measure_criteria", width: "32%", render: (v: string) => <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> },
+                { title: "权重", dataIndex: "weight", width: "8%", render: (v) => `${v}%` },
+                {
+                  title: "状态",
+                  dataIndex: "status",
+                  render: (v) => {
+                    const s = statusLabel(v);
+                    return <StatusTag type={s.type}>{s.text}</StatusTag>;
+                  },
+                },
+              ]}
+            />
+          </div>
+          <TableCardList<ObjView>
+            columns={OBJECTIVE_CARD_COLUMNS}
+            dataSource={objectives}
+            rowKey={(o) => o.id}
+          />
+        </>
+      )}
     </Card>
   );
 }
@@ -634,12 +460,7 @@ export default function SelfEval() {
         />
       )}
 
-      <ObjectivesSection
-        objectiveCycleId={detail.objective_cycle?.id ?? null}
-        objectives={detail.objectives}
-        canEdit={false}
-        onSaved={reload}
-      />
+      <ObjectivesSection objectives={detail.objectives} />
 
       {detail.cycle.enable_self_eval ? (
         <Card title={readonly ? "我的自评（只读）" : "填写自评"}>

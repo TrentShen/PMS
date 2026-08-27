@@ -28,6 +28,7 @@ const PATH_TITLE: [string, string][] = [
   ["/leader", "下属评估"],
   ["/peer-review", "互评名单"],
   ["/calibration", "绩效校准"],
+  ["/nine-grid", "人才盘点"],
   ["/feedback", "绩效反馈"],
   ["/probation/", "试用期详情"],
   ["/probation", "试用期管理"],
@@ -113,6 +114,8 @@ export default function AppLayout() {
     hasAnyRole(user?.role, [...ROLE.LEADER]) && { key: "/leader", label: "下属评估" },
     hasAnyRole(user?.role, [...ROLE.LEADER]) && switches.peer && { key: "/peer-review", label: "互评名单" },
     (hasAnyRole(user?.role, ["dept_leader", ...ROLE.HR]) || user?.has_hr_permission) && switches.calibration && { key: "/calibration", label: "校准" },
+    // 人才盘点不随周期开关隐藏：已公布周期也可盘点
+    (hasAnyRole(user?.role, ["dept_leader", ...ROLE.HR]) || user?.has_hr_permission) && { key: "/nine-grid", label: "人才盘点" },
     (hasAnyRole(user?.role, [...ROLE.HR, ...ROLE.LEADER]) || user?.has_hr_permission) && { key: "/probation", label: "试用期管理" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/hr", label: "HR 管理台" },
     (hasAnyRole(user?.role, [...ROLE.HR]) || user?.has_hr_permission) && { key: "/objective-cycles", label: "目标周期" },

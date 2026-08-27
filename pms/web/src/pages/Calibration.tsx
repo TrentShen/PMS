@@ -318,7 +318,7 @@ export default function Calibration() {
       <>
         <div>
           业绩 {e.perf_score?.toFixed(2) ?? "-"}（{PERF_LABEL[e.perf_level ?? ""] ?? "-"}）
-          　价值观 {VALUE_LABEL[e.value_belief_grade ?? e.value_team_grade ?? e.value_growth_grade ?? ""] ?? "-"}
+          ｜价值观 {VALUE_LABEL[e.value_belief_grade ?? e.value_team_grade ?? e.value_growth_grade ?? ""] ?? "-"}
         </div>
         {e.key_results && (
           <div style={{ marginTop: 8 }}>

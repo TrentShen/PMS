@@ -33,7 +33,6 @@ import StatusTag from "@/components/ui/StatusTag";
 import type { StatusType } from "@/components/ui/StatusTag";
 import { PARTICIPANT_STATUS_LABEL, PARTICIPANT_STATUS_TYPE } from "@/components/ui/participantStatus";
 import TableCardList from "@/components/ui/TableCardList";
-import type { CardColumn } from "@/components/ui/TableCardList";
 
 
 interface ObjectiveView {
@@ -60,6 +59,7 @@ interface EvalView {
   key_results: string | null;
   comment: string | null;
   submitted_at: string | null;
+  status: string;  // draft / submitted（撤回后回退为 draft，内容保留）
 }
 
 interface HistoryPerf {
@@ -73,7 +73,7 @@ interface HistoryPerf {
 }
 
 interface Detail {
-  cycle: { id: number; name: string; status: string };
+  cycle: { id: number; name: string; status: string; enable_feedback: boolean };
   user: { id: number; name: string; position: string | null };
   participant_status: string;
   final_perf_score: number | null;
@@ -926,6 +926,21 @@ export default function LeaderEvalDetail() {
     window.setTimeout(() => form.scrollToField(first.name), 100);
   };
 
+  // 撤回上级评估：退回草稿可改后重新提交；窗口/权限由后端强制（窗口外仅超管）
+  const [withdrawing, setWithdrawing] = useState(false);
+  async function onWithdraw() {
+    setWithdrawing(true);
+    try {
+      await api.post(`/v1/cycles/${cycleId}/users/${userId}/superior-evaluation/withdraw`);
+      message.success("已撤回为草稿，可修改后重新提交");
+      await reload();
+    } catch (e) {
+      message.error(formatError(e, "撤回失败"));
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
   if (!detail) {
     return (
       <div style={{ textAlign: "center", padding: "var(--space-10)" }}>
@@ -1178,6 +1193,27 @@ export default function LeaderEvalDetail() {
       )}
       {showActions && (
         <BottomActions>
+          {/* 反馈填写入口：周期开启反馈环节时，直达该下属的面谈记录页 */}
+          {detail.cycle.enable_feedback && (
+            <Button onClick={() => navigate(`/feedback/${cycleId}/${userId}`)}>
+              面谈反馈
+            </Button>
+          )}
+          {/* 已提交后允许撤回（窗口/权限由后端强制：窗口内上级可撤回，窗口外仅超管） */}
+          {detail.superior_evaluation?.status === "submitted" && (
+            <Popconfirm
+              title="撤回上级评估？"
+              description="撤回后退回草稿，可修改后重新提交；评估窗口已关闭时仅超管可撤回"
+              okText="确认撤回"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              onConfirm={onWithdraw}
+            >
+              <Button danger loading={withdrawing}>
+                撤回评估
+              </Button>
+            </Popconfirm>
+          )}
           <Popconfirm
             title="确认提交评估？"
             description="提交后将记录本次上级评估结果"
@@ -1186,7 +1222,7 @@ export default function LeaderEvalDetail() {
             onConfirm={() => form.submit()}
           >
             <Button type="primary" loading={submitting}>
-              {detail.superior_evaluation ? "重新提交" : "提交评估"}
+              {detail.superior_evaluation?.status === "submitted" ? "重新提交" : "提交评估"}
             </Button>
           </Popconfirm>
         </BottomActions>

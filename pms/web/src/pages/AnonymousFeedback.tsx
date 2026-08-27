@@ -29,11 +29,20 @@ interface Cycle {
   status: string;
 }
 
+// 匿名评价表单值（提交时单项价值观复制到后端三维度契约）
+interface AnonymousFormValues {
+  cycle_id: number;
+  target_user_id: number;
+  perf_score?: number;
+  value_belief_grade?: string;
+  comment: string;
+}
+
 export default function AnonymousFeedback() {
   const me = useAuth((s) => s.user)!;
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [users, setUsers] = useState<Colleague[]>([]);
-  const [form] = Form.useForm();
+  const [form] = Form.useForm<AnonymousFormValues>();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
