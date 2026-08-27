@@ -14,7 +14,6 @@ __pycache__/
 dist/
 build/
 .venv/
-.venv-local/
 venv/
 
 # Node

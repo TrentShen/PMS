@@ -58,9 +58,11 @@
 2. **服务器密码轮换** —— **已挂起**(owner 2026-08-16 同上);MySQL 双密码 + Redis 设密码,正式推广前必做
 3. **评估撤回功能** ✅ 已实施(2026-08-26):撤回接口 `POST /cycles/:id/users/:uid/superior-evaluation/withdraw`(窗口内上级/HR、窗口外仅超管、已校准/已提交审批/已发布均拦截,退回草稿保留内容,final_* 同步回退)+ LeaderEvalDetail 底部"撤回评估"入口;测试 tests/test_superior_withdraw.py 5 例
 4. **P2 功能迭代**:九宫格人才盘点 ✅ 已实施(2026-08-27):`user.potential_level` 字段(migration 728249b1d6ff)+ AdminUsers 评定入口 + `GET /cycles/:id/nine-grid` 聚合接口 + `/nine-grid` 人才盘点页(绩效档 × 潜力 9 象限,含未评定清单);测试 test_nine_grid.py 4 例。历史绩效趋势增强 ✅(同日):Trend 页加最近一期/环比变化/覆盖周期数摘要,tooltip 带价值观三维;纯前端,后端数据已够。剩余:1:1/IDP 轻量记录 > 目标上下对齐(改动大,按需)
-5. **技术小项**:LeaderEvalDetail 详情页补反馈填写入口(列表入口已加);SelfEval 死代码清理(canEdit 恒 false 的目标编辑模式);AnonymousFeedback 隐式 any
+5. **技术小项**:~~LeaderEvalDetail 详情页补反馈填写入口~~ ✅、~~SelfEval 死代码~~ ✅、~~AnonymousFeedback 隐式 any~~ ✅（2026-08-27 均已清）
 6. **底座线(待定)**:PMS 读 hr_base 主数据(L1)、绩效结果归档 performance_result(L2,ADR-010 细化 DDL);等 Codex 调研后拍板
-7. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)
+7. **卫生项** ✅ 已结清(2026-08-27):.venv 重建到标准路径;tsconfig 确认 strict+noImplicitAny 已开且零违规
+8. **安全审计修复(2026-08-27,已修待部署)**:角色切换不再污染 ORM 实体(auth.py 直写 __dict__);员工不可自建面谈记录(feedback.py 去掉本人豁免);enable_feedback=false 周期发布后员工可见结果;校准历史加 scope 过滤;目标周期写操作全量审计;周期非草稿不可换绑目标周期;催办接口加 scope/上限/非 HR 模板化;hrbp 不可停用超管/自己;自评草稿 key 含用户 ID;草稿计时器与校准页竞态修复;FTE 口径对齐;部署脚本加回滚/失败检测/后台执行+日志轮询/弱密码护栏;备份目录 700、DB 转储 600
+9. **backlog(有意不修,勿主动做)**:antd chunk 1.17MB、首页重复请求、StrictMode dev 双发、草稿 key 残留、LeaderEvalDetail 互评卡片 rowKey 拼接、HrConsole 卡片点击冒泡、同步 SQLAlchemy 迁移异步(200+ 用户再说)、导出 OOM(200 行限制内无风险)、后端低危项（批量改分 N+1、分页无上限、naive datetime 两处、Excel 上传无大小限制、试用期计划两份实现漂移）
 
 ## 5. 运维操作手册(踩坑后的正确姿势)
 
@@ -74,6 +76,8 @@ cd pms && bash deploy/bastion-deploy.sh   # 经 JumpServer 堡垒机,无需 SSH 
 - **长任务防 SSH 断开**:关键操作用 nohup + 日志文件,本地轮询(参考 8-05 事故:expect 同步等待 pip install 会超时误杀)
 - 服务器 Docker Hub/PyPI 直连不稳:daemon.json 已配国内 mirror;Dockerfile 已走阿里云 pip 镜像;仍失败就先手动 `docker pull python:3.12-slim node:20-alpine alpine`
 - 备份:代码 /opt/pms/backup.<时间戳>/,数据库同目录 db.sql.gz(保留 10 份)
+- **文件卫生(2026-08-27 起)**:备份目录 700/DB 转储 600(含敏感数据);/tmp 的 env/证书临时备份部署完自动删;tar 包用完即删。堡垒机 SFTP 目录即资产 /tmp,无独立残留
+- 服务器只留当前代码结构(backend/web/deploy/docs),历史散落文件已于 2026-08-27 清理;发现新的散落文件应随手清
 
 ### GitHub 网络(本机)
 - github.com 直连时通时断,push/clone 失败**重试即可**(循环最多 10-15 次,间隔 10-15s);HTTP/2 报 "failure when receiving data" 时 `git config http.version HTTP/1.1` 可看到真实错误
