@@ -121,33 +121,43 @@ bastion_exec "cp -rf /tmp/pms-certs.bak ${REMOTE_DIR}/deploy/certs 2>/dev/null |
 
 # 设置权限并执行远程部署脚本
 bastion_exec "chmod +x ${REMOTE_DIR}/deploy/remote-deploy.sh"
-info "🚀 后台执行 remote-deploy.sh，轮询日志（超时 20 分钟）..."
-bastion_exec "nohup bash ${REMOTE_DIR}/deploy/remote-deploy.sh > /tmp/pms-deploy.log 2>&1 &"
+info "🚀 执行 remote-deploy.sh（输出实时回传，完成自动断开）..."
 
-# 每 15s 拉一次远端日志，增量打印；出现结束/错误标记或超时则退出
-DEPLOY_LOG_TIMEOUT=1200
-elapsed=0
-last_count=0
-while :; do
-  sleep 15
-  elapsed=$((elapsed + 15))
-  remote_log=$(bastion_exec "cat /tmp/pms-deploy.log 2>/dev/null || true" || true)  # 轮询中连接抖动不中止，靠超时兜底
-  total=$(printf '%s\n' "$remote_log" | wc -l | tr -d ' ')
-  if (( total > last_count )); then
-    printf '%s\n' "$remote_log" | tail -n +$((last_count + 1))
-    last_count=$total
-  fi
-  if printf '%s\n' "$remote_log" | grep -q '部署流程结束'; then
-    info "✅ 远程部署完成"
-    break
-  fi
-  if printf '%s\n' "$remote_log" | grep -q '\[ERROR\]'; then
-    error "远程部署失败（详见上方日志）"
-  fi
-  if (( elapsed >= DEPLOY_LOG_TIMEOUT )); then
-    error "部署日志轮询超时（20 分钟），请登录服务器查看 /tmp/pms-deploy.log"
-  fi
-done
+# 同步直跑 + 实时流式回传。关键点：ssh stdin 必须保持打开直到远端脚本结束——
+# 交互式 shell 读到 EOF 会立即退出并杀掉前台部署进程（原 sleep 600 的作用，
+# 但固定时长会在长部署时误杀）。用 FIFO 让 writer 等到退出码标记出现再关闭 stdin。
+STREAM_LOG=/tmp/pms-remote-deploy.log
+: > "$STREAM_LOG"
+FIFO=$(mktemp -u /tmp/pms-ssh-stdin.XXXXXX)
+mkfifo "$FIFO"
+(
+  printf 'stty -echo 2>/dev/null\n'
+  printf 'bash %s 2>&1; echo __PMS_EXIT__$?__\n' "${REMOTE_DIR}/deploy/remote-deploy.sh"
+  printf 'exit\n'
+  # 兜底 25 分钟：标记始终不出现（连接中断）也关闭，避免死锁
+  for _ in $(seq 1 150); do
+    grep -q '__PMS_EXIT__' "$STREAM_LOG" 2>/dev/null && break
+    sleep 10
+  done
+) > "$FIFO" &
+WRITER_PID=$!
+
+set +e
+ssh -tt -p "$BASTION_PORT" -i "$BASTION_KEY" \
+     -o BatchMode=yes -o ConnectTimeout=10 \
+     "$BASTION_DEST" < "$FIFO" 2>&1 | tr -d '\r' | tee "$STREAM_LOG"
+set -e
+wait "$WRITER_PID" 2>/dev/null || true
+rm -f "$FIFO"
+
+REMOTE_RC=$(grep -o '__PMS_EXIT__[0-9][0-9]*__' "$STREAM_LOG" | tail -1 | sed 's/__PMS_EXIT__//;s/__//' || true)
+if [[ -z "$REMOTE_RC" ]]; then
+  error "远端部署未返回退出码（连接中断），请登录服务器手工执行 bash /opt/pms/deploy/remote-deploy.sh"
+fi
+if [[ "$REMOTE_RC" -ne 0 ]]; then
+  error "远端部署失败(EXIT=$REMOTE_RC)，详见上方输出"
+fi
+info "✅ 远程部署完成"
 
 # ---------- 4. 清理 ----------
 # 远端 /tmp 的 env/证书备份含敏感信息，部署结束后必须删除（2026-08-27 审计发现残留）
