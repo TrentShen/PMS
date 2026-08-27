@@ -28,6 +28,8 @@ class AdminUserView(BaseModel):
     department_id: int | None
     hrbp_scope_dept_ids: list[int] | None
     status: str
+    # 潜力评估（九宫格人才盘点）：high/medium/low，None = 未评定
+    potential_level: str | None
     # 担任 Leader 角色但没有任何下属（疑似历史遗留），仅用于前端标注提示
     role_mismatch: bool = False
 
@@ -41,6 +43,8 @@ class AdminUserPatch(BaseModel):
     # 前端传值时两者必须区分
     hrbp_scope_dept_ids: list[int] | None = None
     status: str | None = None
+    # 潜力评估：high/medium/low；空串显式清除为未评定
+    potential_level: str | None = None
     # 要把 hrbp_scope_dept_ids 显式清空（改为全局），用 clear_scope=true
     clear_scope: bool = False
 
@@ -98,6 +102,7 @@ def patch_user(
         "department_id": user.department_id,
         "hrbp_scope_dept_ids": user.hrbp_scope_dept_ids,
         "status": user.status,
+        "potential_level": user.potential_level,
     }
 
     # 角色校验
@@ -148,6 +153,16 @@ def patch_user(
             raise HTTPException(status_code=400, detail="status 只能是 active/inactive")
         user.status = payload.status
 
+    # 潜力评估：high/medium/low；空串清除为未评定
+    if payload.potential_level is not None:
+        v = payload.potential_level.strip()
+        if v == "":
+            user.potential_level = None
+        elif v in ("high", "medium", "low"):
+            user.potential_level = v
+        else:
+            raise HTTPException(status_code=400, detail="potential_level 只能是 high/medium/low")
+
     session.add(user)
 
     after = {
@@ -156,6 +171,7 @@ def patch_user(
         "department_id": user.department_id,
         "hrbp_scope_dept_ids": user.hrbp_scope_dept_ids,
         "status": user.status,
+        "potential_level": user.potential_level,
     }
     write_audit(
         session,

@@ -36,6 +36,8 @@ class User(SQLModel, table=True):
     employee_type: str | None = Field(default=None, max_length=16)    # full_time/intern/other
     # 邮箱（用于邮件降级通知）
     email: str | None = Field(default=None, max_length=128)
+    # 潜力评估（PRD 3.6.2 九宫格人才盘点预留）：high / medium / low，由 HR 在校准后评定
+    potential_level: str | None = Field(default=None, max_length=16)
     # 状态：active / inactive（离职）
     status: str = Field(default="active", max_length=16, index=True)
     synced_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

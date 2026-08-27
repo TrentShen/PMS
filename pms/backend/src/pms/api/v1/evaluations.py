@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # 自评 + 上级评估接口
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -499,3 +499,109 @@ def submit_superior_evaluation(
         )
 
     return EvaluationView.model_validate(eva, from_attributes=True)
+
+
+# ============ 撤回：上级评估 ============
+
+@router.post("/users/{user_id}/superior-evaluation/withdraw")
+def withdraw_superior_evaluation(
+    cycle_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+    current: User = Depends(get_current_user),
+):
+    """撤回已提交的上级评估（退回草稿，内容保留可改后重新提交）。
+
+    口径（2026-08-16 owner 决策）：
+    - 评估窗口期内（superior_eval 截止日前，未配置时间点则以周期进行为准）：直属上级/HR 可撤回
+    - 窗口期外：仅超管可撤回
+    - 已发布周期任何人不可撤回；已进入校准/审批的数据不可撤回（防状态错乱）
+    """
+    from pms.database.models.calibration import CalibrationRecord, CycleApproval
+
+    target = session.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="员工不存在")
+
+    cycle = session.get(PerformanceCycle, cycle_id)
+    if not cycle or cycle.status != "in_progress":
+        raise HTTPException(status_code=400, detail="周期不在进行中，无法撤回")
+
+    # 窗口判断：stage_json 配了 superior_eval_end 则以截止日为准，否则周期进行中即窗口内
+    window_open = True
+    end_str = (cycle.stage_json or {}).get("superior_eval_end")
+    if end_str:
+        try:
+            window_open = date.fromisoformat(end_str) >= date.today()
+        except ValueError:
+            pass  # 配置非法时按窗口内处理，不阻塞业务
+
+    if window_open:
+        if not can_act_as_superior(current, target, session):
+            raise HTTPException(status_code=403, detail="只有直属上级或 HR 才能撤回上级评估")
+    else:
+        if not has_any_role(current, "super_admin"):
+            raise HTTPException(status_code=403, detail="评估窗口已关闭，仅超管可撤回")
+
+    eva = session.exec(
+        select(Evaluation).where(
+            Evaluation.cycle_id == cycle_id,
+            Evaluation.user_id == user_id,
+            Evaluation.eval_type == EvalType.SUPERIOR.value,
+        )
+    ).first()
+    if not eva or eva.status != "submitted":
+        raise HTTPException(status_code=400, detail="没有已提交的上级评估可撤回")
+
+    # 防状态错乱：该员工已被校准改分，或本周期校准结果已提交审批 → 不可撤回
+    calibrated = session.exec(
+        select(CalibrationRecord).where(
+            CalibrationRecord.cycle_id == cycle_id,
+            CalibrationRecord.user_id == user_id,
+        )
+    ).first()
+    if calibrated:
+        raise HTTPException(status_code=400, detail="该员工已进入校准环节，不能撤回上级评估")
+    approval = session.exec(
+        select(CycleApproval).where(CycleApproval.cycle_id == cycle_id)
+    ).first()
+    if approval:
+        raise HTTPException(status_code=400, detail="校准结果已提交审批，不能撤回上级评估")
+
+    participant = session.exec(
+        select(CycleParticipant).where(
+            CycleParticipant.cycle_id == cycle_id,
+            CycleParticipant.user_id == user_id,
+        )
+    ).first()
+
+    before = {"perf_score": eva.perf_score, "status": eva.status}
+    # 退回草稿：内容保留，提交标记清除；参与人进度与 final_* 同步回退
+    eva.status = "draft"
+    eva.submitted_at = None
+    session.add(eva)
+    if participant:
+        participant.status = (
+            ParticipantStatus.SELF_DONE.value
+            if cycle.enable_self_eval
+            else ParticipantStatus.PENDING.value
+        )
+        participant.final_perf_score = None
+        participant.final_perf_level = None
+        participant.final_value_belief = None
+        participant.final_value_team = None
+        participant.final_value_growth = None
+        session.add(participant)
+
+    write_audit(
+        session,
+        operator_userid=current.wecom_userid,
+        operator_name=current.name,
+        action="withdraw_superior_evaluation",
+        resource_type="evaluation",
+        resource_id=f"{cycle_id}:{user_id}",
+        before=before,
+        after={"status": "draft", "window_open": window_open},
+    )
+    session.commit()
+    return {"status": "withdrawn", "window_open": window_open}

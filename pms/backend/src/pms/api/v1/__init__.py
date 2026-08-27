@@ -16,6 +16,7 @@ from pms.api.v1 import (
     historical_import,
     historical_objective_import,
     history,
+    nine_grid,
     notify,
     objective_cycles,
     objectives,
@@ -50,3 +51,4 @@ api_v1_router.include_router(historical_evaluation.import_router)
 api_v1_router.include_router(historical_evaluation.query_router)
 api_v1_router.include_router(historical_objective_import.router)
 api_v1_router.include_router(trend.router)
+api_v1_router.include_router(nine_grid.router)
