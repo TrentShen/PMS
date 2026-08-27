@@ -44,7 +44,9 @@ info "✅ 生产配置与证书已就绪"
 # ---------- 3. 备份 ----------
 info "备份当前版本..."
 BACKUP_DIR="${REMOTE_DIR}/backup.$(date +%Y%m%d%H%M%S)"
+# 备份目录含完整代码 + 全量 DB 转储（绩效分数/面谈内容等敏感数据），仅 root 可读写（2026-08-27 审计加固）
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 cp -r backend "$BACKUP_DIR/" 2>/dev/null || true
 cp -r web "$BACKUP_DIR/" 2>/dev/null || true
 cp -r deploy "$BACKUP_DIR/" 2>/dev/null || true
@@ -84,6 +86,11 @@ for img in "${BASE_IMAGES[@]}"; do
 done
 info "✅ 基础镜像就绪"
 
+# 给当前镜像打回滚标签：健康检查失败时可回退到上一版本
+info "为当前镜像打回滚标签(pms-backend:prev / pms-frontend:prev)..."
+docker tag pms-backend:latest pms-backend:prev 2>/dev/null || true
+docker tag pms-frontend:latest pms-frontend:prev 2>/dev/null || true
+
 info "构建镜像(先构建,成功后再切换)..."
 if ! $DOCKER_COMPOSE -f deploy/docker-compose.prod.yml build; then
     error "镜像构建失败,已中止。现有服务未受影响,修复后重新部署即可"
@@ -95,7 +102,7 @@ $DOCKER_COMPOSE -f deploy/docker-compose.prod.yml up -d --remove-orphans
 info "等待后端就绪..."
 READY=0
 for i in $(seq 1 30); do
-    if docker exec pms-backend python -c "import pms" 2>/dev/null; then
+    if docker exec pms-backend python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)" 2>/dev/null; then
         READY=1
         break
     fi
@@ -112,6 +119,7 @@ DB_PASS=$(grep '^MYSQL_PASSWORD=' "$ENV_PROD" | head -1 | cut -d= -f2-)
 DB_NAME=$(grep '^MYSQL_DATABASE=' "$ENV_PROD" | head -1 | cut -d= -f2-)
 [[ -n "$DB_USER" && -n "$DB_PASS" && -n "$DB_NAME" ]] || error "无法从 .env.prod 读取 MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE"
 if docker exec pms-mysql mysqldump -u"$DB_USER" -p"$DB_PASS" --single-transaction --quick "$DB_NAME" 2>/dev/null | gzip > "$BACKUP_DIR/db.sql.gz"; then
+    chmod 600 "$BACKUP_DIR/db.sql.gz"  # 全量数据转储，仅 root 可读
     info "✅ 数据库已备份到 ${BACKUP_DIR}/db.sql.gz"
 else
     error "数据库备份失败，中止迁移"
@@ -128,10 +136,19 @@ DOMAIN=$(grep FRONTEND_ORIGIN "$ENV_PROD" | head -1 | cut -d= -f2 | sed 's|https
 if curl -sf -H "Host: ${DOMAIN}" "http://localhost/health" >/dev/null 2>&1; then
     info "✅ 后端健康检查通过"
 else
-    error "健康检查失败"
+    warn "健康检查失败，自动回滚到上一版本镜像..."
+    docker tag pms-backend:prev pms-backend:latest 2>/dev/null || true
+    docker tag pms-frontend:prev pms-frontend:latest 2>/dev/null || true
+    $DOCKER_COMPOSE -f deploy/docker-compose.prod.yml up -d --remove-orphans || true
+    echo -e "${RED}================================================================${NC}"
+    echo -e "${RED}[ERROR] 健康检查失败，已回滚至上一版本镜像(pms-*:prev)${NC}"
+    echo -e "${RED}[ERROR] 若数据库已被本次迁移污染，请用部署前备份恢复：${NC}"
+    echo -e "${RED}  gunzip -c ${BACKUP_DIR}/db.sql.gz | docker exec -i pms-mysql mysql -u${DB_USER} -p\${DB_PASS} ${DB_NAME}${NC}"
+    echo -e "${RED}================================================================${NC}"
+    exit 1
 fi
 
 info "🚀 PMS 部署完成！"
 info "🔗 访问地址: https://${DOMAIN}"
-info "📋 API 文档: https://${DOMAIN}/api/docs"
 info "🔍 健康检查: https://${DOMAIN}/api/v1/health"
+info "🏁 部署流程结束"
